@@ -171,7 +171,7 @@ export default function LogPage() {
   const handleConfirmImport = async () => {
     if (!importPreview || importPreview.length === 0 || !user) return
     startLoading()
-    const dates = [...new Set(importPreview.map(r => r.date))]
+    const dates = Array.from(new Set(importPreview.map(r => r.date)))
     for (const date of dates) {
       await sb.from('daily_log').delete().eq('log_date', date)
     }

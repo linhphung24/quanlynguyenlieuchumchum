@@ -47,7 +47,7 @@ export default function AdminPage() {
     return true
   })
 
-  const uniqueEntities = [...new Set(auditLogs.map(l => l.entity))]
+  const uniqueEntities = Array.from(new Set(auditLogs.map(l => l.entity)))
 
   const actionBadgeClass = (action: string) => {
     switch (action) {
