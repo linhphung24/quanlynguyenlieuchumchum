@@ -9,16 +9,9 @@ import ProductPicker from '@/components/shared/ProductPicker'
 
 function doPrint(inv: Invoice, recipes: { id: number; name: string }[]) {
   const isIn = inv.type === 'in'
-  const rows = isIn
-    ? (inv.items as { name: string; amount: number; unit: string }[])
-        .map((it, i) => `<tr><td style="padding:6px 8px;border-bottom:1px solid #eee">${i + 1}</td><td style="padding:6px 8px;border-bottom:1px solid #eee">${it.name}</td><td style="text-align:right;padding:6px 8px;border-bottom:1px solid #eee">${fmtNum(it.amount!)} ${it.unit}</td></tr>`)
-        .join('')
-    : (inv.items as { recipeId?: number; recipe_id?: number; qty: number }[])
-        .map((it, i) => {
-          const r = recipes.find(x => x.id === (it.recipeId || it.recipe_id))
-          return `<tr><td style="padding:6px 8px;border-bottom:1px solid #eee">${i + 1}</td><td style="padding:6px 8px;border-bottom:1px solid #eee">${r ? r.name : '?'}</td><td style="text-align:right;padding:6px 8px;border-bottom:1px solid #eee">${it.qty} chiếc</td></tr>`
-        })
-        .join('')
+  const rows = (inv.items as { name: string; amount: number; unit: string }[])
+    .map((it, i) => `<tr><td style="padding:6px 8px;border-bottom:1px solid #eee">${i + 1}</td><td style="padding:6px 8px;border-bottom:1px solid #eee">${it.name}</td><td style="text-align:right;padding:6px 8px;border-bottom:1px solid #eee">${fmtNum(it.amount)} ${it.unit}</td></tr>`)
+    .join('')
 
   const w = window.open('', '_blank')!
   w.document.write(`<html>
@@ -90,9 +83,9 @@ export default function InvoicesPage() {
 
   const handleSave = async () => {
     if (!user) return
-    const invItems: InvoiceItem[] = invType === 'in'
-      ? items.filter(it => it.name && it.amount > 0).map(it => ({ name: it.name, amount: it.amount, unit: it.unit }))
-      : items.filter(it => it.recipeId && it.qty > 0).map(it => ({ recipeId: it.recipeId, qty: it.qty }))
+    const invItems: InvoiceItem[] = items
+      .filter(it => it.name && (it.amount > 0 || it.qty > 0))
+      .map(it => ({ name: it.name, amount: it.amount || it.qty, unit: it.unit }))
 
     if (invItems.length === 0) { toast('Thêm ít nhất một mặt hàng hợp lệ', 'error'); return }
 
@@ -186,61 +179,35 @@ export default function InvoicesPage() {
           <table className="w-full border-collapse">
             <thead>
               <tr>
-                {invType === 'in' ? (
-                  <>
-                    <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc]">Nguyên liệu</th>
-                    <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-24">Số lượng</th>
-                    <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-32">ĐVT</th>
-                  </>
-                ) : (
-                  <>
-                    <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc]">Công thức</th>
-                    <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-24">Số lượng</th>
-                  </>
-                )}
+                <>
+                  <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc]">{invType === 'in' ? 'Nguyên liệu' : 'Sản phẩm'}</th>
+                  <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-24">Số lượng</th>
+                  <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-32">ĐVT</th>
+                </>
                 <th className="bg-[#f5e6cc] w-8"></th>
               </tr>
             </thead>
             <tbody>
               {items.map((it, idx) => (
                 <tr key={idx}>
-                  {invType === 'in' ? (
-                    <>
-                      <td className="px-3 py-2.5 border-b border-[#f0e8d8]">
-                        <ProductPicker
-                          products={allProducts}
-                          value={it.name}
-                          onChange={(name, unit) => { updateItem(idx, 'name', name); updateItem(idx, 'unit', unit) }}
-                        />
-                      </td>
-                      <td className="px-3 py-2.5 border-b border-[#f0e8d8]">
-                        <input type="number" min={0} step="any" value={it.amount}
-                          onChange={e => updateItem(idx, 'amount', parseFloat(e.target.value) || 0)}
-                          className="w-full px-2 py-1 border-[1.5px] border-[#f5e6cc] rounded text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors" />
-                      </td>
-                      <td className="px-3 py-2.5 border-b border-[#f0e8d8]">
-                        <select value={it.unit} onChange={e => updateItem(idx, 'unit', e.target.value)}
-                          className="w-full px-2 py-1 border-[1.5px] border-[#f5e6cc] rounded text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors appearance-none">
-                          {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
-                        </select>
-                      </td>
-                    </>
-                  ) : (
-                    <>
-                      <td className="px-3 py-2.5 border-b border-[#f0e8d8]">
-                        <select value={it.recipeId} onChange={e => updateItem(idx, 'recipeId', Number(e.target.value))}
-                          className="w-full px-2 py-1 border-[1.5px] border-[#f5e6cc] rounded text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors appearance-none">
-                          <option value={0}>-- Chọn công thức --</option>
-                          {recipes.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                        </select>
-                      </td>
-                      <td className="px-3 py-2.5 border-b border-[#f0e8d8]">
-                        <input type="number" min={0} value={it.qty}
-                          onChange={e => updateItem(idx, 'qty', parseFloat(e.target.value) || 0)}
-                          className="w-full px-2 py-1 border-[1.5px] border-[#f5e6cc] rounded text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors" />
-                      </td>
-                    </>
-                  )}
+                  <td className="px-3 py-2.5 border-b border-[#f0e8d8]">
+                    <ProductPicker
+                      products={allProducts}
+                      value={it.name}
+                      onChange={(name, unit) => { updateItem(idx, 'name', name); updateItem(idx, 'unit', unit) }}
+                    />
+                  </td>
+                  <td className="px-3 py-2.5 border-b border-[#f0e8d8]">
+                    <input type="number" min={0} step="any" value={it.amount || it.qty || 0}
+                      onChange={e => { updateItem(idx, 'amount', parseFloat(e.target.value) || 0); updateItem(idx, 'qty', parseFloat(e.target.value) || 0) }}
+                      className="w-full px-2 py-1 border-[1.5px] border-[#f5e6cc] rounded text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors" />
+                  </td>
+                  <td className="px-3 py-2.5 border-b border-[#f0e8d8]">
+                    <select value={it.unit} onChange={e => updateItem(idx, 'unit', e.target.value)}
+                      className="w-full px-2 py-1 border-[1.5px] border-[#f5e6cc] rounded text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors appearance-none">
+                      {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                    </select>
+                  </td>
                   <td className="px-3 py-2.5 border-b border-[#f0e8d8] text-center">
                     <button onClick={() => removeItem(idx)} className="bg-transparent border-none text-[#e0a090] text-base cursor-pointer px-1.5 py-0.5 rounded hover:bg-[#fdecea] hover:text-[#c0392b] transition-all">×</button>
                   </td>
@@ -294,25 +261,13 @@ export default function InvoicesPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {inv.type === 'in'
-                            ? (inv.items as { name: string; amount: number; unit: string }[]).map((it, i) => (
-                                <tr key={i}>
-                                  <td className="px-2 py-1.5 border-b border-[#f0e8d8]">{i + 1}</td>
-                                  <td className="px-2 py-1.5 border-b border-[#f0e8d8]">{it.name}</td>
-                                  <td className="px-2 py-1.5 border-b border-[#f0e8d8] text-right">{fmtNum(it.amount)} {it.unit}</td>
-                                </tr>
-                              ))
-                            : (inv.items as { recipeId?: number; recipe_id?: number; qty: number }[]).map((it, i) => {
-                                const r = recipes.find(x => x.id === (it.recipeId || it.recipe_id))
-                                return (
-                                  <tr key={i}>
-                                    <td className="px-2 py-1.5 border-b border-[#f0e8d8]">{i + 1}</td>
-                                    <td className="px-2 py-1.5 border-b border-[#f0e8d8]">{r ? r.name : '?'}</td>
-                                    <td className="px-2 py-1.5 border-b border-[#f0e8d8] text-right">{it.qty} chiếc</td>
-                                  </tr>
-                                )
-                              })
-                          }
+                          {(inv.items as { name: string; amount: number; unit: string }[]).map((it, i) => (
+                            <tr key={i}>
+                              <td className="px-2 py-1.5 border-b border-[#f0e8d8]">{i + 1}</td>
+                              <td className="px-2 py-1.5 border-b border-[#f0e8d8]">{it.name}</td>
+                              <td className="px-2 py-1.5 border-b border-[#f0e8d8] text-right">{fmtNum(it.amount)} {it.unit}</td>
+                            </tr>
+                          ))}
                         </tbody>
                       </table>
                     </div>
