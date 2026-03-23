@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import { useApp } from '@/contexts/AppContext'
 import { Recipe, RecipeIngredient } from '@/types'
 import { UNITS } from '@/lib/constants'
-import { todayStr } from '@/lib/utils'
+import ProductPicker from '@/components/shared/ProductPicker'
 
 export default function RecipesPage() {
   const { sb, user, profile, recipes, setRecipes, currentRecipeId, setCurrentRecipeId, allProducts, toast, startLoading, stopLoading, writeAudit } = useApp()
@@ -16,8 +16,6 @@ export default function RecipesPage() {
   const [showNewForm, setShowNewForm] = useState(false)
   const [newName, setNewName] = useState('')
   const [newYield, setNewYield] = useState(1)
-
-  const activeProductNames = allProducts.filter(p => p.is_active).map(p => p.name)
 
   const currentRecipe = recipes.find(r => r.id === currentRecipeId) || null
 
@@ -34,16 +32,6 @@ export default function RecipesPage() {
     const updated = editIngredients.map((ing, i) => {
       if (i !== idx) return ing
       return { ...ing, [field]: val }
-    })
-    setEditIngredients(updated)
-    setDirty(true)
-  }
-
-  const handleIngNameChange = (idx: number, val: string) => {
-    const match = allProducts.find(p => p.name.toLowerCase() === val.toLowerCase() && p.is_active)
-    const updated = editIngredients.map((ing, i) => {
-      if (i !== idx) return ing
-      return { ...ing, name: val, unit: match ? match.unit : ing.unit }
     })
     setEditIngredients(updated)
     setDirty(true)
@@ -223,12 +211,7 @@ export default function RecipesPage() {
               {/* Ingredients table */}
               <div className="mb-3">
                 <h4 className="text-xs font-semibold text-[#8b5e3c] uppercase tracking-wider mb-2">Nguyên liệu</h4>
-                {/* Datalist for autocomplete */}
-                <datalist id="product-names">
-                  {activeProductNames.map(n => <option key={n} value={n} />)}
-                </datalist>
-
-                <div className="overflow-x-auto rounded-lg border border-[#f0e8d8]">
+                <div className="overflow-visible rounded-lg border border-[#f0e8d8]">
                   <table className="w-full border-collapse">
                     <thead>
                       <tr>
@@ -242,12 +225,14 @@ export default function RecipesPage() {
                       {editIngredients.map((ing, idx) => (
                         <tr key={idx}>
                           <td className="px-3 py-2.5 border-b border-[#f0e8d8]">
-                            <input
-                              list="product-names"
+                            <ProductPicker
+                              products={allProducts.filter(p => p.is_active)}
                               value={ing.name}
-                              onChange={e => handleIngNameChange(idx, e.target.value)}
-                              placeholder="Tên nguyên liệu"
-                              className="w-full px-2 py-1 border-[1.5px] border-[#f5e6cc] rounded text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors"
+                              onChange={(name, unit) => {
+                                const updated = editIngredients.map((x, i) => i === idx ? { ...x, name, unit } : x)
+                                setEditIngredients(updated)
+                                setDirty(true)
+                              }}
                             />
                           </td>
                           <td className="px-3 py-2.5 border-b border-[#f0e8d8]">

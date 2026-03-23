@@ -106,16 +106,16 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     } catch { /* silent */ }
   }, [sb])
 
-  const logout = useCallback(async () => {
-    // Xóa session local trước, không cần chờ server
-    try { await sb.auth.signOut({ scope: 'local' }) } catch {}
-    // Xóa thủ công localStorage phòng signOut không sạch
+  const logout = useCallback(() => {
+    // Xóa toàn bộ session trong localStorage ngay lập tức (không await)
     try {
       Object.keys(localStorage).forEach(k => {
         if (k.startsWith('sb-')) localStorage.removeItem(k)
       })
     } catch {}
-    // Reload trang → sẽ không còn session → hiện màn login
+    // Gọi signOut không await — kệ nó chạy background
+    sb.auth.signOut().catch(() => {})
+    // Reload ngay để về màn login
     window.location.reload()
   }, [sb])
 

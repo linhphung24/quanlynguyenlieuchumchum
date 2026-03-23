@@ -175,7 +175,7 @@ export default function InvoicesPage() {
         </div>
 
         {/* Items */}
-        <div className="overflow-x-auto rounded-lg border border-[#f0e8d8] mb-3">
+        <div className="overflow-visible rounded-lg border border-[#f0e8d8] mb-3">
           <table className="w-full border-collapse">
             <thead>
               <tr>
