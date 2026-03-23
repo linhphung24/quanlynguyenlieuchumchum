@@ -22,7 +22,7 @@ interface AppContextValue {
   startLoading: () => void
   stopLoading: () => void
   writeAudit: (action: string, entity: string, entityId?: string | null, detail?: string | null) => Promise<void>
-  logout: () => Promise<void>
+  logout: () => void
   initialized: boolean
 }
 
@@ -54,27 +54,29 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const stopLoading = useCallback(() => setLoading(false), [])
 
   const loadAppData = useCallback(async (userId: string) => {
-    const [profileRes, recipesRes, productsRes, profilesRes] = await Promise.allSettled([
-      sb.from('profiles').select('*').eq('id', userId).single(),
-      sb.from('recipes').select('*').order('id'),
-      sb.from('products').select('*').order('name'),
-      sb.from('profiles').select('*').order('created_at'),
-    ])
+    try {
+      const { data: profileData } = await sb.from('profiles').select('*').eq('id', userId).single()
+      if (profileData) setProfile(profileData as unknown as Profile)
+    } catch {}
 
-    if (profileRes.status === 'fulfilled' && profileRes.value.data)
-      setProfile(profileRes.value.data as Profile)
+    try {
+      const { data: recipesData } = await sb.from('recipes').select('*').order('id')
+      if (recipesData) {
+        const mapped = recipesData as unknown as Recipe[]
+        setRecipes(mapped)
+        setCurrentRecipeId((prev) => prev ?? (mapped[0]?.id ?? null))
+      }
+    } catch {}
 
-    if (recipesRes.status === 'fulfilled' && recipesRes.value.data) {
-      const mapped = recipesRes.value.data as Recipe[]
-      setRecipes(mapped)
-      setCurrentRecipeId((prev) => prev ?? (mapped[0]?.id ?? null))
-    }
+    try {
+      const { data: productsData } = await sb.from('products').select('*').order('name')
+      if (productsData) setAllProducts(productsData as unknown as Product[])
+    } catch {}
 
-    if (productsRes.status === 'fulfilled' && productsRes.value.data)
-      setAllProducts(productsRes.value.data as Product[])
-
-    if (profilesRes.status === 'fulfilled' && profilesRes.value.data)
-      setAllProfiles(profilesRes.value.data as Profile[])
+    try {
+      const { data: profilesData } = await sb.from('profiles').select('*').order('created_at')
+      if (profilesData) setAllProfiles(profilesData as unknown as Profile[])
+    } catch {}
   }, [sb])
 
   const clearState = useCallback(() => {
@@ -95,10 +97,10 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     try {
       const { data: { user: u } } = await sb.auth.getUser()
       if (!u) return
-      const { data: prof } = await sb.from('profiles').select('full_name').eq('id', u.id).single()
-      await sb.from('audit_log').insert({
+      const { data: prof } = await (sb as any).from('profiles').select('full_name').eq('id', u.id).single()
+      await (sb as any).from('audit_log').insert({
         user_id: u.id,
-        user_name: (prof as any)?.full_name ?? '',
+        user_name: prof?.full_name ?? '',
         action, entity,
         entity_id: entityId ?? null,
         detail: detail ?? null,
