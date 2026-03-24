@@ -104,7 +104,7 @@ export default function InvoicesPage() {
   const addItem = () => setItems([...items, { name: '', amount: 0, unit: UNITS[0], price: 0, mfg_date: '', exp_date: '', recipeId: 0, qty: 0 }])
   const removeItem = (idx: number) => setItems(items.filter((_, i) => i !== idx))
   const updateItem = (idx: number, field: string, val: unknown) => {
-    setItems(items.map((it, i) => i === idx ? { ...it, [field]: val } : it))
+    setItems(prev => prev.map((it, i) => i === idx ? { ...it, [field]: val } : it))
   }
 
   const handleSave = async () => {
