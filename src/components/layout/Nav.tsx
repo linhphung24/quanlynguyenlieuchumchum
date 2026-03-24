@@ -8,21 +8,23 @@ interface NavProps {
   onChange: (page: PageName) => void
 }
 
-const NAV_ITEMS: { id: PageName; label: string; icon: string; adminOnly?: boolean }[] = [
+const NAV_ITEMS: { id: PageName; label: string; icon: string; minRole?: 'manager' | 'admin' }[] = [
   { id: 'recipes', label: 'Công thức', icon: '📖' },
   { id: 'calc', label: 'Tính nhanh', icon: '🧮' },
   { id: 'log', label: 'Nhật ký', icon: '📅' },
   { id: 'invoices', label: 'Hoá đơn', icon: '🧾' },
   { id: 'summary', label: 'Tổng kết', icon: '📊' },
   { id: 'products', label: 'Sản phẩm', icon: '📦' },
-  { id: 'admin', label: 'Quản trị', icon: '⚙️', adminOnly: true },
+  { id: 'users', label: 'Người dùng', icon: '👥', minRole: 'manager' },
+  { id: 'admin', label: 'Quản trị', icon: '⚙️', minRole: 'admin' },
 ]
 
 export default function Nav({ current, onChange }: NavProps) {
   const { profile } = useApp()
 
   const items = NAV_ITEMS.filter((item) => {
-    if (item.adminOnly && profile?.role !== 'admin') return false
+    if (item.minRole === 'admin' && profile?.role !== 'admin') return false
+    if (item.minRole === 'manager' && profile?.role !== 'admin' && profile?.role !== 'manager') return false
     return true
   })
 

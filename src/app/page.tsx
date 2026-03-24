@@ -14,6 +14,7 @@ import InvoicesPage from '@/components/invoices/InvoicesPage'
 import SummaryPage from '@/components/summary/SummaryPage'
 import ProductsPage from '@/components/products/ProductsPage'
 import AdminPage from '@/components/admin/AdminPage'
+import UsersPage from '@/components/users/UsersPage'
 import { PageName } from '@/types'
 
 export default function Home() {
@@ -49,6 +50,7 @@ export default function Home() {
             {currentPage === 'invoices' && <InvoicesPage />}
             {currentPage === 'summary' && <SummaryPage />}
             {currentPage === 'products' && <ProductsPage />}
+            {currentPage === 'users' && <UsersPage />}
             {currentPage === 'admin' && <AdminPage />}
           </main>
         </div>
