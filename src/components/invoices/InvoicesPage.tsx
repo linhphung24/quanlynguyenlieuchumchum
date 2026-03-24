@@ -72,7 +72,7 @@ interface FormItem {
 }
 
 export default function InvoicesPage() {
-  const { sb, user, recipes, allProducts, toast, startLoading, stopLoading, writeAudit } = useApp()
+  const { sb, user, recipes, allProducts, setAllProducts, toast, startLoading, stopLoading, writeAudit } = useApp()
 
   const [invType, setInvType] = useState<'in' | 'out'>('in')
   const [invDate, setInvDate] = useState(todayStr())
@@ -100,6 +100,25 @@ export default function InvoicesPage() {
       else next.add(id)
       return next
     })
+  }
+
+  // multiplier: +1 khi lưu, -1 khi xóa (đảo ngược)
+  const updateStock = async (invItems: { name: string; amount: number }[], type: 'in' | 'out', multiplier: 1 | -1) => {
+    const sign = (type === 'in' ? 1 : -1) * multiplier
+    const deltas = new Map<number, number>()
+    for (const item of invItems) {
+      if (!item.name || !item.amount) continue
+      const product = allProducts.find(p => p.name.trim().toLowerCase() === item.name.trim().toLowerCase())
+      if (!product) continue
+      deltas.set(product.id, (deltas.get(product.id) ?? 0) + item.amount * sign)
+    }
+    if (deltas.size === 0) return
+    await Promise.all(Array.from(deltas.entries()).map(([id, delta]) => {
+      const product = allProducts.find(p => p.id === id)!
+      return sb.from('products').update({ stock_qty: (product.stock_qty || 0) + delta }).eq('id', id)
+    }))
+    const { data } = await sb.from('products').select('*').order('name')
+    if (data) setAllProducts(data as unknown as typeof allProducts)
   }
 
   const addItem = () => setItems([...items, { name: '', amount: 0, unit: UNITS[0], price: 0, mfg_date: '', exp_date: '', recipeId: 0, qty: 0 }])
@@ -137,6 +156,7 @@ export default function InvoicesPage() {
 
     if (!error && data) {
       await writeAudit('create', 'invoices', String(data.id), `Tạo hoá đơn ${invType === 'in' ? 'nhập' : 'xuất'}: ${code}`)
+      await updateStock(invItems as { name: string; amount: number }[], invType, 1)
       toast('Đã lưu hoá đơn')
       setInvoices(prev => [data as Invoice, ...prev])
       setCode(genCode())
@@ -154,6 +174,8 @@ export default function InvoicesPage() {
     startLoading()
     const { error } = await sb.from('invoices').delete().eq('id', inv.id)
     if (!error) {
+      const castItems = (inv.items as CastItem[]).map(it => ({ name: it.name, amount: it.amount || 0 }))
+      await updateStock(castItems, inv.type, -1)
       await writeAudit('delete', 'invoices', String(inv.id), `Xoá hoá đơn: ${inv.code}`)
       toast('Đã xoá hoá đơn')
       setInvoices(prev => prev.filter(i => i.id !== inv.id))
