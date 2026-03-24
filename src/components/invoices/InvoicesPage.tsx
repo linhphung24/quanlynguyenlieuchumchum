@@ -6,6 +6,7 @@ import { Invoice, InvoiceItem } from '@/types'
 import { todayStr, fmtDate, fmtTs, fmtNum, fmtPrice, genCode } from '@/lib/utils'
 import { UNITS } from '@/lib/constants'
 import ProductPicker from '@/components/shared/ProductPicker'
+import DateInput from '@/components/shared/DateInput'
 
 function calcTotal(items: { amount: number; price?: number }[]) {
   return items.reduce((sum, it) => sum + (it.amount || 0) * (it.price || 0), 0)
@@ -189,7 +190,7 @@ export default function InvoicesPage() {
         <div className="grid grid-cols-2 gap-3 mb-3">
           <div>
             <label className="block text-xs font-medium text-[#8b5e3c] mb-1">Ngày</label>
-            <input type="date" value={invDate} onChange={e => setInvDate(e.target.value)}
+            <DateInput value={invDate} onChange={setInvDate}
               className="w-full px-3 py-2.5 border-[1.5px] border-[#f5e6cc] rounded-lg text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors" />
           </div>
           <div>
@@ -250,13 +251,13 @@ export default function InvoicesPage() {
                       className="w-full px-2 py-1 border-[1.5px] border-[#f5e6cc] rounded text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors" />
                   </td>
                   <td className="px-3 py-2.5 border-b border-[#f0e8d8]">
-                    <input type="date" value={it.mfg_date || ''}
-                      onChange={e => updateItem(idx, 'mfg_date', e.target.value)}
+                    <DateInput value={it.mfg_date || ''}
+                      onChange={v => updateItem(idx, 'mfg_date', v)}
                       className="w-full px-2 py-1 border-[1.5px] border-[#f5e6cc] rounded text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors" />
                   </td>
                   <td className="px-3 py-2.5 border-b border-[#f0e8d8]">
-                    <input type="date" value={it.exp_date || ''}
-                      onChange={e => updateItem(idx, 'exp_date', e.target.value)}
+                    <DateInput value={it.exp_date || ''}
+                      onChange={v => updateItem(idx, 'exp_date', v)}
                       className="w-full px-2 py-1 border-[1.5px] border-[#f5e6cc] rounded text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors" />
                   </td>
                   <td className="px-3 py-2.5 border-b border-[#f0e8d8] text-center">
