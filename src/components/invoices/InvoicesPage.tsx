@@ -1,12 +1,13 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useApp } from '@/contexts/AppContext'
 import { Invoice, InvoiceItem } from '@/types'
 import { todayStr, fmtDate, fmtTs, fmtNum, fmtPrice, genCode } from '@/lib/utils'
 import { UNITS } from '@/lib/constants'
 import ProductPicker from '@/components/shared/ProductPicker'
 import DateInput from '@/components/shared/DateInput'
+import TextPicker from '@/components/shared/TextPicker'
 
 function calcTotal(items: { amount: number; price?: number }[]) {
   return items.reduce((sum, it) => sum + (it.amount || 0) * (it.price || 0), 0)
@@ -92,6 +93,14 @@ export default function InvoicesPage() {
     const { data } = await sb.from('invoices').select('*').order('inv_date', { ascending: false }).order('id', { ascending: false })
     if (data) setInvoices(data as Invoice[])
   }
+
+  // Gợi ý NCC/KH từ hóa đơn cũ, lọc theo loại hóa đơn đang chọn
+  const partnerSuggestions = useMemo(() => {
+    const names = invoices
+      .filter(inv => inv.type === invType && inv.partner?.trim())
+      .map(inv => inv.partner.trim())
+    return [...new Set(names)].sort((a, b) => a.localeCompare(b, 'vi'))
+  }, [invoices, invType])
 
   const toggleInv = (id: number) => {
     setOpenInvs(prev => {
@@ -222,8 +231,12 @@ export default function InvoicesPage() {
           </div>
           <div>
             <label className="block text-xs font-medium text-[#8b5e3c] mb-1">{invType === 'in' ? 'Nhà cung cấp' : 'Khách hàng'}</label>
-            <input value={partner} onChange={e => setPartner(e.target.value)} placeholder={invType === 'in' ? 'Tên NCC...' : 'Tên khách...'}
-              className="w-full px-3 py-2.5 border-[1.5px] border-[#f5e6cc] rounded-lg text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors" />
+            <TextPicker
+              value={partner}
+              onChange={setPartner}
+              suggestions={partnerSuggestions}
+              placeholder={invType === 'in' ? '🔍 Tên NCC...' : '🔍 Tên khách...'}
+            />
           </div>
           <div>
             <label className="block text-xs font-medium text-[#8b5e3c] mb-1">Ghi chú</label>
