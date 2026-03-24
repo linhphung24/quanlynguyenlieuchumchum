@@ -20,10 +20,8 @@ function doPrint(inv: Invoice, recipes: { id: number; name: string }[]) {
   const rows = castItems
     .map((it, i) => {
       const subtotal = (it.amount || 0) * (it.price || 0)
-      const datesCols = isIn
-        ? `<td style="padding:6px 8px;border-bottom:1px solid #eee">${it.mfg_date ? fmtDate(it.mfg_date) : '—'}</td>
+      const datesCols = `<td style="padding:6px 8px;border-bottom:1px solid #eee">${it.mfg_date ? fmtDate(it.mfg_date) : '—'}</td>
            <td style="padding:6px 8px;border-bottom:1px solid #eee">${it.exp_date ? fmtDate(it.exp_date) : '—'}</td>`
-        : ''
       return `<tr>
         <td style="padding:6px 8px;border-bottom:1px solid #eee">${i + 1}</td>
         <td style="padding:6px 8px;border-bottom:1px solid #eee">${it.name}</td>
@@ -35,10 +33,7 @@ function doPrint(inv: Invoice, recipes: { id: number; name: string }[]) {
     })
     .join('')
 
-  const dateHeader = isIn
-    ? `<th>NSX</th><th>HSD</th>`
-    : ''
-  const totalColspan = isIn ? 5 : 5
+  const dateHeader = `<th>NSX</th><th>HSD</th>`
 
   const w = window.open('', '_blank')!
   w.document.write(`<html>
@@ -121,8 +116,8 @@ export default function InvoicesPage() {
         amount: it.amount || it.qty,
         unit: it.unit,
         ...(it.price > 0 ? { price: it.price } : {}),
-        ...(invType === 'in' && it.mfg_date ? { mfg_date: it.mfg_date } : {}),
-        ...(invType === 'in' && it.exp_date ? { exp_date: it.exp_date } : {}),
+        ...(it.mfg_date ? { mfg_date: it.mfg_date } : {}),
+        ...(it.exp_date ? { exp_date: it.exp_date } : {}),
       }))
 
     if (invItems.length === 0) { toast('Thêm ít nhất một mặt hàng hợp lệ', 'error'); return }
@@ -216,17 +211,15 @@ export default function InvoicesPage() {
 
         {/* Items */}
         <div className="overflow-x-auto rounded-lg border border-[#f0e8d8] mb-3">
-          <table className="border-collapse" style={{ minWidth: invType === 'in' ? '700px' : '480px', width: '100%' }}>
+          <table className="border-collapse" style={{ minWidth: '820px', width: '100%' }}>
             <thead>
               <tr>
-                <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc]">{invType === 'in' ? 'Nguyên liệu' : 'Sản phẩm'}</th>
+                <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc]" style={{ minWidth: '200px' }}>{invType === 'in' ? 'Nguyên liệu' : 'Sản phẩm'}</th>
                 <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-20">Số lượng</th>
                 <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-24">ĐVT</th>
                 <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-28">{invType === 'in' ? 'Giá nhập' : 'Giá bán'}</th>
-                {invType === 'in' && <>
-                  <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-32">NSX</th>
-                  <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-32">HSD</th>
-                </>}
+                <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-32">NSX</th>
+                <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-32">HSD</th>
                 <th className="bg-[#f5e6cc] w-8"></th>
               </tr>
             </thead>
@@ -256,18 +249,16 @@ export default function InvoicesPage() {
                       onChange={e => updateItem(idx, 'price', parseFloat(e.target.value) || 0)}
                       className="w-full px-2 py-1 border-[1.5px] border-[#f5e6cc] rounded text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors" />
                   </td>
-                  {invType === 'in' && <>
-                    <td className="px-3 py-2.5 border-b border-[#f0e8d8]">
-                      <input type="date" value={it.mfg_date || ''}
-                        onChange={e => updateItem(idx, 'mfg_date', e.target.value)}
-                        className="w-full px-2 py-1 border-[1.5px] border-[#f5e6cc] rounded text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors" />
-                    </td>
-                    <td className="px-3 py-2.5 border-b border-[#f0e8d8]">
-                      <input type="date" value={it.exp_date || ''}
-                        onChange={e => updateItem(idx, 'exp_date', e.target.value)}
-                        className="w-full px-2 py-1 border-[1.5px] border-[#f5e6cc] rounded text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors" />
-                    </td>
-                  </>}
+                  <td className="px-3 py-2.5 border-b border-[#f0e8d8]">
+                    <input type="date" value={it.mfg_date || ''}
+                      onChange={e => updateItem(idx, 'mfg_date', e.target.value)}
+                      className="w-full px-2 py-1 border-[1.5px] border-[#f5e6cc] rounded text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors" />
+                  </td>
+                  <td className="px-3 py-2.5 border-b border-[#f0e8d8]">
+                    <input type="date" value={it.exp_date || ''}
+                      onChange={e => updateItem(idx, 'exp_date', e.target.value)}
+                      className="w-full px-2 py-1 border-[1.5px] border-[#f5e6cc] rounded text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors" />
+                  </td>
                   <td className="px-3 py-2.5 border-b border-[#f0e8d8] text-center">
                     <button onClick={() => removeItem(idx)} className="bg-transparent border-none text-[#e0a090] text-base cursor-pointer px-1.5 py-0.5 rounded hover:bg-[#fdecea] hover:text-[#c0392b] transition-all">×</button>
                   </td>
@@ -334,10 +325,8 @@ export default function InvoicesPage() {
                               <th className="text-right text-[10px] font-medium uppercase text-[#8b5e3c] px-2 py-1.5 bg-[#f5e6cc]">Số lượng</th>
                               <th className="text-right text-[10px] font-medium uppercase text-[#8b5e3c] px-2 py-1.5 bg-[#f5e6cc]">{inv.type === 'in' ? 'Giá nhập' : 'Giá bán'}</th>
                               <th className="text-right text-[10px] font-medium uppercase text-[#8b5e3c] px-2 py-1.5 bg-[#f5e6cc]">Thành tiền</th>
-                              {inv.type === 'in' && <>
-                                <th className="text-left text-[10px] font-medium uppercase text-[#8b5e3c] px-2 py-1.5 bg-[#f5e6cc]">NSX</th>
-                                <th className="text-left text-[10px] font-medium uppercase text-[#8b5e3c] px-2 py-1.5 bg-[#f5e6cc]">HSD</th>
-                              </>}
+                              <th className="text-left text-[10px] font-medium uppercase text-[#8b5e3c] px-2 py-1.5 bg-[#f5e6cc]">NSX</th>
+                              <th className="text-left text-[10px] font-medium uppercase text-[#8b5e3c] px-2 py-1.5 bg-[#f5e6cc]">HSD</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -350,19 +339,17 @@ export default function InvoicesPage() {
                                 <td className="px-2 py-1.5 border-b border-[#f0e8d8] text-right font-medium text-[#3d1f0a]">
                                   {it.price ? fmtPrice((it.amount || 0) * it.price) : '—'}
                                 </td>
-                                {inv.type === 'in' && <>
-                                  <td className="px-2 py-1.5 border-b border-[#f0e8d8] whitespace-nowrap">{it.mfg_date ? fmtDate(it.mfg_date) : '—'}</td>
-                                  <td className={`px-2 py-1.5 border-b border-[#f0e8d8] whitespace-nowrap ${it.exp_date && new Date(it.exp_date) < new Date() ? 'text-[#d94f3d] font-semibold' : ''}`}>
-                                    {it.exp_date ? fmtDate(it.exp_date) : '—'}
-                                  </td>
-                                </>}
+                                <td className="px-2 py-1.5 border-b border-[#f0e8d8] whitespace-nowrap">{it.mfg_date ? fmtDate(it.mfg_date) : '—'}</td>
+                                <td className={`px-2 py-1.5 border-b border-[#f0e8d8] whitespace-nowrap ${it.exp_date && new Date(it.exp_date) < new Date() ? 'text-[#d94f3d] font-semibold' : ''}`}>
+                                  {it.exp_date ? fmtDate(it.exp_date) : '—'}
+                                </td>
                               </tr>
                             ))}
                           </tbody>
                           {invTotal > 0 && (
                             <tfoot>
                               <tr>
-                                <td colSpan={inv.type === 'in' ? 6 : 4} className="px-2 py-1.5 text-right text-xs font-semibold text-[#3d1f0a]">Tổng cộng</td>
+                                <td colSpan={6} className="px-2 py-1.5 text-right text-xs font-semibold text-[#3d1f0a]">Tổng cộng</td>
                                 <td className="px-2 py-1.5 text-right text-xs font-bold text-[#c8773a]">{fmtPrice(invTotal)}</td>
                               </tr>
                             </tfoot>
