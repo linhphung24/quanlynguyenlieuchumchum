@@ -37,6 +37,8 @@ export interface InvoiceItemIn {
   amount: number
   unit: string
   price?: number
+  mfg_date?: string
+  exp_date?: string
 }
 
 export interface InvoiceItemOut {

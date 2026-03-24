@@ -11,22 +11,34 @@ function calcTotal(items: { amount: number; price?: number }[]) {
   return items.reduce((sum, it) => sum + (it.amount || 0) * (it.price || 0), 0)
 }
 
+type CastItem = { name: string; amount: number; unit: string; price?: number; mfg_date?: string; exp_date?: string }
+
 function doPrint(inv: Invoice, recipes: { id: number; name: string }[]) {
   const isIn = inv.type === 'in'
-  const castItems = inv.items as { name: string; amount: number; unit: string; price?: number }[]
+  const castItems = inv.items as CastItem[]
   const total = calcTotal(castItems)
   const rows = castItems
     .map((it, i) => {
       const subtotal = (it.amount || 0) * (it.price || 0)
+      const datesCols = isIn
+        ? `<td style="padding:6px 8px;border-bottom:1px solid #eee">${it.mfg_date ? fmtDate(it.mfg_date) : '—'}</td>
+           <td style="padding:6px 8px;border-bottom:1px solid #eee">${it.exp_date ? fmtDate(it.exp_date) : '—'}</td>`
+        : ''
       return `<tr>
         <td style="padding:6px 8px;border-bottom:1px solid #eee">${i + 1}</td>
         <td style="padding:6px 8px;border-bottom:1px solid #eee">${it.name}</td>
         <td style="text-align:right;padding:6px 8px;border-bottom:1px solid #eee">${fmtNum(it.amount)} ${it.unit}</td>
         <td style="text-align:right;padding:6px 8px;border-bottom:1px solid #eee">${it.price ? fmtPrice(it.price) : '—'}</td>
         <td style="text-align:right;padding:6px 8px;border-bottom:1px solid #eee">${subtotal ? fmtPrice(subtotal) : '—'}</td>
+        ${datesCols}
       </tr>`
     })
     .join('')
+
+  const dateHeader = isIn
+    ? `<th>NSX</th><th>HSD</th>`
+    : ''
+  const totalColspan = isIn ? 5 : 5
 
   const w = window.open('', '_blank')!
   w.document.write(`<html>
@@ -42,7 +54,7 @@ function doPrint(inv: Invoice, recipes: { id: number; name: string }[]) {
 </div>
 ${inv.note ? `<div style="font-size:12px;color:#888;margin-bottom:12px">Ghi chú: ${inv.note}</div>` : ''}
 <table>
-  <thead><tr><th>#</th><th>${isIn ? 'Nguyên liệu' : 'Sản phẩm'}</th><th style="text-align:right">Số lượng</th><th style="text-align:right">${isIn ? 'Giá nhập' : 'Giá bán'}</th><th style="text-align:right">Thành tiền</th></tr></thead>
+  <thead><tr><th>#</th><th>${isIn ? 'Nguyên liệu' : 'Sản phẩm'}</th><th style="text-align:right">Số lượng</th><th style="text-align:right">${isIn ? 'Giá nhập' : 'Giá bán'}</th><th style="text-align:right">Thành tiền</th>${dateHeader}</tr></thead>
   <tbody>${rows}</tbody>
 </table>
 ${total ? `<div class="total">Tổng cộng: ${fmtPrice(total)}</div>` : ''}
@@ -57,6 +69,8 @@ interface FormItem {
   amount: number
   unit: string
   price: number
+  mfg_date: string
+  exp_date: string
   recipeId: number
   qty: number
 }
@@ -69,7 +83,7 @@ export default function InvoicesPage() {
   const [code, setCode] = useState(genCode())
   const [partner, setPartner] = useState('')
   const [note, setNote] = useState('')
-  const [items, setItems] = useState<FormItem[]>([{ name: '', amount: 0, unit: UNITS[0], price: 0, recipeId: 0, qty: 0 }])
+  const [items, setItems] = useState<FormItem[]>([{ name: '', amount: 0, unit: UNITS[0], price: 0, mfg_date: '', exp_date: '', recipeId: 0, qty: 0 }])
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [openInvs, setOpenInvs] = useState<Set<number>>(new Set())
 
@@ -92,7 +106,7 @@ export default function InvoicesPage() {
     })
   }
 
-  const addItem = () => setItems([...items, { name: '', amount: 0, unit: UNITS[0], price: 0, recipeId: 0, qty: 0 }])
+  const addItem = () => setItems([...items, { name: '', amount: 0, unit: UNITS[0], price: 0, mfg_date: '', exp_date: '', recipeId: 0, qty: 0 }])
   const removeItem = (idx: number) => setItems(items.filter((_, i) => i !== idx))
   const updateItem = (idx: number, field: string, val: unknown) => {
     setItems(items.map((it, i) => i === idx ? { ...it, [field]: val } : it))
@@ -107,6 +121,8 @@ export default function InvoicesPage() {
         amount: it.amount || it.qty,
         unit: it.unit,
         ...(it.price > 0 ? { price: it.price } : {}),
+        ...(invType === 'in' && it.mfg_date ? { mfg_date: it.mfg_date } : {}),
+        ...(invType === 'in' && it.exp_date ? { exp_date: it.exp_date } : {}),
       }))
 
     if (invItems.length === 0) { toast('Thêm ít nhất một mặt hàng hợp lệ', 'error'); return }
@@ -130,7 +146,7 @@ export default function InvoicesPage() {
       setCode(genCode())
       setPartner('')
       setNote('')
-      setItems([{ name: '', amount: 0, unit: UNITS[0], price: 0, recipeId: 0, qty: 0 }])
+      setItems([{ name: '', amount: 0, unit: UNITS[0], price: 0, mfg_date: '', exp_date: '', recipeId: 0, qty: 0 }])
     } else if (error) {
       toast('Lỗi lưu: ' + error.message, 'error')
     }
@@ -199,14 +215,18 @@ export default function InvoicesPage() {
         </div>
 
         {/* Items */}
-        <div className="overflow-visible rounded-lg border border-[#f0e8d8] mb-3">
-          <table className="w-full border-collapse">
+        <div className="overflow-x-auto rounded-lg border border-[#f0e8d8] mb-3">
+          <table className="border-collapse" style={{ minWidth: invType === 'in' ? '700px' : '480px', width: '100%' }}>
             <thead>
               <tr>
                 <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc]">{invType === 'in' ? 'Nguyên liệu' : 'Sản phẩm'}</th>
                 <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-20">Số lượng</th>
-                <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-28">ĐVT</th>
+                <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-24">ĐVT</th>
                 <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-28">{invType === 'in' ? 'Giá nhập' : 'Giá bán'}</th>
+                {invType === 'in' && <>
+                  <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-32">NSX</th>
+                  <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-32">HSD</th>
+                </>}
                 <th className="bg-[#f5e6cc] w-8"></th>
               </tr>
             </thead>
@@ -217,7 +237,7 @@ export default function InvoicesPage() {
                     <ProductPicker
                       products={allProducts}
                       value={it.name}
-                      onChange={(name, unit) => { updateItem(idx, 'name', name); updateItem(idx, 'unit', unit) }}
+                      onChange={(name, unit) => { updateItem(idx, 'name', name); if (unit) updateItem(idx, 'unit', unit) }}
                     />
                   </td>
                   <td className="px-3 py-2.5 border-b border-[#f0e8d8]">
@@ -236,6 +256,18 @@ export default function InvoicesPage() {
                       onChange={e => updateItem(idx, 'price', parseFloat(e.target.value) || 0)}
                       className="w-full px-2 py-1 border-[1.5px] border-[#f5e6cc] rounded text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors" />
                   </td>
+                  {invType === 'in' && <>
+                    <td className="px-3 py-2.5 border-b border-[#f0e8d8]">
+                      <input type="date" value={it.mfg_date || ''}
+                        onChange={e => updateItem(idx, 'mfg_date', e.target.value)}
+                        className="w-full px-2 py-1 border-[1.5px] border-[#f5e6cc] rounded text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors" />
+                    </td>
+                    <td className="px-3 py-2.5 border-b border-[#f0e8d8]">
+                      <input type="date" value={it.exp_date || ''}
+                        onChange={e => updateItem(idx, 'exp_date', e.target.value)}
+                        className="w-full px-2 py-1 border-[1.5px] border-[#f5e6cc] rounded text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors" />
+                    </td>
+                  </>}
                   <td className="px-3 py-2.5 border-b border-[#f0e8d8] text-center">
                     <button onClick={() => removeItem(idx)} className="bg-transparent border-none text-[#e0a090] text-base cursor-pointer px-1.5 py-0.5 rounded hover:bg-[#fdecea] hover:text-[#c0392b] transition-all">×</button>
                   </td>
@@ -270,7 +302,7 @@ export default function InvoicesPage() {
         ) : (
           <div className="space-y-2">
             {invoices.map(inv => {
-              const castItems = inv.items as { name: string; amount: number; unit: string; price?: number }[]
+              const castItems = inv.items as CastItem[]
               const invTotal = calcTotal(castItems)
               return (
                 <div key={inv.id} className="border border-[#f0e8d8] rounded-xl overflow-hidden">
@@ -302,6 +334,10 @@ export default function InvoicesPage() {
                               <th className="text-right text-[10px] font-medium uppercase text-[#8b5e3c] px-2 py-1.5 bg-[#f5e6cc]">Số lượng</th>
                               <th className="text-right text-[10px] font-medium uppercase text-[#8b5e3c] px-2 py-1.5 bg-[#f5e6cc]">{inv.type === 'in' ? 'Giá nhập' : 'Giá bán'}</th>
                               <th className="text-right text-[10px] font-medium uppercase text-[#8b5e3c] px-2 py-1.5 bg-[#f5e6cc]">Thành tiền</th>
+                              {inv.type === 'in' && <>
+                                <th className="text-left text-[10px] font-medium uppercase text-[#8b5e3c] px-2 py-1.5 bg-[#f5e6cc]">NSX</th>
+                                <th className="text-left text-[10px] font-medium uppercase text-[#8b5e3c] px-2 py-1.5 bg-[#f5e6cc]">HSD</th>
+                              </>}
                             </tr>
                           </thead>
                           <tbody>
@@ -314,13 +350,19 @@ export default function InvoicesPage() {
                                 <td className="px-2 py-1.5 border-b border-[#f0e8d8] text-right font-medium text-[#3d1f0a]">
                                   {it.price ? fmtPrice((it.amount || 0) * it.price) : '—'}
                                 </td>
+                                {inv.type === 'in' && <>
+                                  <td className="px-2 py-1.5 border-b border-[#f0e8d8] whitespace-nowrap">{it.mfg_date ? fmtDate(it.mfg_date) : '—'}</td>
+                                  <td className={`px-2 py-1.5 border-b border-[#f0e8d8] whitespace-nowrap ${it.exp_date && new Date(it.exp_date) < new Date() ? 'text-[#d94f3d] font-semibold' : ''}`}>
+                                    {it.exp_date ? fmtDate(it.exp_date) : '—'}
+                                  </td>
+                                </>}
                               </tr>
                             ))}
                           </tbody>
                           {invTotal > 0 && (
                             <tfoot>
                               <tr>
-                                <td colSpan={4} className="px-2 py-1.5 text-right text-xs font-semibold text-[#3d1f0a]">Tổng cộng</td>
+                                <td colSpan={inv.type === 'in' ? 6 : 4} className="px-2 py-1.5 text-right text-xs font-semibold text-[#3d1f0a]">Tổng cộng</td>
                                 <td className="px-2 py-1.5 text-right text-xs font-bold text-[#c8773a]">{fmtPrice(invTotal)}</td>
                               </tr>
                             </tfoot>

@@ -229,7 +229,7 @@ export default function RecipesPage() {
                               products={allProducts.filter(p => p.is_active)}
                               value={ing.name}
                               onChange={(name, unit) => {
-                                const updated = editIngredients.map((x, i) => i === idx ? { ...x, name, unit } : x)
+                                const updated = editIngredients.map((x, i) => i === idx ? { ...x, name, ...(unit ? { unit } : {}) } : x)
                                 setEditIngredients(updated)
                                 setDirty(true)
                               }}

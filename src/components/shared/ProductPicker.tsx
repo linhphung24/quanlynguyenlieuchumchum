@@ -49,11 +49,11 @@ export default function ProductPicker({
   }
 
   const handleInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setQuery(e.target.value)
+    const val = e.target.value
+    setQuery(val)
     if (!open) setOpen(true)
-    if (e.target.value === '') {
-      onChange('', '')
-    }
+    // Luôn đồng bộ tên về parent khi gõ tay (unit để trống nếu không chọn từ dropdown)
+    onChange(val, '')
   }
 
   return (
