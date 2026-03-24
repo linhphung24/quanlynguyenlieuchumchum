@@ -205,16 +205,6 @@ export default function ProductsPage() {
               </select>
             </div>
             <div>
-              <label className="block text-xs font-medium text-[#8b5e3c] mb-1">Giá nhập</label>
-              <input type="number" min={0} value={editing.cost_price || 0} onChange={e => setEditing({ ...editing, cost_price: Number(e.target.value) })}
-                className="w-full px-3 py-2.5 border-[1.5px] border-[#f5e6cc] rounded-lg text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors" />
-            </div>
-            <div>
-              <label className="block text-xs font-medium text-[#8b5e3c] mb-1">Giá bán</label>
-              <input type="number" min={0} value={editing.sell_price || 0} onChange={e => setEditing({ ...editing, sell_price: Number(e.target.value) })}
-                className="w-full px-3 py-2.5 border-[1.5px] border-[#f5e6cc] rounded-lg text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors" />
-            </div>
-            <div>
               <label className="block text-xs font-medium text-[#8b5e3c] mb-1">Tồn kho</label>
               <input type="number" min={0} value={editing.stock_qty || 0} onChange={e => setEditing({ ...editing, stock_qty: Number(e.target.value) })}
                 className="w-full px-3 py-2.5 border-[1.5px] border-[#f5e6cc] rounded-lg text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors" />
@@ -276,9 +266,8 @@ export default function ProductsPage() {
                 <span className="inline-block px-2 py-0.5 rounded-full text-xs font-medium bg-[#fdf0e0] text-[#c8773a]">{p.category}</span>
                 <span className="text-xs text-[#8b5e3c]">{p.unit}</span>
               </div>
-              <div className="text-xs text-[#8b5e3c] grid grid-cols-2 gap-1">
-                <div>Tồn: <span className="font-medium text-[#3d1f0a]">{p.stock_qty}</span></div>
-                <div>Giá bán: <span className="font-medium text-[#3d1f0a]">{fmtPrice(p.sell_price)}</span></div>
+              <div className="text-xs text-[#8b5e3c]">
+                <div>Tồn: <span className="font-medium text-[#3d1f0a]">{p.stock_qty} {p.unit}</span></div>
               </div>
             </div>
           ))}
@@ -294,7 +283,6 @@ export default function ProductsPage() {
                   <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc]">Danh mục</th>
                   <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc]">ĐVT</th>
                   <th className="text-right text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc]">Tồn</th>
-                  <th className="text-right text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc]">Giá bán</th>
                   <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc]">Trạng thái</th>
                   <th className="bg-[#f5e6cc]"></th>
                 </tr>
@@ -307,7 +295,6 @@ export default function ProductsPage() {
                     <td className="px-3 py-2.5 border-b border-[#f0e8d8] text-xs text-[#8b5e3c]">{p.category}</td>
                     <td className="px-3 py-2.5 border-b border-[#f0e8d8] text-xs text-[#8b5e3c]">{p.unit}</td>
                     <td className={`px-3 py-2.5 border-b border-[#f0e8d8] text-sm text-right ${p.stock_qty < p.min_stock && p.is_active ? 'text-[#d94f3d] font-semibold' : 'text-[#3d1f0a]'}`}>{p.stock_qty}</td>
-                    <td className="px-3 py-2.5 border-b border-[#f0e8d8] text-sm text-right text-[#3d1f0a]">{fmtPrice(p.sell_price)}</td>
                     <td className="px-3 py-2.5 border-b border-[#f0e8d8]">
                       <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${p.is_active ? 'bg-[#d4f5e3] text-[#1e7a4a]' : 'bg-[#f5e6cc] text-[#8b5e3c]'}`}>
                         {p.is_active ? 'Hoạt động' : 'Ngừng'}

@@ -3,20 +3,35 @@
 import { useState, useEffect } from 'react'
 import { useApp } from '@/contexts/AppContext'
 import { Invoice, InvoiceItem } from '@/types'
-import { todayStr, fmtDate, fmtTs, fmtNum, genCode } from '@/lib/utils'
+import { todayStr, fmtDate, fmtTs, fmtNum, fmtPrice, genCode } from '@/lib/utils'
 import { UNITS } from '@/lib/constants'
 import ProductPicker from '@/components/shared/ProductPicker'
 
+function calcTotal(items: { amount: number; price?: number }[]) {
+  return items.reduce((sum, it) => sum + (it.amount || 0) * (it.price || 0), 0)
+}
+
 function doPrint(inv: Invoice, recipes: { id: number; name: string }[]) {
   const isIn = inv.type === 'in'
-  const rows = (inv.items as { name: string; amount: number; unit: string }[])
-    .map((it, i) => `<tr><td style="padding:6px 8px;border-bottom:1px solid #eee">${i + 1}</td><td style="padding:6px 8px;border-bottom:1px solid #eee">${it.name}</td><td style="text-align:right;padding:6px 8px;border-bottom:1px solid #eee">${fmtNum(it.amount)} ${it.unit}</td></tr>`)
+  const castItems = inv.items as { name: string; amount: number; unit: string; price?: number }[]
+  const total = calcTotal(castItems)
+  const rows = castItems
+    .map((it, i) => {
+      const subtotal = (it.amount || 0) * (it.price || 0)
+      return `<tr>
+        <td style="padding:6px 8px;border-bottom:1px solid #eee">${i + 1}</td>
+        <td style="padding:6px 8px;border-bottom:1px solid #eee">${it.name}</td>
+        <td style="text-align:right;padding:6px 8px;border-bottom:1px solid #eee">${fmtNum(it.amount)} ${it.unit}</td>
+        <td style="text-align:right;padding:6px 8px;border-bottom:1px solid #eee">${it.price ? fmtPrice(it.price) : '—'}</td>
+        <td style="text-align:right;padding:6px 8px;border-bottom:1px solid #eee">${subtotal ? fmtPrice(subtotal) : '—'}</td>
+      </tr>`
+    })
     .join('')
 
   const w = window.open('', '_blank')!
   w.document.write(`<html>
 <head><title>Hoá đơn ${inv.code}</title>
-<style>body{font-family:Arial,sans-serif;padding:24px;color:#222}h2{color:#c8773a}table{width:100%;border-collapse:collapse}th{background:#f5e6cc;text-align:left;padding:6px 8px}td{padding:6px 8px;border-bottom:1px solid #eee}.meta{display:flex;gap:24px;margin-bottom:16px;font-size:13px}</style>
+<style>body{font-family:Arial,sans-serif;padding:24px;color:#222}h2{color:#c8773a}table{width:100%;border-collapse:collapse}th{background:#f5e6cc;text-align:left;padding:6px 8px}td{padding:6px 8px;border-bottom:1px solid #eee}.meta{display:flex;gap:24px;margin-bottom:16px;font-size:13px}.total{text-align:right;font-weight:bold;margin-top:8px;font-size:14px}</style>
 </head>
 <body>
 <h2>${isIn ? 'HOÁ ĐƠN NHẬP HÀNG' : 'HOÁ ĐƠN XUẤT/BÁN HÀNG'}</h2>
@@ -27,9 +42,10 @@ function doPrint(inv: Invoice, recipes: { id: number; name: string }[]) {
 </div>
 ${inv.note ? `<div style="font-size:12px;color:#888;margin-bottom:12px">Ghi chú: ${inv.note}</div>` : ''}
 <table>
-  <thead><tr><th>#</th><th>${isIn ? 'Nguyên liệu' : 'Sản phẩm'}</th><th style="text-align:right">Số lượng</th></tr></thead>
+  <thead><tr><th>#</th><th>${isIn ? 'Nguyên liệu' : 'Sản phẩm'}</th><th style="text-align:right">Số lượng</th><th style="text-align:right">${isIn ? 'Giá nhập' : 'Giá bán'}</th><th style="text-align:right">Thành tiền</th></tr></thead>
   <tbody>${rows}</tbody>
 </table>
+${total ? `<div class="total">Tổng cộng: ${fmtPrice(total)}</div>` : ''}
 <div style="margin-top:20px;font-size:12px;color:#aaa">In lúc: ${new Date().toLocaleString('vi-VN')}</div>
 </body></html>`)
   w.document.close()
@@ -40,6 +56,7 @@ interface FormItem {
   name: string
   amount: number
   unit: string
+  price: number
   recipeId: number
   qty: number
 }
@@ -52,7 +69,7 @@ export default function InvoicesPage() {
   const [code, setCode] = useState(genCode())
   const [partner, setPartner] = useState('')
   const [note, setNote] = useState('')
-  const [items, setItems] = useState<FormItem[]>([{ name: '', amount: 0, unit: UNITS[0], recipeId: 0, qty: 0 }])
+  const [items, setItems] = useState<FormItem[]>([{ name: '', amount: 0, unit: UNITS[0], price: 0, recipeId: 0, qty: 0 }])
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [openInvs, setOpenInvs] = useState<Set<number>>(new Set())
 
@@ -75,7 +92,7 @@ export default function InvoicesPage() {
     })
   }
 
-  const addItem = () => setItems([...items, { name: '', amount: 0, unit: UNITS[0], recipeId: 0, qty: 0 }])
+  const addItem = () => setItems([...items, { name: '', amount: 0, unit: UNITS[0], price: 0, recipeId: 0, qty: 0 }])
   const removeItem = (idx: number) => setItems(items.filter((_, i) => i !== idx))
   const updateItem = (idx: number, field: string, val: unknown) => {
     setItems(items.map((it, i) => i === idx ? { ...it, [field]: val } : it))
@@ -85,7 +102,12 @@ export default function InvoicesPage() {
     if (!user) return
     const invItems: InvoiceItem[] = items
       .filter(it => it.name && (it.amount > 0 || it.qty > 0))
-      .map(it => ({ name: it.name, amount: it.amount || it.qty, unit: it.unit }))
+      .map(it => ({
+        name: it.name,
+        amount: it.amount || it.qty,
+        unit: it.unit,
+        ...(it.price > 0 ? { price: it.price } : {}),
+      }))
 
     if (invItems.length === 0) { toast('Thêm ít nhất một mặt hàng hợp lệ', 'error'); return }
 
@@ -108,7 +130,7 @@ export default function InvoicesPage() {
       setCode(genCode())
       setPartner('')
       setNote('')
-      setItems([{ name: '', amount: 0, unit: UNITS[0], recipeId: 0, qty: 0 }])
+      setItems([{ name: '', amount: 0, unit: UNITS[0], price: 0, recipeId: 0, qty: 0 }])
     } else if (error) {
       toast('Lỗi lưu: ' + error.message, 'error')
     }
@@ -128,6 +150,8 @@ export default function InvoicesPage() {
     }
     stopLoading()
   }
+
+  const formTotal = items.reduce((s, it) => s + (it.amount || it.qty || 0) * (it.price || 0), 0)
 
   return (
     <div className="p-4 max-w-2xl mx-auto">
@@ -179,11 +203,10 @@ export default function InvoicesPage() {
           <table className="w-full border-collapse">
             <thead>
               <tr>
-                <>
-                  <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc]">{invType === 'in' ? 'Nguyên liệu' : 'Sản phẩm'}</th>
-                  <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-24">Số lượng</th>
-                  <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-32">ĐVT</th>
-                </>
+                <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc]">{invType === 'in' ? 'Nguyên liệu' : 'Sản phẩm'}</th>
+                <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-20">Số lượng</th>
+                <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-28">ĐVT</th>
+                <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-28">{invType === 'in' ? 'Giá nhập' : 'Giá bán'}</th>
                 <th className="bg-[#f5e6cc] w-8"></th>
               </tr>
             </thead>
@@ -208,6 +231,11 @@ export default function InvoicesPage() {
                       {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
                     </select>
                   </td>
+                  <td className="px-3 py-2.5 border-b border-[#f0e8d8]">
+                    <input type="number" min={0} step="any" value={it.price || 0}
+                      onChange={e => updateItem(idx, 'price', parseFloat(e.target.value) || 0)}
+                      className="w-full px-2 py-1 border-[1.5px] border-[#f5e6cc] rounded text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors" />
+                  </td>
                   <td className="px-3 py-2.5 border-b border-[#f0e8d8] text-center">
                     <button onClick={() => removeItem(idx)} className="bg-transparent border-none text-[#e0a090] text-base cursor-pointer px-1.5 py-0.5 rounded hover:bg-[#fdecea] hover:text-[#c0392b] transition-all">×</button>
                   </td>
@@ -216,6 +244,14 @@ export default function InvoicesPage() {
             </tbody>
           </table>
         </div>
+
+        {/* Form total */}
+        {formTotal > 0 && (
+          <div className="text-right text-sm font-semibold text-[#c8773a] mb-2">
+            Tổng: {fmtPrice(formTotal)}
+          </div>
+        )}
+
         <div className="flex gap-2 flex-wrap">
           <button onClick={addItem} className="mt-2 inline-flex items-center gap-1 px-3 py-1.5 bg-transparent border-[1.5px] border-dashed border-[#c8773a] rounded-lg text-[#c8773a] text-xs cursor-pointer hover:bg-[#fef4e8] transition-all">
             + Thêm dòng
@@ -233,56 +269,77 @@ export default function InvoicesPage() {
           <div className="text-sm text-[#8b5e3c] text-center py-4">Chưa có hoá đơn nào</div>
         ) : (
           <div className="space-y-2">
-            {invoices.map(inv => (
-              <div key={inv.id} className="border border-[#f0e8d8] rounded-xl overflow-hidden">
-                <div className="flex justify-between items-center p-3 px-4 cursor-pointer select-none bg-[#fdf6ec] hover:bg-[#fef4e8] transition-all" onClick={() => toggleInv(inv.id)}>
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${inv.type === 'in' ? 'bg-[#d4f5e3] text-[#1e7a4a]' : 'bg-[#fdf0e0] text-[#c8773a]'}`}>
-                      {inv.type === 'in' ? '↓ Nhập' : '↑ Xuất'}
-                    </span>
-                    <span className="text-sm font-medium text-[#3d1f0a]">{inv.code}</span>
-                    <span className="text-xs text-[#8b5e3c]">{fmtDate(inv.inv_date)}</span>
-                    {inv.partner && <span className="text-xs text-[#8b5e3c]">| {inv.partner}</span>}
+            {invoices.map(inv => {
+              const castItems = inv.items as { name: string; amount: number; unit: string; price?: number }[]
+              const invTotal = calcTotal(castItems)
+              return (
+                <div key={inv.id} className="border border-[#f0e8d8] rounded-xl overflow-hidden">
+                  <div className="flex justify-between items-center p-3 px-4 cursor-pointer select-none bg-[#fdf6ec] hover:bg-[#fef4e8] transition-all" onClick={() => toggleInv(inv.id)}>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${inv.type === 'in' ? 'bg-[#d4f5e3] text-[#1e7a4a]' : 'bg-[#fdf0e0] text-[#c8773a]'}`}>
+                        {inv.type === 'in' ? '↓ Nhập' : '↑ Xuất'}
+                      </span>
+                      <span className="text-sm font-medium text-[#3d1f0a]">{inv.code}</span>
+                      <span className="text-xs text-[#8b5e3c]">{fmtDate(inv.inv_date)}</span>
+                      {inv.partner && <span className="text-xs text-[#8b5e3c]">| {inv.partner}</span>}
+                      {invTotal > 0 && (
+                        <span className="text-xs font-semibold text-[#c8773a]">{fmtPrice(invTotal)}</span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[#8b5e3c] text-sm">{openInvs.has(inv.id) ? '▲' : '▼'}</span>
+                    </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[#8b5e3c] text-sm">{openInvs.has(inv.id) ? '▲' : '▼'}</span>
-                  </div>
-                </div>
-                {openInvs.has(inv.id) && (
-                  <div className="border-t border-[#f0e8d8] bg-white p-3">
-                    {inv.note && <p className="text-xs text-[#8b5e3c] mb-2">📝 {inv.note}</p>}
-                    <div className="overflow-x-auto rounded border border-[#f0e8d8]">
-                      <table className="w-full border-collapse text-xs">
-                        <thead>
-                          <tr>
-                            <th className="text-left text-[10px] font-medium uppercase text-[#8b5e3c] px-2 py-1.5 bg-[#f5e6cc]">#</th>
-                            <th className="text-left text-[10px] font-medium uppercase text-[#8b5e3c] px-2 py-1.5 bg-[#f5e6cc]">{inv.type === 'in' ? 'Nguyên liệu' : 'Sản phẩm'}</th>
-                            <th className="text-right text-[10px] font-medium uppercase text-[#8b5e3c] px-2 py-1.5 bg-[#f5e6cc]">Số lượng</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {(inv.items as { name: string; amount: number; unit: string }[]).map((it, i) => (
-                            <tr key={i}>
-                              <td className="px-2 py-1.5 border-b border-[#f0e8d8]">{i + 1}</td>
-                              <td className="px-2 py-1.5 border-b border-[#f0e8d8]">{it.name}</td>
-                              <td className="px-2 py-1.5 border-b border-[#f0e8d8] text-right">{fmtNum(it.amount)} {it.unit}</td>
+                  {openInvs.has(inv.id) && (
+                    <div className="border-t border-[#f0e8d8] bg-white p-3">
+                      {inv.note && <p className="text-xs text-[#8b5e3c] mb-2">📝 {inv.note}</p>}
+                      <div className="overflow-x-auto rounded border border-[#f0e8d8]">
+                        <table className="w-full border-collapse text-xs">
+                          <thead>
+                            <tr>
+                              <th className="text-left text-[10px] font-medium uppercase text-[#8b5e3c] px-2 py-1.5 bg-[#f5e6cc]">#</th>
+                              <th className="text-left text-[10px] font-medium uppercase text-[#8b5e3c] px-2 py-1.5 bg-[#f5e6cc]">{inv.type === 'in' ? 'Nguyên liệu' : 'Sản phẩm'}</th>
+                              <th className="text-right text-[10px] font-medium uppercase text-[#8b5e3c] px-2 py-1.5 bg-[#f5e6cc]">Số lượng</th>
+                              <th className="text-right text-[10px] font-medium uppercase text-[#8b5e3c] px-2 py-1.5 bg-[#f5e6cc]">{inv.type === 'in' ? 'Giá nhập' : 'Giá bán'}</th>
+                              <th className="text-right text-[10px] font-medium uppercase text-[#8b5e3c] px-2 py-1.5 bg-[#f5e6cc]">Thành tiền</th>
                             </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                          </thead>
+                          <tbody>
+                            {castItems.map((it, i) => (
+                              <tr key={i}>
+                                <td className="px-2 py-1.5 border-b border-[#f0e8d8]">{i + 1}</td>
+                                <td className="px-2 py-1.5 border-b border-[#f0e8d8]">{it.name}</td>
+                                <td className="px-2 py-1.5 border-b border-[#f0e8d8] text-right">{fmtNum(it.amount)} {it.unit}</td>
+                                <td className="px-2 py-1.5 border-b border-[#f0e8d8] text-right">{it.price ? fmtPrice(it.price) : '—'}</td>
+                                <td className="px-2 py-1.5 border-b border-[#f0e8d8] text-right font-medium text-[#3d1f0a]">
+                                  {it.price ? fmtPrice((it.amount || 0) * it.price) : '—'}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                          {invTotal > 0 && (
+                            <tfoot>
+                              <tr>
+                                <td colSpan={4} className="px-2 py-1.5 text-right text-xs font-semibold text-[#3d1f0a]">Tổng cộng</td>
+                                <td className="px-2 py-1.5 text-right text-xs font-bold text-[#c8773a]">{fmtPrice(invTotal)}</td>
+                              </tr>
+                            </tfoot>
+                          )}
+                        </table>
+                      </div>
+                      <div className="flex gap-2 mt-2">
+                        <button onClick={() => doPrint(inv, recipes)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border-[1.5px] border-[#f5e6cc] text-[#8b5e3c] text-xs font-medium cursor-pointer hover:border-[#c8773a] hover:text-[#c8773a] transition-all">
+                          🖨 In
+                        </button>
+                        <button onClick={() => handleDelete(inv)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border-[1.5px] border-[#e0a090] text-[#d94f3d] text-xs font-medium cursor-pointer hover:bg-[#fdecea] transition-all">
+                          🗑 Xoá
+                        </button>
+                      </div>
                     </div>
-                    <div className="flex gap-2 mt-2">
-                      <button onClick={() => doPrint(inv, recipes)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border-[1.5px] border-[#f5e6cc] text-[#8b5e3c] text-xs font-medium cursor-pointer hover:border-[#c8773a] hover:text-[#c8773a] transition-all">
-                        🖨 In
-                      </button>
-                      <button onClick={() => handleDelete(inv)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border-[1.5px] border-[#e0a090] text-[#d94f3d] text-xs font-medium cursor-pointer hover:bg-[#fdecea] transition-all">
-                        🗑 Xoá
-                      </button>
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
+                  )}
+                </div>
+              )
+            })}
           </div>
         )}
       </div>

@@ -36,12 +36,14 @@ export interface InvoiceItemIn {
   name: string
   amount: number
   unit: string
+  price?: number
 }
 
 export interface InvoiceItemOut {
   recipeId?: number
   recipe_id?: number
   qty: number
+  price?: number
 }
 
 export type InvoiceItem = InvoiceItemIn | InvoiceItemOut
