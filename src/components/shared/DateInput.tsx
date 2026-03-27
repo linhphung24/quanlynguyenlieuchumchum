@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 
 interface DateInputProps {
   value: string          // ISO yyyy-mm-dd
@@ -11,27 +11,26 @@ interface DateInputProps {
 
 function toDisplay(iso: string) {
   if (!iso) return ''
-  const [y, m, d] = iso.split('-')
-  if (!y || !m || !d) return ''
-  return `${d}/${m}/${y}`
+  const parts = iso.split('-')
+  if (parts.length !== 3 || !parts[0] || !parts[1] || !parts[2]) return ''
+  return `${parts[2]}/${parts[1]}/${parts[0]}`
 }
 
 function toISO(display: string): string | null {
-  const match = display.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
-  if (!match) return null
-  return `${match[3]}-${match[2]}-${match[1]}`
+  const m = display.match(/^(\d{2})\/(\d{2})\/(\d{4})$/)
+  if (!m) return null
+  return `${m[3]}-${m[2]}-${m[1]}`
 }
 
 export default function DateInput({ value, onChange, className, placeholder = 'dd/mm/yyyy' }: DateInputProps) {
   const [text, setText] = useState(() => toDisplay(value))
+  const pickerRef = useRef<HTMLInputElement>(null)
 
-  useEffect(() => {
-    setText(toDisplay(value))
-  }, [value])
+  useEffect(() => { setText(toDisplay(value)) }, [value])
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    // Strip non-digits, auto-insert slashes
-    let digits = e.target.value.replace(/\D/g, '').slice(0, 8)
+  // Gõ tay dd/mm/yyyy — tự chèn dấu /
+  const handleText = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const digits = e.target.value.replace(/\D/g, '').slice(0, 8)
     let v = digits
     if (digits.length > 2) v = digits.slice(0, 2) + '/' + digits.slice(2)
     if (digits.length > 4) v = digits.slice(0, 2) + '/' + digits.slice(2, 4) + '/' + digits.slice(4)
@@ -41,15 +40,38 @@ export default function DateInput({ value, onChange, className, placeholder = 'd
     if (!v) onChange('')
   }
 
+  // Chọn từ calendar
+  const handlePicker = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.value) onChange(e.target.value)
+  }
+
   return (
-    <input
-      type="text"
-      inputMode="numeric"
-      value={text}
-      placeholder={placeholder}
-      maxLength={10}
-      onChange={handleChange}
-      className={className}
-    />
+    <div className="relative">
+      <input
+        type="text"
+        inputMode="numeric"
+        value={text}
+        placeholder={placeholder}
+        maxLength={10}
+        onChange={handleText}
+        className={className}
+        style={{ paddingRight: '28px' }}
+      />
+      {/* Nút 📅 — click mở native date picker */}
+      <span
+        className="absolute right-2 inset-y-0 flex items-center text-[#c8773a] cursor-pointer select-none text-sm"
+        title="Chọn ngày"
+      >
+        📅
+        <input
+          ref={pickerRef}
+          type="date"
+          value={value || ''}
+          onChange={handlePicker}
+          className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+          tabIndex={-1}
+        />
+      </span>
+    </div>
   )
 }
