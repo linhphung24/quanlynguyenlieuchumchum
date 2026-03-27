@@ -8,6 +8,7 @@ import { UNITS } from '@/lib/constants'
 import ProductPicker from '@/components/shared/ProductPicker'
 import DateInput from '@/components/shared/DateInput'
 import TextPicker from '@/components/shared/TextPicker'
+import ImageUpload from '@/components/shared/ImageUpload'
 
 function calcTotal(items: { amount: number; price?: number }[]) {
   return items.reduce((sum, it) => sum + (it.amount || 0) * (it.price || 0), 0)
@@ -83,6 +84,7 @@ export default function InvoicesPage() {
   const [items, setItems] = useState<FormItem[]>([{ name: '', amount: 0, unit: UNITS[0], price: 0, mfg_date: '', exp_date: '', recipeId: 0, qty: 0 }])
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [openInvs, setOpenInvs] = useState<Set<number>>(new Set())
+  const [imageUrl, setImageUrl] = useState('')
 
   useEffect(() => {
     loadInvoices()
@@ -150,6 +152,7 @@ export default function InvoicesPage() {
       }))
 
     if (invItems.length === 0) { toast('Thêm ít nhất một mặt hàng hợp lệ', 'error'); return }
+    if (!imageUrl) { toast('Vui lòng tải lên ảnh hoá đơn', 'error'); return }
 
     startLoading()
     const { data, error } = await sb.from('invoices').insert({
@@ -159,6 +162,7 @@ export default function InvoicesPage() {
       partner,
       note,
       items: invItems,
+      image_url: imageUrl,
       created_by: user.id,
       created_at: new Date().toISOString(),
     }).select().single()
@@ -171,6 +175,7 @@ export default function InvoicesPage() {
       setCode(genCode())
       setPartner('')
       setNote('')
+      setImageUrl('')
       setItems([{ name: '', amount: 0, unit: UNITS[0], price: 0, mfg_date: '', exp_date: '', recipeId: 0, qty: 0 }])
     } else if (error) {
       toast('Lỗi lưu: ' + error.message, 'error')
@@ -243,6 +248,14 @@ export default function InvoicesPage() {
             <input value={note} onChange={e => setNote(e.target.value)} placeholder="Ghi chú..."
               className="w-full px-3 py-2.5 border-[1.5px] border-[#f5e6cc] rounded-lg text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors" />
           </div>
+        </div>
+
+        {/* Ảnh hoá đơn */}
+        <div className="mb-3">
+          <label className="block text-xs font-medium text-[#8b5e3c] mb-1">
+            Ảnh hoá đơn <span className="text-[#d94f3d]">*</span>
+          </label>
+          <ImageUpload value={imageUrl} onChange={setImageUrl} required />
         </div>
 
         {/* Items */}
@@ -352,6 +365,18 @@ export default function InvoicesPage() {
                   {openInvs.has(inv.id) && (
                     <div className="border-t border-[#f0e8d8] bg-white p-3">
                       {inv.note && <p className="text-xs text-[#8b5e3c] mb-2">📝 {inv.note}</p>}
+                      {inv.image_url && (
+                        <div className="mb-3">
+                          <a href={inv.image_url} target="_blank" rel="noopener noreferrer" className="block">
+                            <img
+                              src={inv.image_url}
+                              alt="Ảnh hoá đơn"
+                              className="max-h-48 rounded-xl border border-[#f0e8d8] object-contain bg-[#fdf6ec] p-1 hover:opacity-90 transition-opacity cursor-zoom-in"
+                            />
+                          </a>
+                          <p className="text-[10px] text-[#8b5e3c] mt-1">📷 Ảnh hoá đơn — click để xem to</p>
+                        </div>
+                      )}
                       <div className="overflow-x-auto rounded border border-[#f0e8d8]">
                         <table className="w-full border-collapse text-xs">
                           <thead>

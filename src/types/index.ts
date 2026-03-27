@@ -58,6 +58,7 @@ export interface Invoice {
   partner: string
   note: string
   items: InvoiceItem[]
+  image_url?: string
   created_by: string
   updated_by: string | null
   created_at: string
