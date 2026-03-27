@@ -197,7 +197,7 @@ export default function InvoicesPage() {
   const formTotal = items.reduce((s, it) => s + (it.amount || it.qty || 0) * (it.price || 0), 0)
 
   return (
-    <div className="p-4 max-w-2xl mx-auto">
+    <div className="p-4 max-w-5xl mx-auto">
       <h2 className="font-['Playfair_Display'] text-xl font-bold text-[#3d1f0a] mb-4">🧾 Hoá đơn</h2>
 
       {/* Form */}
@@ -246,14 +246,14 @@ export default function InvoicesPage() {
         </div>
 
         {/* Items */}
-        <div className="overflow-x-auto rounded-lg border border-[#f0e8d8] mb-3">
-          <table className="border-collapse" style={{ minWidth: '820px', width: '100%' }}>
+        <div className="rounded-lg border border-[#f0e8d8] mb-3 overflow-x-auto">
+          <table className="border-collapse w-full">
             <thead>
               <tr>
-                <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc]" style={{ minWidth: '200px' }}>{invType === 'in' ? 'Nguyên liệu' : 'Sản phẩm'}</th>
-                <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-20">Số lượng</th>
+                <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc]">{invType === 'in' ? 'Nguyên liệu' : 'Sản phẩm'}</th>
+                <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-24">Số lượng</th>
                 <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-24">ĐVT</th>
-                <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-28">{invType === 'in' ? 'Giá nhập' : 'Giá bán'}</th>
+                <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-32">{invType === 'in' ? 'Giá nhập' : 'Giá bán'}</th>
                 <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-32">NSX</th>
                 <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-32">HSD</th>
                 <th className="bg-[#f5e6cc] w-8"></th>
