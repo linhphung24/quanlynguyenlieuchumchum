@@ -298,6 +298,43 @@ export default function InvoicesPage() {
     setItems(prev => prev.map((it, i) => i === idx ? { ...it, [field]: val } : it))
   }
 
+  // ─── auto-fill khi chọn sản phẩm ─────────────────────────
+  // Nhập: điền giá vốn + đvt
+  // Xuất: điền giá bán + đvt + NSX/HSD từ lô FIFO cũ nhất
+  const handleProductSelect = async (idx: number, name: string, unit: string) => {
+    updateItem(idx, 'name', name)
+    if (unit) updateItem(idx, 'unit', unit)
+    if (!name.trim()) return
+
+    // Điền giá từ danh mục sản phẩm
+    const product = allProducts.find(
+      p => p.name.trim().toLowerCase() === name.trim().toLowerCase()
+    )
+    if (product) {
+      const price = invType === 'in' ? product.cost_price : product.sell_price
+      if (price > 0) updateItem(idx, 'price', price)
+      // Đảm bảo đvt khớp nếu chưa chọn từ dropdown
+      if (!unit && product.unit) updateItem(idx, 'unit', product.unit)
+    }
+
+    // Với xuất: điền NSX + HSD từ lô cũ nhất còn hàng (FIFO)
+    if (invType === 'out') {
+      const { data } = await sb
+        .from('batches')
+        .select('mfg_date, exp_date, inv_code')
+        .eq('product_name', name.trim())
+        .gt('remaining_qty', 0)
+        .order('inv_date', { ascending: true })
+        .order('id', { ascending: true })
+        .limit(1)
+      if (data && data.length > 0) {
+        const b = data[0] as { mfg_date: string | null; exp_date: string | null; inv_code: string }
+        if (b.mfg_date) updateItem(idx, 'mfg_date', b.mfg_date)
+        if (b.exp_date)  updateItem(idx, 'exp_date',  b.exp_date)
+      }
+    }
+  }
+
   // ─── save invoice ─────────────────────────────────────────
   const handleSave = async () => {
     if (!user) return
@@ -497,10 +534,18 @@ export default function InvoicesPage() {
                   <tr>
                     <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc]">{invType === 'in' ? 'Nguyên liệu' : 'Sản phẩm'}</th>
                     <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-24">Số lượng</th>
-                    <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-24">ĐVT</th>
-                    <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-32">{invType === 'in' ? 'Giá nhập' : 'Giá bán'}</th>
-                    <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-32">NSX</th>
-                    <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-32">HSD</th>
+                    <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-24">
+                      ĐVT <span className="text-[#c8773a] normal-case font-normal">✦</span>
+                    </th>
+                    <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-32">
+                      {invType === 'in' ? 'Giá nhập' : 'Giá bán'} <span className="text-[#c8773a] normal-case font-normal">✦</span>
+                    </th>
+                    <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-32">
+                      NSX {invType === 'out' && <span className="text-[#c8773a] normal-case font-normal">✦</span>}
+                    </th>
+                    <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-32">
+                      HSD {invType === 'out' && <span className="text-[#c8773a] normal-case font-normal">✦</span>}
+                    </th>
                     <th className="bg-[#f5e6cc] w-8"></th>
                   </tr>
                 </thead>
@@ -511,7 +556,7 @@ export default function InvoicesPage() {
                         <ProductPicker
                           products={allProducts}
                           value={it.name}
-                          onChange={(name, unit) => { updateItem(idx, 'name', name); if (unit) updateItem(idx, 'unit', unit) }}
+                          onChange={(name, unit) => handleProductSelect(idx, name, unit)}
                         />
                       </td>
                       <td className="px-3 py-2.5 border-b border-[#f0e8d8]">

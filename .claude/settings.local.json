@@ -4,7 +4,8 @@
       "Bash(ls /d/source_code/quanlynguyenlieuchumchum/.env*)",
       "Bash(xargs basename:*)",
       "Bash(npm install:*)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(npm run:*)"
     ]
   }
 }
