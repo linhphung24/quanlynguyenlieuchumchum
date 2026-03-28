@@ -25,7 +25,9 @@ interface BatchAlloc {
   qty: number
   price: number
   unit: string
-  insufficient?: boolean
+  insufficient?: boolean   // không còn lô nào trong kho
+  exceedsBatch?: boolean   // số lượng vượt quá lô hiện tại, phải tách HĐ
+  maxQty?: number          // tối đa được xuất từ lô này
 }
 
 interface FormItem {
@@ -141,18 +143,31 @@ export default function InvoicesPage() {
     items.forEach((item, idx) => {
       if (!item.name.trim() || !(item.amount || item.qty)) return
       const qty = item.amount || item.qty
-      const batchList = (byProduct[item.name.trim()] || []).map(b => ({ ...b }))
-      const allocs: BatchAlloc[] = []
-      let rem = qty
-      for (const b of batchList) {
-        if (rem <= 0) break
-        const take = Math.min(rem, b.remaining_qty)
-        allocs.push({ batch_id: b.id, inv_code: b.inv_code, inv_date: b.inv_date, qty: take, price: b.price, unit: b.unit })
-        b.remaining_qty -= take
-        rem -= take
+      const batchList = (byProduct[item.name.trim()] || [])
+
+      if (batchList.length === 0) {
+        // Không có lô nào trong kho
+        previews[idx] = [{ batch_id: -1, inv_code: '', inv_date: '', qty, price: 0, unit: item.unit, insufficient: true }]
+        return
       }
-      if (rem > 0) allocs.push({ batch_id: -1, inv_code: '', inv_date: '', qty: rem, price: 0, unit: item.unit, insufficient: true })
-      previews[idx] = allocs
+
+      const oldest = batchList[0]!
+      if (qty <= oldest.remaining_qty) {
+        // Đủ hàng trong lô cũ nhất — OK
+        previews[idx] = [{ batch_id: oldest.id, inv_code: oldest.inv_code, inv_date: oldest.inv_date, qty, price: oldest.price, unit: oldest.unit }]
+      } else {
+        // Vượt quá lô hiện tại — phải tách hoá đơn
+        previews[idx] = [{
+          batch_id: oldest.id,
+          inv_code: oldest.inv_code,
+          inv_date: oldest.inv_date,
+          qty,
+          price: oldest.price,
+          unit: oldest.unit,
+          exceedsBatch: true,
+          maxQty: oldest.remaining_qty,
+        }]
+      }
     })
     setBatchPreviews(previews)
   }, [sb, items])
@@ -360,6 +375,41 @@ export default function InvoicesPage() {
 
     if (invItems.length === 0) { toast('Thêm ít nhất một mặt hàng hợp lệ', 'error'); return }
     if (!imageUrl) { toast('Vui lòng tải lên ảnh hoá đơn', 'error'); return }
+
+    // ── Kiểm tra FIFO: mỗi dòng xuất chỉ được lấy từ 1 lô ──
+    if (invType === 'out') {
+      const names = [...new Set(invItems.map(it => it.name))]
+      const { data: batchCheck } = await sb
+        .from('batches')
+        .select('id, product_name, inv_code, remaining_qty, unit')
+        .in('product_name', names)
+        .gt('remaining_qty', 0)
+        .order('inv_date', { ascending: true })
+        .order('id', { ascending: true })
+
+      // Lấy lô cũ nhất cho từng sản phẩm
+      const oldestBatch: Record<string, { inv_code: string; remaining_qty: number; unit: string }> = {}
+      for (const b of (batchCheck || []) as { id: number; product_name: string; inv_code: string; remaining_qty: number; unit: string }[]) {
+        if (!oldestBatch[b.product_name]) oldestBatch[b.product_name] = { inv_code: b.inv_code, remaining_qty: b.remaining_qty, unit: b.unit }
+      }
+
+      const violations: string[] = []
+      for (const item of invItems) {
+        const batch = oldestBatch[item.name]
+        if (!batch) continue // sẽ xử lý bởi stock check
+        if (item.amount > batch.remaining_qty) {
+          violations.push(
+            `"${item.name}": lô ${batch.inv_code} chỉ còn ${fmtNum(batch.remaining_qty)} ${batch.unit}. ` +
+            `Xuất tối đa ${fmtNum(batch.remaining_qty)} để hết lô này, rồi tạo hoá đơn mới cho ${fmtNum(item.amount - batch.remaining_qty)} còn lại.`
+          )
+        }
+      }
+
+      if (violations.length > 0) {
+        toast('Không thể xuất vượt lô hiện tại:\n' + violations.join('\n'), 'error')
+        return
+      }
+    }
 
     startLoading()
     const { data, error } = await sb.from('invoices').insert({
@@ -614,9 +664,20 @@ export default function InvoicesPage() {
                       <div className="ml-2 space-y-0.5">
                         {allocs.map((a, ai) => (
                           a.insufficient
-                            ? <p key={ai} className="text-[11px] text-red-600">⚠ Thiếu {fmtNum(a.qty)} {a.unit} — không còn đủ lô tồn kho</p>
+                            ? <p key={ai} className="text-[11px] text-red-600">⚠ Không có lô tồn kho cho sản phẩm này</p>
+                          : a.exceedsBatch
+                            ? <div key={ai} className="rounded-lg bg-red-50 border border-red-200 px-2 py-1.5">
+                                <p className="text-[11px] font-semibold text-red-700">🚫 Vượt quá lô {a.inv_code} ({fmtDate(a.inv_date)})</p>
+                                <p className="text-[11px] text-red-600 mt-0.5">
+                                  Lô này chỉ còn <strong>{fmtNum(a.maxQty!)} {a.unit}</strong>, bạn muốn xuất <strong>{fmtNum(a.qty)} {a.unit}</strong>.
+                                </p>
+                                <p className="text-[11px] text-red-600">
+                                  ① Xuất HĐ này với tối đa <strong>{fmtNum(a.maxQty!)} {a.unit}</strong> để hết lô {a.inv_code}.<br/>
+                                  ② Tạo HĐ mới cho <strong>{fmtNum(a.qty - a.maxQty!)} {a.unit}</strong> còn lại từ lô tiếp theo.
+                                </p>
+                              </div>
                             : <p key={ai} className="text-[11px] text-amber-700">
-                                • Lô <span className="font-medium">{a.inv_code}</span> ({fmtDate(a.inv_date)}): {fmtNum(a.qty)} {a.unit} × {fmtPrice(a.price)} = <span className="font-semibold">{fmtPrice(a.qty * a.price)}</span>
+                                ✓ Lô <span className="font-medium">{a.inv_code}</span> ({fmtDate(a.inv_date)}): {fmtNum(a.qty)} {a.unit} × {fmtPrice(a.price)} = <span className="font-semibold">{fmtPrice(a.qty * a.price)}</span>
                               </p>
                         ))}
                       </div>
