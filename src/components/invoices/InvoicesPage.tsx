@@ -299,38 +299,47 @@ export default function InvoicesPage() {
   }
 
   // ─── auto-fill khi chọn sản phẩm ─────────────────────────
-  // Nhập: điền giá vốn + đvt
-  // Xuất: điền giá bán + đvt + NSX/HSD từ lô FIFO cũ nhất
+  // Nhập: điền giá vốn + đvt từ danh mục sản phẩm
+  // Xuất: điền giá nhập lô + đvt + NSX/HSD từ lô FIFO cũ nhất
   const handleProductSelect = async (idx: number, name: string, unit: string) => {
     updateItem(idx, 'name', name)
     if (unit) updateItem(idx, 'unit', unit)
     if (!name.trim()) return
 
-    // Điền giá từ danh mục sản phẩm
-    const product = allProducts.find(
-      p => p.name.trim().toLowerCase() === name.trim().toLowerCase()
-    )
-    if (product) {
-      const price = invType === 'in' ? product.cost_price : product.sell_price
-      if (price > 0) updateItem(idx, 'price', price)
-      // Đảm bảo đvt khớp nếu chưa chọn từ dropdown
-      if (!unit && product.unit) updateItem(idx, 'unit', product.unit)
-    }
-
-    // Với xuất: điền NSX + HSD từ lô cũ nhất còn hàng (FIFO)
-    if (invType === 'out') {
+    if (invType === 'in') {
+      // Nhập: lấy giá vốn từ danh mục sản phẩm
+      const product = allProducts.find(
+        p => p.name.trim().toLowerCase() === name.trim().toLowerCase()
+      )
+      if (product) {
+        if (product.cost_price > 0) updateItem(idx, 'price', product.cost_price)
+        if (!unit && product.unit) updateItem(idx, 'unit', product.unit)
+      }
+    } else {
+      // Xuất: lấy giá nhập lô + NSX/HSD từ lô FIFO cũ nhất còn hàng
       const { data } = await sb
         .from('batches')
-        .select('mfg_date, exp_date, inv_code')
+        .select('price, unit, mfg_date, exp_date, inv_code')
         .eq('product_name', name.trim())
         .gt('remaining_qty', 0)
         .order('inv_date', { ascending: true })
         .order('id', { ascending: true })
         .limit(1)
       if (data && data.length > 0) {
-        const b = data[0] as { mfg_date: string | null; exp_date: string | null; inv_code: string }
-        if (b.mfg_date) updateItem(idx, 'mfg_date', b.mfg_date)
-        if (b.exp_date)  updateItem(idx, 'exp_date',  b.exp_date)
+        const b = data[0] as { price: number; unit: string; mfg_date: string | null; exp_date: string | null; inv_code: string }
+        if (b.price > 0)  updateItem(idx, 'price', b.price)
+        if (b.unit && !unit) updateItem(idx, 'unit', b.unit)
+        if (b.mfg_date)   updateItem(idx, 'mfg_date', b.mfg_date)
+        if (b.exp_date)    updateItem(idx, 'exp_date',  b.exp_date)
+      } else {
+        // Không có lô — fallback giá bán từ danh mục
+        const product = allProducts.find(
+          p => p.name.trim().toLowerCase() === name.trim().toLowerCase()
+        )
+        if (product) {
+          if (product.sell_price > 0) updateItem(idx, 'price', product.sell_price)
+          if (!unit && product.unit) updateItem(idx, 'unit', product.unit)
+        }
       }
     }
   }
