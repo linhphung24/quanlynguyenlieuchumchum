@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useApp } from '@/contexts/AppContext'
 import AuthScreen from '@/components/auth/AuthScreen'
 import Header from '@/components/layout/Header'
@@ -21,6 +21,23 @@ export default function Home() {
   const { user, initialized } = useApp()
   const [currentPage, setCurrentPage] = useState<PageName>('products')
   const [sidebarOpen, setSidebarOpen] = useState(false)
+
+  const VALID_PAGES: PageName[] = ['products', 'invoices', 'summary', 'recipes', 'calc', 'log', 'users', 'admin']
+
+  // Khôi phục tab đã lưu khi load lại trang
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('cc_current_page') as PageName | null
+      if (saved && VALID_PAGES.includes(saved)) setCurrentPage(saved)
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Lưu tab mỗi khi chuyển trang
+  const handlePageChange = useCallback((page: PageName) => {
+    setCurrentPage(page)
+    try { localStorage.setItem('cc_current_page', page) } catch {}
+  }, [])
 
   if (!initialized) {
     return (
@@ -47,14 +64,14 @@ export default function Home() {
             <div className="fixed inset-0 z-50 md:hidden flex" onClick={() => setSidebarOpen(false)}>
               <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
               <div className="relative w-64 h-full flex-shrink-0" onClick={e => e.stopPropagation()}>
-                <Nav current={currentPage} onChange={p => { setCurrentPage(p); setSidebarOpen(false) }} />
+                <Nav current={currentPage} onChange={p => { handlePageChange(p); setSidebarOpen(false) }} />
               </div>
             </div>
           )}
 
           {/* Desktop sidebar */}
           <div className="hidden md:flex md:flex-shrink-0">
-            <Nav current={currentPage} onChange={setCurrentPage} />
+            <Nav current={currentPage} onChange={handlePageChange} />
           </div>
 
           {/* Main column */}

@@ -169,7 +169,10 @@ export default function InvoicesPage() {
   }, [sb, invBatchUsage])
 
   // ─── create batch records when saving nhập invoice ────────
-  const createBatchesForImport = async (invId: number, invCode: string, invDateStr: string, invItems: { name: string; amount: number; unit: string; price?: number; mfg_date?: string; exp_date?: string }[]) => {
+  const createBatchesForImport = async (
+    invId: number, invCode: string, invDateStr: string,
+    invItems: { name: string; amount: number; unit: string; price?: number; mfg_date?: string; exp_date?: string }[]
+  ): Promise<string | null> => {
     const records = invItems
       .filter(it => it.name && it.amount > 0)
       .map(it => ({
@@ -184,9 +187,9 @@ export default function InvoicesPage() {
         mfg_date: it.mfg_date || null,
         exp_date: it.exp_date || null,
       }))
-    if (records.length > 0) {
-      await sb.from('batches').insert(records)
-    }
+    if (records.length === 0) return null
+    const { error } = await sb.from('batches').insert(records)
+    return error ? error.message : null
   }
 
   // ─── FIFO deduction when saving xuất invoice ─────────────
@@ -331,13 +334,18 @@ export default function InvoicesPage() {
 
       if (invType === 'in') {
         // Tạo lô hàng cho từng dòng nhập
-        await createBatchesForImport(data.id, code, invDate, invItems)
+        const batchErr = await createBatchesForImport(data.id, code, invDate, invItems)
+        if (batchErr) {
+          // HĐ đã lưu nhưng lô chưa tạo được — cảnh báo rõ ràng
+          toast(`Hoá đơn đã lưu nhưng KHÔNG tạo được lô: ${batchErr}. Hãy chạy migration_batches.sql trong Supabase!`, 'error')
+        } else {
+          toast('Đã lưu hoá đơn & tạo lô hàng')
+        }
       } else {
         // Trừ FIFO từ các lô cũ nhất trước
         await deductBatchesFifo(invItems as { name: string; amount: number; unit: string }[], data.id)
+        toast('Đã lưu hoá đơn & phân bổ lô FIFO')
       }
-
-      toast(invType === 'in' ? 'Đã lưu hoá đơn & tạo lô hàng' : 'Đã lưu hoá đơn & phân bổ lô FIFO')
       setInvoices(prev => [data as Invoice, ...prev])
       setCode(genCode())
       setPartner('')

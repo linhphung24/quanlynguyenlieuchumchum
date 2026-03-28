@@ -17,6 +17,7 @@ export default function BatchesTab() {
   const { sb } = useApp()
   const [batches, setBatches] = useState<Batch[]>([])
   const [loading, setLoading] = useState(true)
+  const [dbError, setDbError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [showEmpty, setShowEmpty] = useState(false)
 
@@ -26,13 +27,18 @@ export default function BatchesTab() {
 
   const loadBatches = async () => {
     setLoading(true)
-    const { data } = await sb
+    setDbError(null)
+    const { data, error } = await sb
       .from('batches')
       .select('*')
       .order('product_name', { ascending: true })
       .order('inv_date', { ascending: true })
       .order('id', { ascending: true })
-    if (data) setBatches(data as Batch[])
+    if (error) {
+      setDbError(error.message)
+    } else {
+      setBatches((data || []) as Batch[])
+    }
     setLoading(false)
   }
 
@@ -109,9 +115,20 @@ export default function BatchesTab() {
           </button>
         </div>
 
+        {/* Lỗi bảng chưa tạo hoặc RLS */}
+        {dbError && (
+          <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 space-y-1">
+            <p className="font-semibold">⚠ Không thể tải dữ liệu lô hàng</p>
+            <p className="text-red-600 font-mono">{dbError}</p>
+            <p className="text-red-500 pt-1">
+              👉 Hãy chạy file <code className="bg-red-100 px-1 rounded">supabase/migration_batches.sql</code> trong <b>Supabase Dashboard → SQL Editor</b> để tạo bảng <code className="bg-red-100 px-1 rounded">batches</code> và <code className="bg-red-100 px-1 rounded">batch_deductions</code>.
+            </p>
+          </div>
+        )}
+
         {loading ? (
           <p className="text-sm text-[#8b5e3c] text-center py-6">Đang tải...</p>
-        ) : filtered.length === 0 ? (
+        ) : dbError ? null : filtered.length === 0 ? (
           <p className="text-sm text-[#8b5e3c] text-center py-6">
             {batches.length === 0 ? 'Chưa có lô hàng nào. Tạo hoá đơn nhập để tự động tạo lô.' : 'Không tìm thấy lô phù hợp.'}
           </p>
