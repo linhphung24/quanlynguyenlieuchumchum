@@ -19,9 +19,9 @@ import { PageName } from '@/types'
 
 export default function Home() {
   const { user, initialized } = useApp()
-  const [currentPage, setCurrentPage] = useState<PageName>('recipes')
+  const [currentPage, setCurrentPage] = useState<PageName>('products')
+  const [sidebarOpen, setSidebarOpen] = useState(false)
 
-  // Đang kiểm tra session — tránh flash màn hình
   if (!initialized) {
     return (
       <div className="min-h-screen bg-[#fdf6ec] flex items-center justify-center">
@@ -40,19 +40,38 @@ export default function Home() {
       {!user ? (
         <AuthScreen />
       ) : (
-        <div className="min-h-screen flex flex-col">
-          <Header />
-          <Nav current={currentPage} onChange={setCurrentPage} />
-          <main className="flex-1">
-            {currentPage === 'recipes' && <RecipesPage />}
-            {currentPage === 'calc' && <CalcPage />}
-            {currentPage === 'log' && <LogPage />}
-            {currentPage === 'invoices' && <InvoicesPage />}
-            {currentPage === 'summary' && <SummaryPage />}
-            {currentPage === 'products' && <ProductsPage />}
-            {currentPage === 'users' && <UsersPage />}
-            {currentPage === 'admin' && <AdminPage />}
-          </main>
+        <div className="min-h-screen flex bg-[#f2ece3]">
+
+          {/* Mobile sidebar overlay */}
+          {sidebarOpen && (
+            <div className="fixed inset-0 z-50 md:hidden flex" onClick={() => setSidebarOpen(false)}>
+              <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" />
+              <div className="relative w-64 h-full flex-shrink-0" onClick={e => e.stopPropagation()}>
+                <Nav current={currentPage} onChange={p => { setCurrentPage(p); setSidebarOpen(false) }} />
+              </div>
+            </div>
+          )}
+
+          {/* Desktop sidebar */}
+          <div className="hidden md:flex md:flex-shrink-0">
+            <Nav current={currentPage} onChange={setCurrentPage} />
+          </div>
+
+          {/* Main column */}
+          <div className="flex-1 flex flex-col min-w-0">
+            <Header currentPage={currentPage} onMenuClick={() => setSidebarOpen(true)} />
+            <main className="flex-1 overflow-y-auto">
+              {currentPage === 'products'  && <ProductsPage />}
+              {currentPage === 'invoices'  && <InvoicesPage />}
+              {currentPage === 'summary'   && <SummaryPage />}
+              {currentPage === 'recipes'   && <RecipesPage />}
+              {currentPage === 'calc'      && <CalcPage />}
+              {currentPage === 'log'       && <LogPage />}
+              {currentPage === 'users'     && <UsersPage />}
+              {currentPage === 'admin'     && <AdminPage />}
+            </main>
+          </div>
+
         </div>
       )}
     </>

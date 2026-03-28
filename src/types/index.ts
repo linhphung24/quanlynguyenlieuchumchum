@@ -101,3 +101,30 @@ export interface Toast {
 }
 
 export type PageName = 'recipes' | 'calc' | 'log' | 'invoices' | 'summary' | 'products' | 'admin' | 'users'
+
+export interface Batch {
+  id: number
+  product_name: string
+  inv_id: number
+  inv_code: string
+  inv_date: string
+  quantity: number
+  remaining_qty: number
+  price: number
+  unit: string
+  mfg_date?: string
+  exp_date?: string
+  created_at: string
+}
+
+export interface BatchDeduction {
+  id: number
+  batch_id: number
+  inv_id: number
+  qty_used: number
+  batch_inv_code: string
+  batch_inv_date: string
+  batch_price: number
+  batch_unit: string
+  created_at: string
+}

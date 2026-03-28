@@ -1,50 +1,66 @@
 'use client'
 
-import { useState } from 'react'
 import { useApp } from '@/contexts/AppContext'
-import { initials, roleClass } from '@/lib/utils'
-import { ROLE_LABELS } from '@/lib/constants'
-import ProfileModal from '@/components/shared/ProfileModal'
+import { PageName } from '@/types'
 
-export default function Header() {
-  const { profile, logout } = useApp()
-  const [showProfile, setShowProfile] = useState(false)
+const PAGE_META: Record<PageName, { title: string; subtitle: string }> = {
+  products:  { title: 'Kho hàng',              subtitle: 'Quản lý sản phẩm & tồn kho' },
+  invoices:  { title: 'Hoá đơn',               subtitle: 'Nhập / Xuất & theo dõi lô hàng' },
+  summary:   { title: 'Tổng kết',              subtitle: 'Báo cáo tồn kho theo tháng' },
+  recipes:   { title: 'Công thức',             subtitle: 'Quản lý công thức bánh' },
+  calc:      { title: 'Tính nhanh',            subtitle: 'Tính nguyên liệu theo mẻ' },
+  log:       { title: 'Nhật ký sản xuất',      subtitle: 'Ghi nhận sản lượng hàng ngày' },
+  users:     { title: 'Người dùng',            subtitle: 'Quản lý tài khoản nhân viên' },
+  admin:     { title: 'Quản trị hệ thống',     subtitle: 'Nhật ký thao tác & phân quyền' },
+}
+
+interface HeaderProps {
+  currentPage: PageName
+  onMenuClick: () => void
+}
+
+export default function Header({ currentPage, onMenuClick }: HeaderProps) {
+  const { allProducts } = useApp()
+  const meta = PAGE_META[currentPage]
+
+  const lowStockCount = allProducts.filter(p => p.is_active && p.min_stock > 0 && p.stock_qty < p.min_stock).length
 
   return (
-    <>
-      <header className="bg-[#fffaf4] border-b border-[#f5e6cc] px-4 py-3 flex items-center justify-between sticky top-0 z-50 shadow-sm">
-        <div className="flex items-center gap-2">
-          <span className="text-2xl">🥐</span>
-          <span className="font-['Playfair_Display'] text-lg font-bold text-[#3d1f0a]">Chum Chum Bakery</span>
+    <header className="bg-white/70 backdrop-blur-sm border-b border-[#e8ddd0] px-5 py-3 flex items-center gap-4 sticky top-0 z-40">
+
+      {/* Mobile menu button */}
+      <button
+        onClick={onMenuClick}
+        className="md:hidden flex flex-col gap-1 p-1.5 rounded-lg hover:bg-[#f5e6cc] transition-all cursor-pointer"
+      >
+        <span className="w-4.5 h-0.5 bg-[#3d1f0a] rounded-full block" style={{ width: 18 }} />
+        <span className="w-4.5 h-0.5 bg-[#3d1f0a] rounded-full block" style={{ width: 14 }} />
+        <span className="w-4.5 h-0.5 bg-[#3d1f0a] rounded-full block" style={{ width: 18 }} />
+      </button>
+
+      {/* Page title */}
+      <div className="flex-1 min-w-0">
+        <h1 className="text-sm font-semibold text-[#1a0f07] leading-tight truncate">{meta.title}</h1>
+        <p className="text-[11px] text-[#8b5e3c]/70 leading-tight hidden sm:block">{meta.subtitle}</p>
+      </div>
+
+      {/* Low stock badge */}
+      {lowStockCount > 0 && (
+        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 border border-red-200 rounded-lg">
+          <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse flex-shrink-0" />
+          <span className="text-xs font-medium text-red-700">{lowStockCount} SP sắp hết</span>
         </div>
-        <div className="flex items-center gap-3">
-          {profile && (
-            <button
-              onClick={() => setShowProfile(true)}
-              className="flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-[#fef4e8] transition-all cursor-pointer bg-transparent border-none"
-            >
-              <div className="w-6 h-6 rounded-full bg-[#c8773a] text-white text-[11px] font-bold flex items-center justify-center flex-shrink-0">
-                {initials(profile.full_name)}
-              </div>
-              <div className="hidden sm:block text-left">
-                <div className="text-xs font-medium text-[#3d1f0a] leading-tight">{profile.full_name}</div>
-                <div className={`inline-block px-1.5 py-px rounded-full text-[10px] font-medium ${roleClass(profile.role)}`}>
-                  {ROLE_LABELS[profile.role] || profile.role}
-                </div>
-              </div>
-            </button>
-          )}
-          <button
-            onClick={logout}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border-[1.5px] border-[#f5e6cc] text-[#8b5e3c] text-xs font-medium cursor-pointer hover:border-[#c8773a] hover:text-[#c8773a] transition-all"
-            title="Đăng xuất"
-          >
-            <span className="hidden sm:inline">Đăng xuất</span>
-            <span>↩</span>
-          </button>
+      )}
+
+      {/* Date */}
+      <div className="hidden lg:block text-right flex-shrink-0">
+        <div className="text-xs font-medium text-[#3d1f0a]">
+          {new Date().toLocaleDateString('vi-VN', { weekday: 'long' })}
         </div>
-      </header>
-      {showProfile && <ProfileModal onClose={() => setShowProfile(false)} />}
-    </>
+        <div className="text-[10px] text-[#8b5e3c]/70">
+          {new Date().toLocaleDateString('vi-VN', { day: '2-digit', month: '2-digit', year: 'numeric' })}
+        </div>
+      </div>
+    </header>
   )
 }

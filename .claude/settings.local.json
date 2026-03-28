@@ -1,7 +1,10 @@
 {
   "permissions": {
     "allow": [
-      "Bash(ls /d/source_code/quanlynguyenlieuchumchum/.env*)"
+      "Bash(ls /d/source_code/quanlynguyenlieuchumchum/.env*)",
+      "Bash(xargs basename:*)",
+      "Bash(npm install:*)",
+      "Bash(npx tsc:*)"
     ]
   }
 }
