@@ -22,16 +22,20 @@ export default function ProductPicker({
   const [open, setOpen] = useState(false)
   const [dropPos, setDropPos] = useState<{ top: number; left: number; width: number } | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const dropdownRef = useRef<HTMLDivElement>(null)
   const blurTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     setQuery(value)
   }, [value])
 
-  // Đóng dropdown khi scroll trang (tránh dropdown trôi sai vị trí)
+  // Đóng dropdown khi scroll trang, nhưng KHÔNG đóng khi scroll bên trong dropdown
   useEffect(() => {
     if (!open) return
-    const close = () => setOpen(false)
+    const close = (e: Event) => {
+      if (dropdownRef.current?.contains(e.target as Node)) return
+      setOpen(false)
+    }
     window.addEventListener('scroll', close, true)
     return () => window.removeEventListener('scroll', close, true)
   }, [open])
@@ -91,6 +95,7 @@ export default function ProductPicker({
       {/* Dropdown render ở ngoài DOM thường, dùng fixed để thoát overflow */}
       {open && dropPos && (
         <div
+          ref={dropdownRef}
           style={{
             position: 'fixed',
             top: dropPos.top,
