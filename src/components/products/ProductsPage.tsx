@@ -94,27 +94,32 @@ export default function ProductsPage() {
   const openEdit   = (p: Product) => { setEditing({ ...p }); setEditMode('edit'); setShowForm(true) }
 
   const handleSave = async () => {
-    if (!editing || !user) return
+    if (!user) { toast('Chưa đăng nhập — vui lòng tải lại trang', 'error'); return }
+    if (!editing) return
     if (!editing.name?.trim()) { toast('Tên sản phẩm không được trống', 'error'); return }
     startLoading()
-    if (editMode === 'create') {
-      const { data, error } = await sb.from('products').insert({
-        ...editing, created_by: user.id, created_at: new Date().toISOString(),
-      }).select().single()
-      if (!error && data) {
-        await writeAudit('create', 'products', String(data.id), `Tạo sản phẩm: ${editing.name}`)
-        setAllProducts(prev => [...prev, data as Product].sort((a, b) => a.name.localeCompare(b.name)))
-        toast('Đã tạo sản phẩm'); setShowForm(false)
-      } else if (error) { toast('Lỗi tạo: ' + error.message, 'error') }
-    } else {
-      const { error } = await sb.from('products').update({
-        ...editing, updated_by: user.id, updated_at: new Date().toISOString(),
-      }).eq('id', editing.id!)
-      if (!error) {
-        await writeAudit('update', 'products', String(editing.id), `Cập nhật: ${editing.name}`)
-        setAllProducts(prev => prev.map(p => p.id === editing.id ? { ...p, ...editing } as Product : p))
-        toast('Đã cập nhật'); setShowForm(false)
-      } else { toast('Lỗi cập nhật: ' + error.message, 'error') }
+    try {
+      if (editMode === 'create') {
+        const { data, error } = await sb.from('products').insert({
+          ...editing, created_by: user.id, created_at: new Date().toISOString(),
+        }).select().single()
+        if (!error && data) {
+          await writeAudit('create', 'products', String(data.id), `Tạo sản phẩm: ${editing.name}`)
+          setAllProducts(prev => [...prev, data as Product].sort((a, b) => a.name.localeCompare(b.name)))
+          toast('Đã tạo sản phẩm'); setShowForm(false)
+        } else if (error) { toast('Lỗi tạo: ' + error.message, 'error') }
+      } else {
+        const { error } = await sb.from('products').update({
+          ...editing, updated_by: user.id, updated_at: new Date().toISOString(),
+        }).eq('id', editing.id!)
+        if (!error) {
+          await writeAudit('update', 'products', String(editing.id), `Cập nhật: ${editing.name}`)
+          setAllProducts(prev => prev.map(p => p.id === editing.id ? { ...p, ...editing } as Product : p))
+          toast('Đã cập nhật'); setShowForm(false)
+        } else { toast('Lỗi cập nhật: ' + error.message, 'error') }
+      }
+    } catch (e) {
+      toast('Lỗi: ' + (e as Error).message, 'error')
     }
     stopLoading()
   }

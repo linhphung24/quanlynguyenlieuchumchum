@@ -19,6 +19,10 @@ export default function ImageUpload({ value, onChange, required }: ImageUploadPr
   const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file) return
+    if (!CLOUD_NAME || !UPLOAD_PRESET) {
+      setErr('Chưa cấu hình Cloudinary (thiếu env NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME / UPLOAD_PRESET). Liên hệ quản trị viên.')
+      return
+    }
     if (!file.type.startsWith('image/')) { setErr('Vui lòng chọn file ảnh'); return }
     if (file.size > 10 * 1024 * 1024)   { setErr('Ảnh quá lớn (tối đa 10 MB)'); return }
 
