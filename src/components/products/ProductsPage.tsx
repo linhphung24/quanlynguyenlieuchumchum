@@ -109,14 +109,18 @@ export default function ProductsPage() {
           toast('Đã tạo sản phẩm'); setShowForm(false)
         } else if (error) { toast('Lỗi tạo: ' + error.message, 'error') }
       } else {
-        const { error } = await sb.from('products').update({
+        const { data: updated, error } = await sb.from('products').update({
           ...editing, updated_by: user.id, updated_at: new Date().toISOString(),
-        }).eq('id', editing.id!)
-        if (!error) {
+        }).eq('id', editing.id!).select().single()
+        if (error) {
+          toast('Lỗi cập nhật: ' + error.message, 'error')
+        } else if (!updated) {
+          toast('Không thể cập nhật — kiểm tra quyền truy cập trong Supabase', 'error')
+        } else {
           await writeAudit('update', 'products', String(editing.id), `Cập nhật: ${editing.name}`)
-          setAllProducts(prev => prev.map(p => p.id === editing.id ? { ...p, ...editing } as Product : p))
+          setAllProducts(prev => prev.map(p => p.id === editing.id ? { ...p, ...updated } as Product : p))
           toast('Đã cập nhật'); setShowForm(false)
-        } else { toast('Lỗi cập nhật: ' + error.message, 'error') }
+        }
       }
     } catch (e) {
       toast('Lỗi: ' + (e as Error).message, 'error')
