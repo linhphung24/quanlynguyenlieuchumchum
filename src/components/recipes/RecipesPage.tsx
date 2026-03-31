@@ -48,26 +48,33 @@ export default function RecipesPage() {
   }
 
   const handleSave = async () => {
-    if (!currentRecipe || !user || !profile) return
+    if (!currentRecipe) return
+    if (!user) { toast('Chưa đăng nhập — vui lòng tải lại trang', 'error'); return }
     const validIngs = editIngredients.filter(i => i.name.trim() && i.amount > 0)
     startLoading()
-    const { error } = await sb.from('recipes').update({
-      name: editName.trim(),
-      base_yield: editYield,
-      ingredients: validIngs,
-      updated_by: user.id,
-      updated_at: new Date().toISOString(),
-    }).eq('id', currentRecipe.id)
-    if (!error) {
-      setRecipes(prev => prev.map(r => r.id === currentRecipe.id
-        ? { ...r, name: editName.trim(), base_yield: editYield, ingredients: validIngs }
-        : r
-      ))
-      await writeAudit('update', 'recipes', String(currentRecipe.id), `Cập nhật công thức: ${editName}`)
-      toast('Đã lưu công thức')
-      setDirty(false)
-    } else {
-      toast('Lỗi lưu: ' + error.message, 'error')
+    try {
+      const { data: updated, error } = await sb.from('recipes').update({
+        name: editName.trim(),
+        base_yield: editYield,
+        ingredients: validIngs,
+        updated_by: user.id,
+        updated_at: new Date().toISOString(),
+      }).eq('id', currentRecipe.id).select().single()
+      if (error) {
+        toast('Lỗi lưu: ' + error.message, 'error')
+      } else if (!updated) {
+        toast('Không thể lưu — kiểm tra quyền truy cập trong Supabase', 'error')
+      } else {
+        setRecipes(prev => prev.map(r => r.id === currentRecipe.id
+          ? { ...r, name: editName.trim(), base_yield: editYield, ingredients: validIngs }
+          : r
+        ))
+        await writeAudit('update', 'recipes', String(currentRecipe.id), `Cập nhật công thức: ${editName}`)
+        toast('Đã lưu công thức')
+        setDirty(false)
+      }
+    } catch (e) {
+      toast('Lỗi: ' + (e as Error).message, 'error')
     }
     stopLoading()
   }
