@@ -361,7 +361,7 @@ export default function InvoicesPage() {
 
   // ─── save invoice ─────────────────────────────────────────
   const handleSave = async () => {
-    if (!user) return
+    if (!user) { toast('Chưa đăng nhập — vui lòng tải lại trang', 'error'); return }
     const invItems = items
       .filter(it => it.name && (it.amount > 0 || it.qty > 0))
       .map(it => ({
@@ -412,45 +412,49 @@ export default function InvoicesPage() {
     }
 
     startLoading()
-    const { data, error } = await sb.from('invoices').insert({
-      type: invType,
-      inv_date: invDate,
-      code,
-      partner,
-      note,
-      items: invItems,
-      image_url: imageUrl,
-      created_by: user.id,
-      created_at: new Date().toISOString(),
-    }).select().single()
+    try {
+      const { data, error } = await sb.from('invoices').insert({
+        type: invType,
+        inv_date: invDate,
+        code,
+        partner,
+        note,
+        items: invItems,
+        image_url: imageUrl,
+        created_by: user.id,
+        created_at: new Date().toISOString(),
+      }).select().single()
 
-    if (!error && data) {
-      await writeAudit('create', 'invoices', String(data.id), `Tạo hoá đơn ${invType === 'in' ? 'nhập' : 'xuất'}: ${code}`)
-      await updateStock(invItems as { name: string; amount: number }[], invType, 1)
+      if (!error && data) {
+        await writeAudit('create', 'invoices', String(data.id), `Tạo hoá đơn ${invType === 'in' ? 'nhập' : 'xuất'}: ${code}`)
+        await updateStock(invItems as { name: string; amount: number }[], invType, 1)
 
-      if (invType === 'in') {
-        // Tạo lô hàng cho từng dòng nhập
-        const batchErr = await createBatchesForImport(data.id, code, invDate, invItems)
-        if (batchErr) {
-          // HĐ đã lưu nhưng lô chưa tạo được — cảnh báo rõ ràng
-          toast(`Hoá đơn đã lưu nhưng KHÔNG tạo được lô: ${batchErr}. Hãy chạy migration_batches.sql trong Supabase!`, 'error')
+        if (invType === 'in') {
+          // Tạo lô hàng cho từng dòng nhập
+          const batchErr = await createBatchesForImport(data.id, code, invDate, invItems)
+          if (batchErr) {
+            // HĐ đã lưu nhưng lô chưa tạo được — cảnh báo rõ ràng
+            toast(`Hoá đơn đã lưu nhưng KHÔNG tạo được lô: ${batchErr}. Hãy chạy migration_batches.sql trong Supabase!`, 'error')
+          } else {
+            toast('Đã lưu hoá đơn & tạo lô hàng')
+          }
         } else {
-          toast('Đã lưu hoá đơn & tạo lô hàng')
+          // Trừ FIFO từ các lô cũ nhất trước
+          await deductBatchesFifo(invItems as { name: string; amount: number; unit: string }[], data.id)
+          toast('Đã lưu hoá đơn & phân bổ lô FIFO')
         }
-      } else {
-        // Trừ FIFO từ các lô cũ nhất trước
-        await deductBatchesFifo(invItems as { name: string; amount: number; unit: string }[], data.id)
-        toast('Đã lưu hoá đơn & phân bổ lô FIFO')
+        setInvoices(prev => [data as Invoice, ...prev])
+        setCode(genCode())
+        setPartner('')
+        setNote('')
+        setImageUrl('')
+        setItems([{ name: '', amount: 0, unit: UNITS[0], price: 0, mfg_date: '', exp_date: '', recipeId: 0, qty: 0 }])
+        setBatchPreviews({})
+      } else if (error) {
+        toast('Lỗi lưu: ' + error.message, 'error')
       }
-      setInvoices(prev => [data as Invoice, ...prev])
-      setCode(genCode())
-      setPartner('')
-      setNote('')
-      setImageUrl('')
-      setItems([{ name: '', amount: 0, unit: UNITS[0], price: 0, mfg_date: '', exp_date: '', recipeId: 0, qty: 0 }])
-      setBatchPreviews({})
-    } else if (error) {
-      toast('Lỗi lưu: ' + error.message, 'error')
+    } catch (e) {
+      toast('Lỗi: ' + (e as Error).message, 'error')
     }
     stopLoading()
   }
