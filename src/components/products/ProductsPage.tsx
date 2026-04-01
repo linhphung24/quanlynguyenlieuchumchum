@@ -39,7 +39,7 @@ function stockLabel(p: Product): { text: string; cls: string } {
 const emptyProduct = (): Partial<Product> => ({
   code: '', name: '', category: CATEGORIES[0], unit: UNITS[0],
   cost_price: 0, sell_price: 0, stock_qty: 0, min_stock: 0,
-  description: '', is_active: true,
+  supplier: '', description: '', is_active: true,
 })
 
 export default function ProductsPage() {
@@ -312,10 +312,13 @@ export default function ProductsPage() {
                   {p.code && <div className="text-[10px] text-gray-400 font-mono">{p.code}</div>}
                 </div>
 
-                <div className="mb-3">
+                <div className="mb-3 flex items-center gap-2 flex-wrap">
                   <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium ${CAT_COLORS[p.category] || 'bg-gray-100 text-gray-600'}`}>
                     {p.category}
                   </span>
+                  {p.supplier && (
+                    <span className="text-[10px] text-gray-400 truncate max-w-[120px]" title={p.supplier}>🏭 {p.supplier}</span>
+                  )}
                 </div>
 
                 {/* Stock info */}
@@ -357,6 +360,7 @@ export default function ProductsPage() {
                 <tr className="border-b border-[#f0ebe4]">
                   <th className="text-left text-[10px] font-semibold uppercase tracking-wider text-gray-400 px-4 py-3 bg-[#fafaf8]">Sản phẩm</th>
                   <th className="text-left text-[10px] font-semibold uppercase tracking-wider text-gray-400 px-4 py-3 bg-[#fafaf8]">Danh mục</th>
+                  <th className="text-left text-[10px] font-semibold uppercase tracking-wider text-gray-400 px-4 py-3 bg-[#fafaf8]">Nhà CC</th>
                   <th className="text-left text-[10px] font-semibold uppercase tracking-wider text-gray-400 px-4 py-3 bg-[#fafaf8]">ĐVT</th>
                   <th className="text-right text-[10px] font-semibold uppercase tracking-wider text-gray-400 px-4 py-3 bg-[#fafaf8]">Tồn</th>
                   <th className="text-left text-[10px] font-semibold uppercase tracking-wider text-gray-400 px-4 py-3 bg-[#fafaf8] w-36">Mức kho</th>
@@ -379,6 +383,9 @@ export default function ProductsPage() {
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${CAT_COLORS[p.category] || 'bg-gray-100 text-gray-600'}`}>
                           {p.category}
                         </span>
+                      </td>
+                      <td className="px-4 py-3 text-xs text-gray-500 max-w-[140px] truncate" title={p.supplier || ''}>
+                        {p.supplier || <span className="text-gray-300">—</span>}
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-500">{p.unit}</td>
                       <td className={`px-4 py-3 text-right font-semibold ${p.is_active && p.min_stock > 0 && p.stock_qty < p.min_stock ? 'text-red-600' : 'text-[#1a0f07]'}`}>
@@ -462,6 +469,17 @@ export default function ProductsPage() {
                   onChange={e => setEditing({ ...editing, code: e.target.value })}
                   placeholder="SKU / Mã kho..."
                   className="w-full px-3 py-2.5 border border-[#e8ddd0] rounded-xl text-sm bg-[#fafaf8] text-[#1a0f07] outline-none focus:border-[#c8773a] focus:bg-white transition-all font-mono"
+                />
+              </div>
+
+              {/* Supplier */}
+              <div>
+                <label className="block text-xs font-medium text-[#3d1f0a] mb-1.5">Nhà cung cấp</label>
+                <input
+                  value={editing.supplier || ''}
+                  onChange={e => setEditing({ ...editing, supplier: e.target.value })}
+                  placeholder="Tên nhà cung cấp..."
+                  className="w-full px-3 py-2.5 border border-[#e8ddd0] rounded-xl text-sm bg-[#fafaf8] text-[#1a0f07] outline-none focus:border-[#c8773a] focus:bg-white transition-all"
                 />
               </div>
 

@@ -122,3 +122,35 @@ npm run build # kiểm tra trước khi deploy
 ## SQL migration
 
 File `supabase/migration_batches.sql` — chạy trong Supabase Dashboard → SQL Editor để tạo bảng `batches` và `batch_deductions`.
+
+Thêm cột `image_url` cho bảng `invoices` (nếu chưa có):
+```sql
+ALTER TABLE invoices ADD COLUMN IF NOT EXISTS image_url TEXT;
+```
+
+File `supabase/reset_and_import_products.sql` — xoá sạch products/batches/batch_deductions rồi import ~430 sản phẩm mới (NL + VL categories).
+
+## Thay đổi đã thực hiện
+
+### Quy ước fix lỗi silent-fail (đã áp dụng toàn bộ)
+- Mọi hàm `handleSave`/`handleCreate`/`handleDelete` phải có `try-catch`
+- `if (!user) return` → phải hiển thị toast, KHÔNG silent return
+- `.update()` phải dùng `.select().single()` để detect silent RLS failure (khi `data=null, error=null`)
+- Sau update: kiểm tra `if (!updated) { toast('Không thể cập nhật — kiểm tra quyền...') }`
+
+### ProductsPage.tsx
+- Thêm category `'Vật liệu'` vào `CATEGORIES` array và `CAT_COLORS` (màu orange)
+- Fix `handleSave`: thêm toast khi `!user`, thêm try-catch, thêm `.select().single()` cho update
+
+### ImageUpload.tsx
+- Thêm check env vars `CLOUD_NAME`/`UPLOAD_PRESET` — hiển thị lỗi rõ ràng nếu thiếu
+
+### ProductPicker.tsx
+- Fix scroll đóng dropdown: thêm `dropdownRef`, bỏ qua scroll event khi xảy ra bên trong dropdown
+- Dùng `position: fixed` để thoát `overflow:hidden` container
+
+### RecipesPage.tsx
+- Fix `handleSave`: bỏ check `!profile` (không dùng, gây silent fail), thêm try-catch, `.select().single()`
+
+### InvoicesPage.tsx
+- Fix `handleSave`: thêm toast khi `!user`, bọc toàn bộ logic insert trong try-catch
