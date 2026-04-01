@@ -6,10 +6,11 @@ import { Product } from '@/types'
 import { UNITS } from '@/lib/constants'
 import { fmtPrice } from '@/lib/utils'
 
-const CATEGORIES = ['Nguyên liệu', 'Thành phẩm', 'Bao bì', 'Khác']
+const CATEGORIES = ['Nguyên liệu', 'Vật liệu', 'Thành phẩm', 'Bao bì', 'Khác']
 
 const CAT_COLORS: Record<string, string> = {
   'Nguyên liệu': 'bg-blue-100 text-blue-700',
+  'Vật liệu':    'bg-orange-100 text-orange-700',
   'Thành phẩm':  'bg-green-100 text-green-700',
   'Bao bì':      'bg-purple-100 text-purple-700',
   'Khác':        'bg-gray-100 text-gray-600',
