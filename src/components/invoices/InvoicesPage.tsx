@@ -103,6 +103,7 @@ export default function InvoicesPage() {
   const [tab, setTab] = useState<'invoices' | 'batches'>('invoices')
   const [batchPreviews, setBatchPreviews] = useState<Record<number, BatchAlloc[]>>({})
   const [invBatchUsage, setInvBatchUsage] = useState<Record<number, BatchDeduction[]>>({})
+  const [uploadingImgFor, setUploadingImgFor] = useState<number | null>(null)
 
   useEffect(() => { loadInvoices() }, [])
 
@@ -483,6 +484,15 @@ export default function InvoicesPage() {
     stopLoading()
   }
 
+  // ─── upload ảnh bổ sung cho hoá đơn đã lưu ───────────────
+  const handleSaveImage = async (invId: number, url: string) => {
+    const { error } = await sb.from('invoices').update({ image_url: url }).eq('id', invId)
+    if (error) { toast('Lỗi lưu ảnh: ' + error.message, 'error'); return }
+    setInvoices(prev => prev.map(i => i.id === invId ? { ...i, image_url: url } : i))
+    setUploadingImgFor(null)
+    toast('Đã lưu ảnh hoá đơn')
+  }
+
   // ─── toggle accordion + auto-load batch usage ─────────────
   const toggleInv = (id: number) => {
     setOpenInvs(prev => {
@@ -584,9 +594,9 @@ export default function InvoicesPage() {
             {/* Ảnh hoá đơn */}
             <div className="mb-3">
               <label className="block text-xs font-medium text-[#8b5e3c] mb-1">
-                Ảnh hoá đơn <span className="text-[#d94f3d]">*</span>
+                Ảnh hoá đơn <span className="text-gray-400 font-normal">(tuỳ chọn)</span>
               </label>
-              <ImageUpload value={imageUrl} onChange={setImageUrl} required />
+              <ImageUpload value={imageUrl} onChange={setImageUrl} />
             </div>
 
             {/* Items table */}
@@ -734,7 +744,9 @@ export default function InvoicesPage() {
                       {openInvs.has(inv.id) && (
                         <div className="border-t border-[#f0e8d8] bg-white p-3">
                           {inv.note && <p className="text-xs text-[#8b5e3c] mb-2">📝 {inv.note}</p>}
-                          {inv.image_url && (
+
+                          {/* Ảnh hoá đơn */}
+                          {inv.image_url ? (
                             <div className="mb-3">
                               <a href={inv.image_url} target="_blank" rel="noopener noreferrer">
                                 <img src={inv.image_url} alt="Ảnh hoá đơn"
@@ -742,6 +754,24 @@ export default function InvoicesPage() {
                               </a>
                               <p className="text-[10px] text-[#8b5e3c] mt-1">📷 Ảnh hoá đơn — click để xem to</p>
                             </div>
+                          ) : uploadingImgFor === inv.id ? (
+                            <div className="mb-3 p-3 bg-[#fdf6ec] border border-[#f5e6cc] rounded-xl">
+                              <div className="flex items-center justify-between mb-2">
+                                <p className="text-xs font-medium text-[#3d1f0a]">📷 Tải lên ảnh hoá đơn</p>
+                                <button onClick={() => setUploadingImgFor(null)} className="text-[10px] text-gray-400 hover:text-gray-600 cursor-pointer">✕ Huỷ</button>
+                              </div>
+                              <ImageUpload
+                                value=""
+                                onChange={url => { if (url) handleSaveImage(inv.id, url) }}
+                              />
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => setUploadingImgFor(inv.id)}
+                              className="mb-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-[#c8773a] text-[#c8773a] text-xs cursor-pointer hover:bg-[#fef4e8] transition-all"
+                            >
+                              📷 Thêm ảnh hoá đơn
+                            </button>
                           )}
 
                           {/* Items table */}
