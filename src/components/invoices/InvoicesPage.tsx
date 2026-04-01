@@ -374,7 +374,6 @@ export default function InvoicesPage() {
       }))
 
     if (invItems.length === 0) { toast('Thêm ít nhất một mặt hàng hợp lệ', 'error'); return }
-    if (!imageUrl) { toast('Vui lòng tải lên ảnh hoá đơn', 'error'); return }
 
     // ── Kiểm tra FIFO: mỗi dòng xuất chỉ được lấy từ 1 lô ──
     if (invType === 'out') {
