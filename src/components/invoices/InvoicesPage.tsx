@@ -228,6 +228,7 @@ export default function InvoicesPage() {
     }
 
     const deductionRows: Omit<BatchDeduction, 'id' | 'created_at'>[] = []
+    const batchUpdates: Promise<unknown>[] = []
 
     for (const item of invItems) {
       if (!item.name || !item.amount) continue
@@ -238,7 +239,7 @@ export default function InvoicesPage() {
         if (rem <= 0) break
         const take = Math.min(rem, batch.remaining_qty)
         const newRemaining = Math.max(0, +(batch.remaining_qty - take).toFixed(6))
-        await sb.from('batches').update({ remaining_qty: newRemaining }).eq('id', batch.id)
+        batchUpdates.push(sb.from('batches').update({ remaining_qty: newRemaining }).eq('id', batch.id))
         deductionRows.push({
           batch_id: batch.id,
           inv_id: exportInvId,
@@ -248,15 +249,16 @@ export default function InvoicesPage() {
           batch_price: batch.price,
           batch_unit: batch.unit,
         })
-        // update local copy so next iteration sees updated remaining
         batch.remaining_qty = newRemaining
         rem -= take
       }
     }
 
-    if (deductionRows.length > 0) {
-      await sb.from('batch_deductions').insert(deductionRows)
-    }
+    // Chạy tất cả batch updates + insert deductions song song
+    await Promise.all([
+      ...batchUpdates,
+      deductionRows.length > 0 ? sb.from('batch_deductions').insert(deductionRows) : Promise.resolve(),
+    ])
   }
 
   // ─── restore batches when deleting xuất invoice ──────────
@@ -288,7 +290,7 @@ export default function InvoicesPage() {
     await sb.from('batches').delete().eq('inv_id', invId)
   }
 
-  // ─── stock update (unchanged logic) ──────────────────────
+  // ─── stock update ─────────────────────────────────────────
   const updateStock = async (invItems: { name: string; amount: number }[], type: 'in' | 'out', multiplier: 1 | -1) => {
     const sign = (type === 'in' ? 1 : -1) * multiplier
     const deltas = new Map<number, number>()
@@ -303,8 +305,11 @@ export default function InvoicesPage() {
       const product = allProducts.find(p => p.id === id)!
       return sb.from('products').update({ stock_qty: (product.stock_qty || 0) + delta }).eq('id', id)
     }))
-    const { data } = await sb.from('products').select('*').order('name')
-    if (data) setAllProducts(data as unknown as typeof allProducts)
+    // Cập nhật local state thay vì re-fetch toàn bộ sản phẩm
+    setAllProducts(prev => prev.map(p => {
+      const delta = deltas.get(p.id)
+      return delta !== undefined ? { ...p, stock_qty: (p.stock_qty || 0) + delta } : p
+    }))
   }
 
   // ─── item form helpers ────────────────────────────────────
@@ -373,43 +378,43 @@ export default function InvoicesPage() {
 
     if (invItems.length === 0) { toast('Thêm ít nhất một mặt hàng hợp lệ', 'error'); return }
 
-    // ── Kiểm tra FIFO: mỗi dòng xuất chỉ được lấy từ 1 lô ──
-    if (invType === 'out') {
-      const names = [...new Set(invItems.map(it => it.name))]
-      const { data: batchCheck } = await sb
-        .from('batches')
-        .select('id, product_name, inv_code, remaining_qty, unit')
-        .in('product_name', names)
-        .gt('remaining_qty', 0)
-        .order('inv_date', { ascending: true })
-        .order('id', { ascending: true })
+    startLoading()
+    try {
+      // ── Kiểm tra FIFO: mỗi dòng xuất chỉ được lấy từ 1 lô ──
+      if (invType === 'out') {
+        const names = [...new Set(invItems.map(it => it.name))]
+        const { data: batchCheck } = await sb
+          .from('batches')
+          .select('id, product_name, inv_code, remaining_qty, unit')
+          .in('product_name', names)
+          .gt('remaining_qty', 0)
+          .order('inv_date', { ascending: true })
+          .order('id', { ascending: true })
 
-      // Lấy lô cũ nhất cho từng sản phẩm
-      const oldestBatch: Record<string, { inv_code: string; remaining_qty: number; unit: string }> = {}
-      for (const b of (batchCheck || []) as { id: number; product_name: string; inv_code: string; remaining_qty: number; unit: string }[]) {
-        if (!oldestBatch[b.product_name]) oldestBatch[b.product_name] = { inv_code: b.inv_code, remaining_qty: b.remaining_qty, unit: b.unit }
-      }
+        // Lấy lô cũ nhất cho từng sản phẩm
+        const oldestBatch: Record<string, { inv_code: string; remaining_qty: number; unit: string }> = {}
+        for (const b of (batchCheck || []) as { id: number; product_name: string; inv_code: string; remaining_qty: number; unit: string }[]) {
+          if (!oldestBatch[b.product_name]) oldestBatch[b.product_name] = { inv_code: b.inv_code, remaining_qty: b.remaining_qty, unit: b.unit }
+        }
 
-      const violations: string[] = []
-      for (const item of invItems) {
-        const batch = oldestBatch[item.name]
-        if (!batch) continue // sẽ xử lý bởi stock check
-        if (item.amount > batch.remaining_qty) {
-          violations.push(
-            `"${item.name}": lô ${batch.inv_code} chỉ còn ${fmtNum(batch.remaining_qty)} ${batch.unit}. ` +
-            `Xuất tối đa ${fmtNum(batch.remaining_qty)} để hết lô này, rồi tạo hoá đơn mới cho ${fmtNum(item.amount - batch.remaining_qty)} còn lại.`
-          )
+        const violations: string[] = []
+        for (const item of invItems) {
+          const batch = oldestBatch[item.name]
+          if (!batch) continue
+          if (item.amount > batch.remaining_qty) {
+            violations.push(
+              `"${item.name}": lô ${batch.inv_code} chỉ còn ${fmtNum(batch.remaining_qty)} ${batch.unit}. ` +
+              `Xuất tối đa ${fmtNum(batch.remaining_qty)} để hết lô này, rồi tạo hoá đơn mới cho ${fmtNum(item.amount - batch.remaining_qty)} còn lại.`
+            )
+          }
+        }
+
+        if (violations.length > 0) {
+          toast('Không thể xuất vượt lô hiện tại:\n' + violations.join('\n'), 'error')
+          return
         }
       }
 
-      if (violations.length > 0) {
-        toast('Không thể xuất vượt lô hiện tại:\n' + violations.join('\n'), 'error')
-        return
-      }
-    }
-
-    startLoading()
-    try {
       const { data, error } = await sb.from('invoices').insert({
         type: invType,
         inv_date: invDate,
@@ -423,20 +428,20 @@ export default function InvoicesPage() {
       }).select().single()
 
       if (!error && data) {
-        await writeAudit('create', 'invoices', String(data.id), `Tạo hoá đơn ${invType === 'in' ? 'nhập' : 'xuất'}: ${code}`)
-        await updateStock(invItems as { name: string; amount: number }[], invType, 1)
+        // Chạy song song: audit log + cập nhật stock
+        await Promise.all([
+          writeAudit('create', 'invoices', String(data.id), `Tạo hoá đơn ${invType === 'in' ? 'nhập' : 'xuất'}: ${code}`),
+          updateStock(invItems as { name: string; amount: number }[], invType, 1),
+        ])
 
         if (invType === 'in') {
-          // Tạo lô hàng cho từng dòng nhập
           const batchErr = await createBatchesForImport(data.id, code, invDate, invItems)
           if (batchErr) {
-            // HĐ đã lưu nhưng lô chưa tạo được — cảnh báo rõ ràng
             toast(`Hoá đơn đã lưu nhưng KHÔNG tạo được lô: ${batchErr}. Hãy chạy migration_batches.sql trong Supabase!`, 'error')
           } else {
             toast('Đã lưu hoá đơn & tạo lô hàng')
           }
         } else {
-          // Trừ FIFO từ các lô cũ nhất trước
           await deductBatchesFifo(invItems as { name: string; amount: number; unit: string }[], data.id)
           toast('Đã lưu hoá đơn & phân bổ lô FIFO')
         }
@@ -452,8 +457,9 @@ export default function InvoicesPage() {
       }
     } catch (e) {
       toast('Lỗi: ' + (e as Error).message, 'error')
+    } finally {
+      stopLoading()
     }
-    stopLoading()
   }
 
   // ─── delete invoice ───────────────────────────────────────
