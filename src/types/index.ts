@@ -86,7 +86,7 @@ export interface Product {
   sell_price: number
   stock_qty: number
   min_stock: number
-  supplier: string
+  supplier?: string
   description: string
   is_active: boolean
   created_by: string

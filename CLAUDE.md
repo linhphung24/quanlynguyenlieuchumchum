@@ -154,3 +154,14 @@ File `supabase/reset_and_import_products.sql` — xoá sạch products/batches/b
 
 ### InvoicesPage.tsx
 - Fix `handleSave`: thêm toast khi `!user`, bọc toàn bộ logic insert trong try-catch
+
+### ProductsPage.tsx — Nhà cung cấp
+- Thêm field `supplier?: string` (optional) vào `Product` interface trong `types/index.ts`
+- Thêm input "Nhà cung cấp" vào form slide-over (sau Mã sản phẩm)
+- Card view: hiển thị `🏭 Tên NCC` nhỏ bên cạnh badge danh mục
+- Table view: thêm cột "Nhà CC" giữa Danh mục và ĐVT
+- SQL cần chạy: `ALTER TABLE products ADD COLUMN IF NOT EXISTS supplier TEXT NOT NULL DEFAULT '';`
+
+### Bài học: TypeScript non-optional field gây lỗi compile
+- Thêm field bắt buộc (`supplier: string`) vào interface → Next.js compile lỗi → overlay đỏ che toàn trang → mọi click đều không hoạt động
+- **Quy tắc**: field mới từ DB luôn khai báo optional (`supplier?: string`) cho đến khi chắc chắn cột tồn tại trong tất cả môi trường
