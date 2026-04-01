@@ -613,10 +613,10 @@ export default function InvoicesPage() {
                       {invType === 'in' ? 'Giá nhập' : 'Giá bán'} <span className="text-[#c8773a] normal-case font-normal">✦</span>
                     </th>
                     <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-32">
-                      NSX {invType === 'out' && <span className="text-[#c8773a] normal-case font-normal">✦</span>}
+                      NSX
                     </th>
                     <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-32">
-                      HSD {invType === 'out' && <span className="text-[#c8773a] normal-case font-normal">✦</span>}
+                      HSD
                     </th>
                     <th className="bg-[#f5e6cc] w-8"></th>
                   </tr>
