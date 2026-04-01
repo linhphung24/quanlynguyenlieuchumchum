@@ -332,30 +332,27 @@ export default function InvoicesPage() {
         if (!unit && product.unit) updateItem(idx, 'unit', product.unit)
       }
     } else {
-      // Xuất: lấy giá nhập lô + NSX/HSD từ lô FIFO cũ nhất còn hàng
+      // Xuất: fill giá bán từ danh mục + ĐVT/NSX/HSD từ lô FIFO cũ nhất
+      const product = allProducts.find(
+        p => p.name.trim().toLowerCase() === name.trim().toLowerCase()
+      )
+      if (product) {
+        if (product.sell_price > 0) updateItem(idx, 'price', product.sell_price)
+        if (!unit && product.unit) updateItem(idx, 'unit', product.unit)
+      }
       const { data } = await sb
         .from('batches')
-        .select('price, unit, mfg_date, exp_date, inv_code')
+        .select('unit, mfg_date, exp_date')
         .eq('product_name', name.trim())
         .gt('remaining_qty', 0)
         .order('inv_date', { ascending: true })
         .order('id', { ascending: true })
         .limit(1)
       if (data && data.length > 0) {
-        const b = data[0] as { price: number; unit: string; mfg_date: string | null; exp_date: string | null; inv_code: string }
-        if (b.price > 0)  updateItem(idx, 'price', b.price)
-        if (b.unit && !unit) updateItem(idx, 'unit', b.unit)
-        if (b.mfg_date)   updateItem(idx, 'mfg_date', b.mfg_date)
-        if (b.exp_date)    updateItem(idx, 'exp_date',  b.exp_date)
-      } else {
-        // Không có lô — fallback giá bán từ danh mục
-        const product = allProducts.find(
-          p => p.name.trim().toLowerCase() === name.trim().toLowerCase()
-        )
-        if (product) {
-          if (product.sell_price > 0) updateItem(idx, 'price', product.sell_price)
-          if (!unit && product.unit) updateItem(idx, 'unit', product.unit)
-        }
+        const b = data[0] as { unit: string; mfg_date: string | null; exp_date: string | null }
+        if (b.unit) updateItem(idx, 'unit', b.unit)
+        if (b.mfg_date) updateItem(idx, 'mfg_date', b.mfg_date)
+        if (b.exp_date)  updateItem(idx, 'exp_date',  b.exp_date)
       }
     }
   }
@@ -612,12 +609,8 @@ export default function InvoicesPage() {
                     <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-32">
                       {invType === 'in' ? 'Giá nhập' : 'Giá bán'} <span className="text-[#c8773a] normal-case font-normal">✦</span>
                     </th>
-                    <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-32">
-                      NSX {invType === 'out' && <span className="text-[#c8773a] normal-case font-normal">✦</span>}
-                    </th>
-                    <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-32">
-                      HSD {invType === 'out' && <span className="text-[#c8773a] normal-case font-normal">✦</span>}
-                    </th>
+                    <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-32">NSX</th>
+                    <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-32">HSD</th>
                     <th className="bg-[#f5e6cc] w-8"></th>
                   </tr>
                 </thead>
