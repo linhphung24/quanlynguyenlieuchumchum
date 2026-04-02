@@ -98,11 +98,12 @@ export default function ProductsPage() {
     if (!user) { toast('Chưa đăng nhập — vui lòng tải lại trang', 'error'); return }
     if (!editing) return
     if (!editing.name?.trim()) { toast('Tên sản phẩm không được trống', 'error'); return }
+    const payload = { ...editing, code: editing.code?.trim() || null }
     startLoading()
     try {
       if (editMode === 'create') {
         const { data, error } = await sb.from('products').insert({
-          ...editing, created_by: user.id, created_at: new Date().toISOString(),
+          ...payload, created_by: user.id, created_at: new Date().toISOString(),
         }).select().single()
         if (!error && data) {
           await writeAudit('create', 'products', String(data.id), `Tạo sản phẩm: ${editing.name}`)
@@ -111,7 +112,7 @@ export default function ProductsPage() {
         } else if (error) { toast('Lỗi tạo: ' + error.message, 'error') }
       } else {
         const { data: updated, error } = await sb.from('products').update({
-          ...editing, updated_by: user.id, updated_at: new Date().toISOString(),
+          ...payload, updated_by: user.id, updated_at: new Date().toISOString(),
         }).eq('id', editing.id!).select().single()
         if (error) {
           toast('Lỗi cập nhật: ' + error.message, 'error')
