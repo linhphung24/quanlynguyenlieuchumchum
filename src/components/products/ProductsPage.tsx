@@ -457,6 +457,7 @@ export default function ProductsPage() {
                 <input
                   value={editing.name || ''}
                   onChange={e => setEditing({ ...editing, name: e.target.value })}
+                  onBlur={e => setEditing({ ...editing, name: e.target.value.trim() })}
                   placeholder="Ví dụ: Bột mì số 11..."
                   className="w-full px-3 py-2.5 border border-[#e8ddd0] rounded-xl text-sm bg-[#fafaf8] text-[#1a0f07] outline-none focus:border-[#c8773a] focus:bg-white transition-all"
                 />
@@ -468,6 +469,7 @@ export default function ProductsPage() {
                 <input
                   value={editing.code || ''}
                   onChange={e => setEditing({ ...editing, code: e.target.value })}
+                  onBlur={e => setEditing({ ...editing, code: e.target.value.trim() })}
                   placeholder="SKU / Mã kho..."
                   className="w-full px-3 py-2.5 border border-[#e8ddd0] rounded-xl text-sm bg-[#fafaf8] text-[#1a0f07] outline-none focus:border-[#c8773a] focus:bg-white transition-all font-mono"
                 />
@@ -479,6 +481,7 @@ export default function ProductsPage() {
                 <input
                   value={editing.supplier || ''}
                   onChange={e => setEditing({ ...editing, supplier: e.target.value })}
+                  onBlur={e => setEditing({ ...editing, supplier: e.target.value.trim() })}
                   placeholder="Tên nhà cung cấp..."
                   className="w-full px-3 py-2.5 border border-[#e8ddd0] rounded-xl text-sm bg-[#fafaf8] text-[#1a0f07] outline-none focus:border-[#c8773a] focus:bg-white transition-all"
                 />
@@ -564,6 +567,7 @@ export default function ProductsPage() {
                 <textarea
                   value={editing.description || ''}
                   onChange={e => setEditing({ ...editing, description: e.target.value })}
+                  onBlur={e => setEditing({ ...editing, description: e.target.value.trim() })}
                   rows={2} placeholder="Mô tả ngắn..."
                   className="w-full px-3 py-2.5 border border-[#e8ddd0] rounded-xl text-sm bg-[#fafaf8] text-[#1a0f07] outline-none focus:border-[#c8773a] focus:bg-white transition-all resize-none"
                 />

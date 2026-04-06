@@ -575,7 +575,7 @@ export default function InvoicesPage() {
               </div>
               <div>
                 <label className="block text-xs font-medium text-[#8b5e3c] mb-1">Mã hoá đơn</label>
-                <input value={code} onChange={e => setCode(e.target.value)}
+                <input value={code} onChange={e => setCode(e.target.value)} onBlur={e => setCode(e.target.value.trim())}
                   className="w-full px-3 py-2.5 border-[1.5px] border-[#f5e6cc] rounded-lg text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors" />
               </div>
               <div>
@@ -589,7 +589,7 @@ export default function InvoicesPage() {
               </div>
               <div>
                 <label className="block text-xs font-medium text-[#8b5e3c] mb-1">Ghi chú</label>
-                <input value={note} onChange={e => setNote(e.target.value)} placeholder="Ghi chú..."
+                <input value={note} onChange={e => setNote(e.target.value)} onBlur={e => setNote(e.target.value.trim())} placeholder="Ghi chú..."
                   className="w-full px-3 py-2.5 border-[1.5px] border-[#f5e6cc] rounded-lg text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors" />
               </div>
             </div>

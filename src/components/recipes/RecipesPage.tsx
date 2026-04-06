@@ -141,6 +141,7 @@ export default function RecipesPage() {
             <input
               value={newName}
               onChange={e => setNewName(e.target.value)}
+              onBlur={e => setNewName(e.target.value.trim())}
               placeholder="Tên công thức..."
               className="flex-1 min-w-[160px] px-3 py-2.5 border-[1.5px] border-[#f5e6cc] rounded-lg text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors"
               required
@@ -199,6 +200,7 @@ export default function RecipesPage() {
                   <input
                     value={editName}
                     onChange={e => { setEditName(e.target.value); setDirty(true) }}
+                    onBlur={e => setEditName(e.target.value.trim())}
                     className="w-full px-3 py-2.5 border-[1.5px] border-[#f5e6cc] rounded-lg text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors"
                   />
                 </div>
@@ -234,6 +236,7 @@ export default function RecipesPage() {
                             <input
                               value={ing.name}
                               onChange={e => handleIngChange(idx, 'name', e.target.value)}
+                              onBlur={e => handleIngChange(idx, 'name', e.target.value.trim())}
                               placeholder="Tên nguyên liệu..."
                               className="w-full px-2 py-1 border-[1.5px] border-[#f5e6cc] rounded text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors"
                             />

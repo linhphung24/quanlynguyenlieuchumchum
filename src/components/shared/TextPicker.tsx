@@ -24,7 +24,10 @@ export default function TextPicker({ value, onChange, suggestions, placeholder =
   }
 
   const handleBlur = () => {
-    blurTimer.current = setTimeout(() => setOpen(false), 160)
+    blurTimer.current = setTimeout(() => {
+      setOpen(false)
+      onChange(value.trim())
+    }, 160)
   }
 
   return (
