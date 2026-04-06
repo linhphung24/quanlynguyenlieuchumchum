@@ -49,7 +49,7 @@ export default function RecipesPage() {
   const handleSave = async () => {
     if (!currentRecipe) return
     if (!user) { toast('Chưa đăng nhập — vui lòng tải lại trang', 'error'); return }
-    const validIngs = editIngredients.filter(i => i.name.trim() && i.amount > 0)
+    const validIngs = editIngredients.filter(i => i.name.trim())
     startLoading()
     try {
       const { data: updated, error } = await sb.from('recipes').update({
