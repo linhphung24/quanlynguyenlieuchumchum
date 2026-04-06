@@ -4,10 +4,9 @@ import { useState, useEffect } from 'react'
 import { useApp } from '@/contexts/AppContext'
 import { Recipe, RecipeIngredient } from '@/types'
 import { UNITS } from '@/lib/constants'
-import ProductPicker from '@/components/shared/ProductPicker'
 
 export default function RecipesPage() {
-  const { sb, user, profile, recipes, setRecipes, currentRecipeId, setCurrentRecipeId, allProducts, toast, startLoading, stopLoading, writeAudit } = useApp()
+  const { sb, user, profile, recipes, setRecipes, currentRecipeId, setCurrentRecipeId, toast, startLoading, stopLoading, writeAudit } = useApp()
 
   const [editName, setEditName] = useState('')
   const [editYield, setEditYield] = useState(1)
@@ -232,14 +231,11 @@ export default function RecipesPage() {
                       {editIngredients.map((ing, idx) => (
                         <tr key={idx}>
                           <td className="px-3 py-2.5 border-b border-[#f0e8d8]">
-                            <ProductPicker
-                              products={allProducts.filter(p => p.is_active)}
+                            <input
                               value={ing.name}
-                              onChange={(name, unit) => {
-                                const updated = editIngredients.map((x, i) => i === idx ? { ...x, name, ...(unit ? { unit } : {}) } : x)
-                                setEditIngredients(updated)
-                                setDirty(true)
-                              }}
+                              onChange={e => handleIngChange(idx, 'name', e.target.value)}
+                              placeholder="Tên nguyên liệu..."
+                              className="w-full px-2 py-1 border-[1.5px] border-[#f5e6cc] rounded text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors"
                             />
                           </td>
                           <td className="px-3 py-2.5 border-b border-[#f0e8d8]">
