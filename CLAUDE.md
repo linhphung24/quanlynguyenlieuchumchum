@@ -165,3 +165,19 @@ File `supabase/reset_and_import_products.sql` — xoá sạch products/batches/b
 ### Bài học: TypeScript non-optional field gây lỗi compile
 - Thêm field bắt buộc (`supplier: string`) vào interface → Next.js compile lỗi → overlay đỏ che toàn trang → mọi click đều không hoạt động
 - **Quy tắc**: field mới từ DB luôn khai báo optional (`supplier?: string`) cho đến khi chắc chắn cột tồn tại trong tất cả môi trường
+
+### UsersPage.tsx — Xoá người dùng
+- Thêm nút 🗑 Xoá trong cột Thao tác — chỉ hiện với `profile.role === 'admin'`
+- Không thể xoá chính mình (`p.id !== profile?.id`)
+- Gọi API `POST /api/admin/delete-user` (dùng service role key)
+- API xoá profile trước, sau đó gọi `auth.admin.deleteUser()` để xoá khỏi auth.users
+- Cập nhật `allProfiles` state ngay sau khi xoá thành công (không cần reload)
+- Ghi audit log sau khi xoá
+
+### AppContext.tsx
+- Thêm `setAllProfiles` vào `AppContextValue` interface và `value` object để các trang có thể cập nhật danh sách user locally
+
+### src/app/api/admin/delete-user/route.ts (mới)
+- POST endpoint nhận `{ userId }`
+- Dùng service role key để gọi `adminClient.auth.admin.deleteUser(userId)`
+- Xoá profile trước (phòng trường hợp không có CASCADE FK)

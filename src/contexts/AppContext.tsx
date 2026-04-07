@@ -10,6 +10,7 @@ interface AppContextValue {
   user: User | null
   profile: Profile | null
   allProfiles: Profile[]
+  setAllProfiles: React.Dispatch<React.SetStateAction<Profile[]>>
   recipes: Recipe[]
   setRecipes: React.Dispatch<React.SetStateAction<Recipe[]>>
   currentRecipeId: number | null
@@ -171,7 +172,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const value: AppContextValue = {
-    sb, user, profile, allProfiles,
+    sb, user, profile, allProfiles, setAllProfiles,
     recipes, setRecipes, currentRecipeId, setCurrentRecipeId,
     allProducts, setAllProducts,
     toasts, toast, loading, startLoading, stopLoading,

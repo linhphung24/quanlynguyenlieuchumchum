@@ -6,10 +6,11 @@ import { initials, roleClass, fmtTs } from '@/lib/utils'
 import { ROLE_LABELS } from '@/lib/constants'
 
 export default function UsersPage() {
-  const { profile, allProfiles, toast } = useApp()
+  const { profile, allProfiles, setAllProfiles, toast, writeAudit } = useApp()
   const [search, setSearch] = useState('')
   const [filterRole, setFilterRole] = useState('')
   const [sendingReset, setSendingReset] = useState<string | null>(null)
+  const [deletingUser, setDeletingUser] = useState<string | null>(null)
 
   if (profile?.role !== 'admin' && profile?.role !== 'manager') {
     return (
@@ -50,6 +51,27 @@ export default function UsersPage() {
       toast(e instanceof Error ? e.message : 'Gửi email thất bại', 'error')
     } finally {
       setSendingReset(null)
+    }
+  }
+
+  const handleDelete = async (userId: string, name: string) => {
+    if (!confirm(`Xoá tài khoản "${name}"? Thao tác này không thể hoàn tác.`)) return
+    setDeletingUser(userId)
+    try {
+      const res = await fetch('/api/admin/delete-user', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Lỗi không xác định')
+      setAllProfiles(prev => prev.filter(p => p.id !== userId))
+      await writeAudit('delete', 'user', userId, `Xoá tài khoản: ${name}`)
+      toast(`Đã xoá tài khoản ${name}`)
+    } catch (e: unknown) {
+      toast(e instanceof Error ? e.message : 'Xoá tài khoản thất bại', 'error')
+    } finally {
+      setDeletingUser(null)
     }
   }
 
@@ -131,13 +153,24 @@ export default function UsersPage() {
                     </td>
                     <td className="px-3 py-2.5 border-b border-[#f0e8d8]">
                       {p.id !== profile?.id ? (
-                        <button
-                          onClick={() => handleSendReset(p.id, p.full_name)}
-                          disabled={sendingReset === p.id}
-                          className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border-[1.5px] border-[#f5e6cc] bg-white text-[#8b5e3c] text-xs font-medium cursor-pointer hover:border-[#c8773a] hover:text-[#c8773a] transition-all disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
-                        >
-                          {sendingReset === p.id ? '⏳ Đang gửi...' : '✉️ Reset mật khẩu'}
-                        </button>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <button
+                            onClick={() => handleSendReset(p.id, p.full_name)}
+                            disabled={sendingReset === p.id}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border-[1.5px] border-[#f5e6cc] bg-white text-[#8b5e3c] text-xs font-medium cursor-pointer hover:border-[#c8773a] hover:text-[#c8773a] transition-all disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                          >
+                            {sendingReset === p.id ? '⏳ Đang gửi...' : '✉️ Reset mật khẩu'}
+                          </button>
+                          {profile?.role === 'admin' && (
+                            <button
+                              onClick={() => handleDelete(p.id, p.full_name)}
+                              disabled={deletingUser === p.id}
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border-[1.5px] border-[#f5c6c0] bg-white text-[#c0392b] text-xs font-medium cursor-pointer hover:bg-[#fde8e5] transition-all disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+                            >
+                              {deletingUser === p.id ? '⏳ Đang xoá...' : '🗑 Xoá'}
+                            </button>
+                          )}
+                        </div>
                       ) : (
                         <span className="text-xs text-[#8b5e3c] italic">—</span>
                       )}
