@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useApp } from '@/contexts/AppContext'
 import { Recipe, RecipeIngredient } from '@/types'
 import { UNITS } from '@/lib/constants'
+import { fmtPrice } from '@/lib/utils'
 
 export default function RecipesPage() {
   const { sb, user, profile, recipes, setRecipes, currentRecipeId, setCurrentRecipeId, toast, startLoading, stopLoading, writeAudit } = useApp()
@@ -37,7 +38,7 @@ export default function RecipesPage() {
   }
 
   const addIngredient = () => {
-    setEditIngredients([...editIngredients, { name: '', amount: 0, unit: UNITS[0] }])
+    setEditIngredients([...editIngredients, { name: '', amount: 0, unit: UNITS[0], price: 0 }])
     setDirty(true)
   }
 
@@ -225,12 +226,16 @@ export default function RecipesPage() {
                       <tr>
                         <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc]">Nguyên liệu</th>
                         <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-24">Số lượng</th>
-                        <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-32">Đơn vị</th>
+                        <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-28">Đơn vị</th>
+                        <th className="text-right text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-28">Đơn giá</th>
+                        <th className="text-right text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-28">Thành tiền</th>
                         <th className="bg-[#f5e6cc] w-8"></th>
                       </tr>
                     </thead>
                     <tbody>
-                      {editIngredients.map((ing, idx) => (
+                      {editIngredients.map((ing, idx) => {
+                        const subtotal = (ing.amount || 0) * (ing.price || 0)
+                        return (
                         <tr key={idx}>
                           <td className="px-3 py-2.5 border-b border-[#f0e8d8]">
                             <input
@@ -243,9 +248,7 @@ export default function RecipesPage() {
                           </td>
                           <td className="px-3 py-2.5 border-b border-[#f0e8d8]">
                             <input
-                              type="number"
-                              min={0}
-                              step="any"
+                              type="number" min={0} step="any"
                               value={ing.amount}
                               onChange={e => handleIngChange(idx, 'amount', parseFloat(e.target.value) || 0)}
                               className="w-full px-2 py-1 border-[1.5px] border-[#f5e6cc] rounded text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors"
@@ -260,6 +263,17 @@ export default function RecipesPage() {
                               {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
                             </select>
                           </td>
+                          <td className="px-3 py-2.5 border-b border-[#f0e8d8]">
+                            <input
+                              type="number" min={0} step="any"
+                              value={ing.price || 0}
+                              onChange={e => handleIngChange(idx, 'price', parseFloat(e.target.value) || 0)}
+                              className="w-full px-2 py-1 border-[1.5px] border-[#f5e6cc] rounded text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors text-right"
+                            />
+                          </td>
+                          <td className="px-3 py-2.5 border-b border-[#f0e8d8] text-right text-xs font-medium text-[#c8773a] whitespace-nowrap">
+                            {subtotal > 0 ? fmtPrice(subtotal) : <span className="text-gray-300">—</span>}
+                          </td>
                           <td className="px-3 py-2.5 border-b border-[#f0e8d8] text-center">
                             <button
                               onClick={() => removeIngredient(idx)}
@@ -269,8 +283,20 @@ export default function RecipesPage() {
                             </button>
                           </td>
                         </tr>
-                      ))}
+                        )
+                      })}
                     </tbody>
+                    {editIngredients.some(i => (i.price || 0) > 0) && (
+                      <tfoot>
+                        <tr>
+                          <td colSpan={4} className="px-3 py-2 text-right text-xs font-semibold text-[#3d1f0a]">Tổng chi phí</td>
+                          <td className="px-3 py-2 text-right text-xs font-bold text-[#c8773a]">
+                            {fmtPrice(editIngredients.reduce((s, i) => s + (i.amount || 0) * (i.price || 0), 0))}
+                          </td>
+                          <td className="bg-white" />
+                        </tr>
+                      </tfoot>
+                    )}
                   </table>
                 </div>
                 <button

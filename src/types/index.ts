@@ -9,6 +9,7 @@ export interface RecipeIngredient {
   name: string
   amount: number
   unit: string
+  price?: number
 }
 
 export interface Recipe {
