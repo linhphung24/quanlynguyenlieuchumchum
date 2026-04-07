@@ -181,3 +181,37 @@ File `supabase/reset_and_import_products.sql` — xoá sạch products/batches/b
 - POST endpoint nhận `{ userId }`
 - Dùng service role key để gọi `adminClient.auth.admin.deleteUser(userId)`
 - Xoá profile trước (phòng trường hợp không có CASCADE FK)
+
+### Tab Nhân sự (PersonnelPage)
+- Trang mới `src/components/personnel/PersonnelPage.tsx`
+- Quyền truy cập: manager + admin
+- Fields: full_name, dob, position, department, phone, is_active, notes
+- Highlight sinh nhật tháng hiện tại (banner + icon 🎂 trên avatar)
+- CRUD đầy đủ với slide-over form, dùng `DateInput` cho ngày sinh
+- Audit log cho create/update/delete
+
+### Trello Birthday Card
+- API: `POST /api/trello/birthday-card`
+- Query nhân sự `is_active=true`, lọc theo tháng hiện tại
+- Tạo thẻ Trello: tên "🎂 Sinh nhật tháng X/YYYY", mô tả danh sách tên + ngày + chức vụ
+- Env vars cần thêm: `TRELLO_API_KEY`, `TRELLO_TOKEN`, `TRELLO_LIST_ID`
+- Lấy credentials: https://trello.com/app-key → API Key + Token; List ID từ URL board `.json`
+- Scheduled task: chạy 8h sáng ngày 1 mỗi tháng (tạo qua Claude Code Scheduled Tasks)
+
+### SQL cần chạy (Supabase Dashboard)
+```sql
+CREATE TABLE IF NOT EXISTS personnel (
+  id          SERIAL PRIMARY KEY,
+  full_name   TEXT NOT NULL,
+  dob         DATE NOT NULL,
+  position    TEXT,
+  department  TEXT,
+  phone       TEXT,
+  is_active   BOOLEAN NOT NULL DEFAULT TRUE,
+  notes       TEXT,
+  created_by  TEXT NOT NULL DEFAULT '',
+  updated_by  TEXT,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at  TIMESTAMPTZ
+);
+```

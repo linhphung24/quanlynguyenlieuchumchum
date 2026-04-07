@@ -102,7 +102,22 @@ export interface Toast {
   type: 'success' | 'error' | 'info'
 }
 
-export type PageName = 'recipes' | 'calc' | 'log' | 'invoices' | 'summary' | 'products' | 'admin' | 'users'
+export type PageName = 'recipes' | 'calc' | 'log' | 'invoices' | 'summary' | 'products' | 'admin' | 'users' | 'personnel'
+
+export interface Personnel {
+  id: number
+  full_name: string
+  dob: string           // "YYYY-MM-DD"
+  position?: string
+  department?: string
+  phone?: string
+  is_active: boolean
+  notes?: string
+  created_by: string
+  updated_by: string | null
+  created_at: string
+  updated_at: string | null
+}
 
 export interface Batch {
   id: number
