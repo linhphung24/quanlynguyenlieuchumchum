@@ -73,7 +73,7 @@ export default function ProductsPage() {
   }
 
   const filtered = useMemo(() => allProducts.filter(p => {
-    if (search && !p.name.toLowerCase().includes(search.toLowerCase()) && !p.code.toLowerCase().includes(search.toLowerCase())) return false
+    if (search && !p.name.toLowerCase().includes(search.toLowerCase()) && !(p.code ?? '').toLowerCase().includes(search.toLowerCase())) return false
     if (filterCat && p.category !== filterCat) return false
     if (filterActive === 'active'   && !p.is_active) return false
     if (filterActive === 'inactive' && p.is_active)  return false
