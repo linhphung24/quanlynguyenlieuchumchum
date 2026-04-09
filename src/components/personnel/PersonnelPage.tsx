@@ -49,20 +49,9 @@ export default function PersonnelPage() {
   const today = new Date()
   const thisMonth = today.getMonth() + 1
 
-  // Access guard
-  if (profile?.role !== 'admin' && profile?.role !== 'manager') {
-    return (
-      <div className="p-4 max-w-2xl mx-auto">
-        <div className="bg-[#fffaf4] rounded-2xl p-8 text-center border border-[#f5e6cc]">
-          <div className="text-4xl mb-2">🔒</div>
-          <p className="text-sm text-[#8b5e3c]">Bạn không có quyền truy cập trang này</p>
-        </div>
-      </div>
-    )
-  }
-
-  // Load data
+  // Load data — phải đặt TRƯỚC mọi early return để tuân thủ Rules of Hooks
   useEffect(() => {
+    if (profile?.role !== 'admin' && profile?.role !== 'manager') return
     const load = async () => {
       setLoading(true)
       try {
@@ -77,7 +66,19 @@ export default function PersonnelPage() {
     }
     load()
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [profile?.role])
+
+  // Access guard — sau tất cả hooks
+  if (profile?.role !== 'admin' && profile?.role !== 'manager') {
+    return (
+      <div className="p-4 max-w-2xl mx-auto">
+        <div className="bg-[#fffaf4] rounded-2xl p-8 text-center border border-[#f5e6cc]">
+          <div className="text-4xl mb-2">🔒</div>
+          <p className="text-sm text-[#8b5e3c]">Bạn không có quyền truy cập trang này</p>
+        </div>
+      </div>
+    )
+  }
 
   const departments = [...new Set(list.map(p => p.department).filter(Boolean))] as string[]
 
