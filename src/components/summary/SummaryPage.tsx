@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useApp } from '@/contexts/AppContext'
 import { Invoice } from '@/types'
 import { fmtNum, fmtDate } from '@/lib/utils'
@@ -35,96 +35,122 @@ export default function SummaryPage() {
   const [nhapDet, setNhapDet] = useState<NhapRow[]>([])
   const [xuatDet, setXuatDet] = useState<XuatRow[]>([])
   const [loading, setLoading] = useState(false)
+  const [search, setSearch]   = useState('')
 
   useEffect(() => { loadData() }, [year, month, allProducts]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadData = async () => {
     if (!allProducts.length) return
     setLoading(true)
+    try {
+      const pad      = (n: number) => String(n).padStart(2, '0')
+      const startStr = `${year}-${pad(month)}-01`
+      const endStr   = `${year}-${pad(month)}-${pad(new Date(year, month, 0).getDate())}`
 
-    const pad = (n: number) => String(n).padStart(2, '0')
-    const startStr = `${year}-${pad(month)}-01`
-    const endStr   = `${year}-${pad(month)}-${pad(new Date(year, month, 0).getDate())}`
+      // ✅ 2 query song song, có filter ngày — không tải toàn bộ lịch sử
+      const [{ data: inMonthData }, { data: afterData }] = await Promise.all([
+        sb.from('invoices').select('*')
+          .gte('inv_date', startStr).lte('inv_date', endStr)
+          .order('inv_date'),
+        sb.from('invoices').select('*')
+          .gt('inv_date', endStr)
+          .order('inv_date'),
+      ])
+      const inMonthInvs = (inMonthData || []) as Invoice[]
+      const afterInvs   = (afterData   || []) as Invoice[]
 
-    // Load ALL invoices để tính tồn đầu chính xác
-    const { data } = await sb.from('invoices').select('*').order('inv_date')
-    const allInvs  = (data || []) as Invoice[]
+      const pmap = new Map<string, { nhapM: number; xuatM: number; nhapAfter: number; xuatAfter: number; donGia: number }>()
+      const get  = (name: string) => {
+        if (!pmap.has(name)) pmap.set(name, { nhapM: 0, xuatM: 0, nhapAfter: 0, xuatAfter: 0, donGia: 0 })
+        return pmap.get(name)!
+      }
 
-    // Tích lũy nhập/xuất mỗi sản phẩm theo kỳ
-    const pmap = new Map<string, { nhapM: number; xuatM: number; nhapAfter: number; xuatAfter: number; donGia: number }>()
-    const get = (name: string) => {
-      if (!pmap.has(name)) pmap.set(name, { nhapM: 0, xuatM: 0, nhapAfter: 0, xuatAfter: 0, donGia: 0 })
-      return pmap.get(name)!
-    }
+      const nhapRows: NhapRow[] = []
+      const xuatRows: XuatRow[] = []
 
-    const nhapRows: NhapRow[] = []
-    const xuatRows: XuatRow[] = []
-
-    for (const inv of allInvs) {
-      const d         = inv.inv_date
-      const inMonth   = d >= startStr && d <= endStr
-      const afterMonth = d > endStr
-
-      if (inv.type === 'in') {
-        for (const it of (inv.items as ItemIn[])) {
-          if (!it.name || !(it.amount > 0)) continue
-          const e = get(it.name)
-          if (inMonth) {
+      // Tích lũy hoá đơn TRONG THÁNG
+      for (const inv of inMonthInvs) {
+        if (inv.type === 'in') {
+          for (const it of (inv.items as ItemIn[])) {
+            if (!it.name || !(it.amount > 0)) continue
+            const e = get(it.name)
             e.nhapM += it.amount
             if (it.price) e.donGia = it.price
             nhapRows.push({
-              ngay: d, soChungTu: inv.code,
+              ngay: inv.inv_date, soChungTu: inv.code,
               ten: it.name, dvt: it.unit,
               soLuong: it.amount, donGia: it.price || 0,
               thanhTien: it.amount * (it.price || 0),
               nhaCungCap: inv.partner || '', ghiChu: inv.note || '',
             })
           }
-          if (afterMonth) e.nhapAfter += it.amount
-        }
-      }
-
-      if (inv.type === 'out') {
-        for (const it of (inv.items as ItemOut[])) {
-          if (!it.name || !(it.amount! > 0)) continue
-          const e = get(it.name)
-          if (inMonth) {
+        } else {
+          for (const it of (inv.items as ItemOut[])) {
+            if (!it.name || !(it.amount! > 0)) continue
+            const e = get(it.name)
             e.xuatM += it.amount!
             xuatRows.push({
-              ngay: d, soChungTu: inv.code,
+              ngay: inv.inv_date, soChungTu: inv.code,
               ten: it.name, dvt: it.unit || '',
               donGia: it.price || 0, soLuong: it.amount!,
               thanhTien: it.amount! * (it.price || 0),
               ghiChu: inv.note || '',
             })
           }
-          if (afterMonth) e.xuatAfter += it.amount!
         }
       }
-    }
 
-    // Xây dựng bảng TỔNG HỢP từ allProducts
-    const result: TongHopRow[] = []
-    let stt = 1
-    for (const p of allProducts.filter(p => p.is_active)) {
-      const e = pmap.get(p.name) || { nhapM: 0, xuatM: 0, nhapAfter: 0, xuatAfter: 0, donGia: 0 }
-      const donGia  = p.cost_price || e.donGia || 0
-      // Tính tồn cuối tháng = tồn hiện tại - nhập sau tháng + xuất sau tháng
-      const tonCuoi = (p.stock_qty || 0) - e.nhapAfter + e.xuatAfter
-      const tonDau  = tonCuoi - e.nhapM + e.xuatM
-      if (e.nhapM === 0 && e.xuatM === 0 && tonDau === 0 && tonCuoi === 0) continue
-      result.push({
-        stt: stt++, code: p.code || '', name: p.name, unit: p.unit,
-        donGia, tonDau, nhap: e.nhapM, xuat: e.xuatM,
-        tonCuoi, tienCuoi: tonCuoi * donGia,
-      })
-    }
+      // Tích lũy hoá đơn SAU THÁNG (để tính ngược tồn đầu kỳ)
+      for (const inv of afterInvs) {
+        if (inv.type === 'in') {
+          for (const it of (inv.items as ItemIn[])) {
+            if (!it.name || !(it.amount > 0)) continue
+            get(it.name).nhapAfter += it.amount
+          }
+        } else {
+          for (const it of (inv.items as ItemOut[])) {
+            if (!it.name || !(it.amount! > 0)) continue
+            get(it.name).xuatAfter += it.amount!
+          }
+        }
+      }
 
-    setRows(result)
-    setNhapDet(nhapRows)
-    setXuatDet(xuatRows)
-    setLoading(false)
+      // Xây dựng bảng TỔNG HỢP từ allProducts
+      const result: TongHopRow[] = []
+      let stt = 1
+      for (const p of allProducts.filter(p => p.is_active)) {
+        const e       = pmap.get(p.name) || { nhapM: 0, xuatM: 0, nhapAfter: 0, xuatAfter: 0, donGia: 0 }
+        const donGia  = p.cost_price || e.donGia || 0
+        // Tồn cuối tháng = tồn hiện tại − nhập sau tháng + xuất sau tháng
+        const tonCuoi = (p.stock_qty || 0) - e.nhapAfter + e.xuatAfter
+        const tonDau  = tonCuoi - e.nhapM + e.xuatM
+        if (e.nhapM === 0 && e.xuatM === 0 && tonDau === 0 && tonCuoi === 0) continue
+        result.push({
+          stt: stt++, code: p.code || '', name: p.name, unit: p.unit,
+          donGia, tonDau, nhap: e.nhapM, xuat: e.xuatM,
+          tonCuoi, tienCuoi: tonCuoi * donGia,
+        })
+      }
+
+      setRows(result)
+      setNhapDet(nhapRows)
+      setXuatDet(xuatRows)
+    } catch (e) {
+      console.error('SummaryPage loadData error:', e)
+    } finally {
+      setLoading(false)
+    }
   }
+
+  /* ── Search filter (client-side, không gây reload) ── */
+  const filteredRows = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return rows
+    return rows.filter(r =>
+      r.name.toLowerCase().includes(q) ||
+      (r.code ?? '').toLowerCase().includes(q)
+    )
+  }, [rows, search])
 
   /* ── Export Excel 3 sheets ── */
   const exportExcel = () => {
@@ -140,7 +166,6 @@ export default function SummaryPage() {
     ]
     const ws1 = XLSX.utils.aoa_to_sheet(s1Data)
     ws1['!cols'] = [{wch:6},{wch:14},{wch:42},{wch:8},{wch:12},{wch:12},{wch:12},{wch:12},{wch:12},{wch:16}]
-    // Style header row (row index 2 = Excel row 3)
     XLSX.utils.book_append_sheet(wb, ws1, 'TỔNG HỢP VẬT LIỆU')
 
     // ── Sheet 2: NHẬP KHO ──
@@ -168,12 +193,11 @@ export default function SummaryPage() {
     XLSX.writeFile(wb, `Quan-li-vat-lieu-${tag}.xlsx`)
   }
 
-  const years       = [now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1]
-  const totalNhap   = rows.reduce((s, r) => s + r.nhap, 0)
-  const totalXuat   = rows.reduce((s, r) => s + r.xuat, 0)
-  const totalTien   = rows.reduce((s, r) => s + r.tienCuoi, 0)
-  const totalNhapVnd = nhapDet.reduce((s, r) => s + r.thanhTien, 0)
-  const totalXuatVnd = xuatDet.reduce((s, r) => s + r.thanhTien, 0)
+  const years         = [now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1]
+  const totalNhap     = rows.reduce((s, r) => s + r.nhap, 0)
+  const totalXuat     = rows.reduce((s, r) => s + r.xuat, 0)
+  const totalTien     = rows.reduce((s, r) => s + r.tienCuoi, 0)
+  const totalNhapVnd  = nhapDet.reduce((s, r) => s + r.thanhTien, 0)
 
   return (
     <div className="p-4 max-w-5xl mx-auto">
@@ -209,10 +233,10 @@ export default function SummaryPage() {
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
         {[
-          { label: 'Tổng nhập (SL)', value: fmtNum(totalNhap), icon: '↓', color: '#3aaa6e' },
-          { label: 'Tổng xuất (SL)', value: fmtNum(totalXuat), icon: '↑', color: '#c8773a' },
-          { label: 'Tiền nhập', value: (totalNhapVnd/1e6).toFixed(1)+' tr', icon: '🧾', color: '#3d1f0a' },
-          { label: 'Giá trị tồn', value: (totalTien/1e6).toFixed(1)+' tr', icon: '💰', color: '#8b5e3c' },
+          { label: 'Tổng nhập (SL)', value: fmtNum(totalNhap),                      icon: '↓',  color: '#3aaa6e' },
+          { label: 'Tổng xuất (SL)', value: fmtNum(totalXuat),                      icon: '↑',  color: '#c8773a' },
+          { label: 'Tiền nhập',      value: (totalNhapVnd/1e6).toFixed(1)+' tr',    icon: '🧾', color: '#3d1f0a' },
+          { label: 'Giá trị tồn',    value: (totalTien/1e6).toFixed(1)+' tr',       icon: '💰', color: '#8b5e3c' },
         ].map(s => (
           <div key={s.label} className="bg-white rounded-xl p-4 border-[1.5px] border-[#f5e6cc] text-center">
             <div className="text-2xl mb-1" style={{ color: s.color }}>{s.icon}</div>
@@ -227,9 +251,13 @@ export default function SummaryPage() {
         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
           <h3 className="text-sm font-semibold text-[#3d1f0a]">
             Tổng hợp vật liệu — {MONTHS_VN[month - 1]} {year}
-            {!loading && rows.length > 0 &&
-              <span className="ml-2 text-xs font-normal text-[#8b5e3c]">({rows.length} mặt hàng)</span>
-            }
+            {!loading && rows.length > 0 && (
+              <span className="ml-2 text-xs font-normal text-[#8b5e3c]">
+                ({filteredRows.length !== rows.length
+                  ? `${filteredRows.length}/${rows.length} mặt hàng`
+                  : `${rows.length} mặt hàng`})
+              </span>
+            )}
           </h3>
           <div className="flex gap-3 text-xs text-[#8b5e3c]">
             <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-[#3aaa6e] inline-block"></span> Nhập</span>
@@ -238,10 +266,35 @@ export default function SummaryPage() {
           </div>
         </div>
 
+        {/* Search box */}
+        <div className="mb-3">
+          <div className="relative max-w-xs">
+            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#c8a87a] text-sm pointer-events-none">🔍</span>
+            <input
+              type="text"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              placeholder="Tìm theo tên hoặc mã SP..."
+              className="w-full pl-8 pr-8 py-2 text-sm border-[1.5px] border-[#f5e6cc] rounded-lg bg-white text-[#3d1f0a] placeholder-[#c8a87a] outline-none focus:border-[#c8773a] transition-colors"
+            />
+            {search && (
+              <button
+                onClick={() => setSearch('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#c8a87a] hover:text-[#c8773a] text-xs cursor-pointer"
+              >✕</button>
+            )}
+          </div>
+        </div>
+
         {loading ? (
-          <div className="text-center py-10 text-sm text-[#8b5e3c]">Đang tải...</div>
-        ) : rows.length === 0 ? (
-          <div className="text-center py-10 text-sm text-[#8b5e3c]">Không có dữ liệu trong tháng này</div>
+          <div className="text-center py-10 text-sm text-[#8b5e3c]">
+            <div className="inline-block w-5 h-5 border-2 border-[#c8773a] border-t-transparent rounded-full animate-spin mb-2"></div>
+            <div>Đang tải...</div>
+          </div>
+        ) : filteredRows.length === 0 ? (
+          <div className="text-center py-10 text-sm text-[#8b5e3c]">
+            {rows.length === 0 ? 'Không có dữ liệu trong tháng này' : 'Không tìm thấy sản phẩm phù hợp'}
+          </div>
         ) : (
           <div className="overflow-x-auto rounded-lg border border-[#f0e8d8]">
             <table className="border-collapse" style={{ minWidth: '920px', width: '100%' }}>
@@ -259,7 +312,7 @@ export default function SummaryPage() {
                 </tr>
               </thead>
               <tbody>
-                {rows.map((row, i) => (
+                {filteredRows.map((row, i) => (
                   <tr key={i} className={`${i % 2 === 0 ? '' : 'bg-[#fdf6ec]'} hover:bg-[#fef4e8] transition-colors`}>
                     <td className="px-2 py-2 border-b border-[#f0e8d8] text-xs text-[#aaa] text-center">{row.stt}</td>
                     <td className="px-3 py-2 border-b border-[#f0e8d8] text-sm font-medium text-[#3d1f0a]">{row.name}</td>
