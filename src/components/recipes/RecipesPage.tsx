@@ -75,50 +75,63 @@ export default function RecipesPage() {
       }
     } catch (e) {
       toast('Lỗi: ' + (e as Error).message, 'error')
+    } finally {
+      stopLoading()
     }
-    stopLoading()
   }
 
   const handleDelete = async () => {
     if (!currentRecipe) return
     if (!window.confirm(`Xoá công thức "${currentRecipe.name}"?`)) return
     startLoading()
-    const { error } = await sb.from('recipes').delete().eq('id', currentRecipe.id)
-    if (!error) {
-      await writeAudit('delete', 'recipes', String(currentRecipe.id), `Xoá công thức: ${currentRecipe.name}`)
-      toast('Đã xoá công thức')
-      const remaining = recipes.filter(r => r.id !== currentRecipe.id)
-      setRecipes(remaining)
-      setCurrentRecipeId(remaining.length > 0 ? remaining[0].id : null)
-    } else {
-      toast('Lỗi xoá: ' + error.message, 'error')
+    try {
+      const { error } = await sb.from('recipes').delete().eq('id', currentRecipe.id)
+      if (!error) {
+        await writeAudit('delete', 'recipes', String(currentRecipe.id), `Xoá công thức: ${currentRecipe.name}`)
+        toast('Đã xoá công thức')
+        const remaining = recipes.filter(r => r.id !== currentRecipe.id)
+        setRecipes(remaining)
+        setCurrentRecipeId(remaining.length > 0 ? remaining[0].id : null)
+      } else {
+        toast('Lỗi xoá: ' + error.message, 'error')
+      }
+    } catch (e) {
+      toast('Lỗi: ' + (e as Error).message, 'error')
+    } finally {
+      stopLoading()
     }
-    stopLoading()
   }
 
   const handleCreate = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newName.trim() || !user) return
     startLoading()
-    const { data, error } = await sb.from('recipes').insert({
-      name: newName.trim(),
-      base_yield: newYield,
-      ingredients: [],
-      created_by: user.id,
-      created_at: new Date().toISOString(),
-    }).select().single()
-    if (!error && data) {
-      await writeAudit('create', 'recipes', String(data.id), `Tạo công thức: ${newName}`)
-      setRecipes(prev => [...prev, data as Recipe].sort((a, b) => a.name.localeCompare(b.name)))
-      setCurrentRecipeId((data as Recipe).id)
-      toast('Đã tạo công thức mới')
-      setShowNewForm(false)
-      setNewName('')
-      setNewYield(1)
-    } else if (error) {
-      toast('Lỗi tạo: ' + error.message, 'error')
+    try {
+      const { data, error } = await sb.from('recipes').insert({
+        name: newName.trim(),
+        base_yield: newYield,
+        ingredients: [],
+        created_by: user.id,
+        created_at: new Date().toISOString(),
+      }).select().single()
+      if (!error && data) {
+        await writeAudit('create', 'recipes', String(data.id), `Tạo công thức: ${newName}`)
+        setRecipes(prev => [...prev, data as Recipe].sort((a, b) => a.name.localeCompare(b.name)))
+        setCurrentRecipeId((data as Recipe).id)
+        toast('Đã tạo công thức mới')
+        setShowNewForm(false)
+        setNewName('')
+        setNewYield(1)
+      } else if (error) {
+        toast('Lỗi tạo: ' + error.message, 'error')
+      } else {
+        toast('Không thể tạo công thức — kiểm tra quyền truy cập', 'error')
+      }
+    } catch (e) {
+      toast('Lỗi: ' + (e as Error).message, 'error')
+    } finally {
+      stopLoading()
     }
-    stopLoading()
   }
 
   return (

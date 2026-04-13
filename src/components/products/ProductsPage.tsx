@@ -109,7 +109,11 @@ export default function ProductsPage() {
           await writeAudit('create', 'products', String(data.id), `Tạo sản phẩm: ${editing.name}`)
           setAllProducts(prev => [...prev, data as Product].sort((a, b) => a.name.localeCompare(b.name)))
           toast('Đã tạo sản phẩm'); setShowForm(false)
-        } else if (error) { toast('Lỗi tạo: ' + error.message, 'error') }
+        } else if (error) {
+          toast('Lỗi tạo: ' + error.message, 'error')
+        } else {
+          toast('Không thể tạo sản phẩm — kiểm tra quyền truy cập', 'error')
+        }
       } else {
         const { data: updated, error } = await sb.from('products').update({
           ...payload, updated_by: user.id, updated_at: new Date().toISOString(),
@@ -126,20 +130,28 @@ export default function ProductsPage() {
       }
     } catch (e) {
       toast('Lỗi: ' + (e as Error).message, 'error')
+    } finally {
+      stopLoading()
     }
-    stopLoading()
   }
 
   const handleDelete = async (p: Product) => {
     if (!window.confirm(`Xoá sản phẩm "${p.name}"?`)) return
     startLoading()
-    const { error } = await sb.from('products').delete().eq('id', p.id)
-    if (!error) {
-      await writeAudit('delete', 'products', String(p.id), `Xoá: ${p.name}`)
-      setAllProducts(prev => prev.filter(x => x.id !== p.id))
-      toast('Đã xoá sản phẩm')
-    } else { toast('Lỗi xoá: ' + error.message, 'error') }
-    stopLoading()
+    try {
+      const { error } = await sb.from('products').delete().eq('id', p.id)
+      if (!error) {
+        await writeAudit('delete', 'products', String(p.id), `Xoá: ${p.name}`)
+        setAllProducts(prev => prev.filter(x => x.id !== p.id))
+        toast('Đã xoá sản phẩm')
+      } else {
+        toast('Lỗi xoá: ' + error.message, 'error')
+      }
+    } catch (e) {
+      toast('Lỗi: ' + (e as Error).message, 'error')
+    } finally {
+      stopLoading()
+    }
   }
 
   const handleToggleActive = async (p: Product) => {

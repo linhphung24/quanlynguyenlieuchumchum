@@ -466,25 +466,30 @@ export default function InvoicesPage() {
   const handleDelete = async (inv: Invoice) => {
     if (!window.confirm(`Xoá hoá đơn ${inv.code}?`)) return
     startLoading()
-    const { error } = await sb.from('invoices').delete().eq('id', inv.id)
-    if (!error) {
-      const castItems = (inv.items as CastItem[]).map(it => ({ name: it.name, amount: it.amount || 0 }))
-      await updateStock(castItems, inv.type, -1)
+    try {
+      const { error } = await sb.from('invoices').delete().eq('id', inv.id)
+      if (!error) {
+        const castItems = (inv.items as CastItem[]).map(it => ({ name: it.name, amount: it.amount || 0 }))
+        await updateStock(castItems, inv.type, -1)
 
-      if (inv.type === 'in') {
-        await deleteBatchRecords(inv.id)
+        if (inv.type === 'in') {
+          await deleteBatchRecords(inv.id)
+        } else {
+          await restoreBatchDeductions(inv.id)
+        }
+
+        await writeAudit('delete', 'invoices', String(inv.id), `Xoá hoá đơn: ${inv.code}`)
+        toast('Đã xoá hoá đơn')
+        setInvoices(prev => prev.filter(i => i.id !== inv.id))
+        setInvBatchUsage(prev => { const next = { ...prev }; delete next[inv.id]; return next })
       } else {
-        await restoreBatchDeductions(inv.id)
+        toast('Lỗi xoá: ' + error.message, 'error')
       }
-
-      await writeAudit('delete', 'invoices', String(inv.id), `Xoá hoá đơn: ${inv.code}`)
-      toast('Đã xoá hoá đơn')
-      setInvoices(prev => prev.filter(i => i.id !== inv.id))
-      setInvBatchUsage(prev => { const next = { ...prev }; delete next[inv.id]; return next })
-    } else {
-      toast('Lỗi xoá: ' + error.message, 'error')
+    } catch (e) {
+      toast('Lỗi xoá: ' + (e instanceof Error ? e.message : String(e)), 'error')
+    } finally {
+      stopLoading()
     }
-    stopLoading()
   }
 
   // ─── upload ảnh bổ sung cho hoá đơn đã lưu ───────────────
