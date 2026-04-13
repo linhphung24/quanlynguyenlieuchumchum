@@ -215,3 +215,30 @@ CREATE TABLE IF NOT EXISTS personnel (
   updated_at  TIMESTAMPTZ
 );
 ```
+
+### Fix: Loading state stuck (nút lưu mất phản hồi sau vài lần thao tác)
+**Nguyên nhân**: `stopLoading()` đặt sau `try-catch` thay vì trong `finally` → khi async throw exception, `stopLoading()` không bao giờ được gọi → `loading=true` mãi mãi → UI bị khoá.
+
+**Quy tắc bắt buộc**: MỌI handler có `startLoading()` đều PHẢI có `stopLoading()` trong `finally`:
+```tsx
+startLoading()
+try {
+  // ... async operations
+} catch (e) {
+  toast('Lỗi: ' + (e as Error).message, 'error')
+} finally {
+  stopLoading()  // ← LUÔN được gọi dù có lỗi hay không
+}
+```
+
+**Đã fix trong**: `ProductsPage.tsx` (handleSave, handleDelete), `RecipesPage.tsx` (handleSave, handleDelete, handleCreate), `InvoicesPage.tsx` (handleDelete)
+
+### Fix: Crash khi tìm kiếm sản phẩm (`p.code.toLowerCase()` trên null)
+- `code` field được đổi thành `null` (thay vì `''`) để tránh duplicate key constraint
+- `useMemo` filter trong ProductsPage gọi `p.code.toLowerCase()` → crash `TypeError: Cannot read properties of null`
+- **Fix**: dùng `(p.code ?? '').toLowerCase()` để fallback về chuỗi rỗng khi null
+
+### Fix: React Hooks violation trong PersonnelPage
+- `useEffect` bị đặt SAU `if (profile?.role !== 'admin' ...) return` → vi phạm Rules of Hooks → crash toàn app khi re-render
+- **Quy tắc**: Tất cả hooks (`useEffect`, `useMemo`, `useState`...) phải được gọi TRƯỚC bất kỳ `return` sớm nào
+- **Fix**: chuyển `useEffect` lên trên, đặt role check BÊN TRONG effect body
