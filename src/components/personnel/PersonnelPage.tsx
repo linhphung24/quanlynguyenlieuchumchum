@@ -103,14 +103,14 @@ export default function PersonnelPage() {
   const handleSendBirthday = async () => {
     setSendingBirthday(true)
     try {
-      const res = await fetch('/api/alerts/birthday', { method: 'POST' })
+      const res = await fetch('/api/trello/birthday-card', { method: 'POST' })
       const json = await res.json()
       if (!res.ok || json.error) {
-        toast(json.error || 'Gửi email thất bại', 'error')
+        toast(json.error || 'Tạo thẻ Trello thất bại', 'error')
       } else if (!json.sent) {
         toast(json.message || `Không có sinh nhật tháng ${thisMonth}`)
       } else {
-        toast(`Đã gửi email danh sách ${json.count} nhân viên sinh nhật tháng ${json.month}/${json.year} 🎂`)
+        toast(`Đã tạo thẻ Trello danh sách ${json.count} nhân viên sinh nhật tháng này 🎂`)
       }
     } catch (e: unknown) {
       toast(e instanceof Error ? e.message : 'Lỗi kết nối', 'error')
