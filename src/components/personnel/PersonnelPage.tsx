@@ -45,6 +45,7 @@ export default function PersonnelPage() {
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<Partial<Personnel> | null>(null)
   const [saving, setSaving] = useState(false)
+  const [sendingBirthday, setSendingBirthday] = useState(false)
 
   const today = new Date()
   const thisMonth = today.getMonth() + 1
@@ -98,6 +99,25 @@ export default function PersonnelPage() {
   })
 
   const birthdayThisMonth = list.filter(p => p.is_active && isBirthdayThisMonth(p.dob, thisMonth))
+
+  const handleSendBirthday = async () => {
+    setSendingBirthday(true)
+    try {
+      const res = await fetch('/api/alerts/birthday', { method: 'POST' })
+      const json = await res.json()
+      if (!res.ok || json.error) {
+        toast(json.error || 'Gửi email thất bại', 'error')
+      } else if (!json.sent) {
+        toast(json.message || `Không có sinh nhật tháng ${thisMonth}`)
+      } else {
+        toast(`Đã gửi email danh sách ${json.count} nhân viên sinh nhật tháng ${json.month}/${json.year} 🎂`)
+      }
+    } catch (e: unknown) {
+      toast(e instanceof Error ? e.message : 'Lỗi kết nối', 'error')
+    } finally {
+      setSendingBirthday(false)
+    }
+  }
 
   const openCreate = () => {
     setEditing({ ...EMPTY })
@@ -182,12 +202,21 @@ export default function PersonnelPage() {
     <div className="p-4 max-w-5xl mx-auto">
       <div className="flex items-center justify-between mb-4 gap-3 flex-wrap">
         <h2 className="font-['Playfair_Display'] text-xl font-bold text-[#3d1f0a]">👩‍💼 Nhân sự</h2>
-        <button
-          onClick={openCreate}
-          className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#c8773a] text-white text-sm font-medium rounded-xl hover:bg-[#b5672e] transition-colors shadow-sm"
-        >
-          + Thêm nhân viên
-        </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            onClick={handleSendBirthday}
+            disabled={sendingBirthday}
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#e8a030] text-white text-sm font-medium rounded-xl hover:bg-[#d08f25] transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {sendingBirthday ? '⏳ Đang gửi...' : '🎂 Gửi sinh nhật tháng này'}
+          </button>
+          <button
+            onClick={openCreate}
+            className="inline-flex items-center gap-1.5 px-4 py-2 bg-[#c8773a] text-white text-sm font-medium rounded-xl hover:bg-[#b5672e] transition-colors shadow-sm"
+          >
+            + Thêm nhân viên
+          </button>
+        </div>
       </div>
 
       {/* Birthday highlight */}
