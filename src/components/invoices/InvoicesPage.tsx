@@ -133,9 +133,10 @@ export default function InvoicesPage() {
       .order('inv_date', { ascending: true })
       .order('id', { ascending: true })
 
-    // group by product_name
+    // group by product_name, bỏ qua batch có remaining_qty gần 0 (floating-point dư)
     const byProduct: Record<string, typeof data> = {}
     for (const b of (data || [])) {
+      if (parseFloat(b.remaining_qty.toFixed(2)) <= 0) continue
       if (!byProduct[b.product_name]) byProduct[b.product_name] = []
       byProduct[b.product_name]!.push(b)
     }
@@ -238,7 +239,7 @@ export default function InvoicesPage() {
       for (const batch of batchList) {
         if (rem <= 0) break
         const take = Math.min(rem, batch.remaining_qty)
-        const newRemaining = Math.max(0, +(batch.remaining_qty - take).toFixed(6))
+        const newRemaining = Math.max(0, +(batch.remaining_qty - take).toFixed(2))
         batchUpdates.push(sb.from('batches').update({ remaining_qty: newRemaining }).eq('id', batch.id))
         deductionRows.push({
           batch_id: batch.id,
@@ -277,7 +278,7 @@ export default function InvoicesPage() {
         .eq('id', d.batch_id)
         .single()
       if (batch) {
-        const restored = Math.min(batch.quantity, +(batch.remaining_qty + d.qty_used).toFixed(6))
+        const restored = Math.min(batch.quantity, +(batch.remaining_qty + d.qty_used).toFixed(2))
         await sb.from('batches').update({ remaining_qty: restored }).eq('id', d.batch_id)
       }
     }
@@ -391,9 +392,10 @@ export default function InvoicesPage() {
           .order('inv_date', { ascending: true })
           .order('id', { ascending: true })
 
-        // Lấy lô cũ nhất cho từng sản phẩm
+        // Lấy lô cũ nhất cho từng sản phẩm, bỏ qua batch gần 0 (floating-point dư)
         const oldestBatch: Record<string, { inv_code: string; remaining_qty: number; unit: string }> = {}
         for (const b of (batchCheck || []) as { id: number; product_name: string; inv_code: string; remaining_qty: number; unit: string }[]) {
+          if (parseFloat(b.remaining_qty.toFixed(2)) <= 0) continue
           if (!oldestBatch[b.product_name]) oldestBatch[b.product_name] = { inv_code: b.inv_code, remaining_qty: b.remaining_qty, unit: b.unit }
         }
 
@@ -401,10 +403,11 @@ export default function InvoicesPage() {
         for (const item of invItems) {
           const batch = oldestBatch[item.name]
           if (!batch) continue
-          if (item.amount > batch.remaining_qty) {
+          const batchEff = parseFloat(batch.remaining_qty.toFixed(2))
+          if (item.amount > batchEff) {
             violations.push(
-              `"${item.name}": lô ${batch.inv_code} chỉ còn ${fmtNum(batch.remaining_qty)} ${batch.unit}. ` +
-              `Xuất tối đa ${fmtNum(batch.remaining_qty)} để hết lô này, rồi tạo hoá đơn mới cho ${fmtNum(item.amount - batch.remaining_qty)} còn lại.`
+              `"${item.name}": lô ${batch.inv_code} chỉ còn ${fmtNum(batchEff)} ${batch.unit}. ` +
+              `Xuất tối đa ${fmtNum(batchEff)} để hết lô này, rồi tạo hoá đơn mới cho ${fmtNum(item.amount - batchEff)} còn lại.`
             )
           }
         }

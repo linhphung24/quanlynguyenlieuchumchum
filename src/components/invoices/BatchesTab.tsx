@@ -13,6 +13,9 @@ function daysUntil(dateStr?: string): number | null {
   return Math.ceil(diff / (1000 * 60 * 60 * 24))
 }
 
+// Làm tròn 2 chữ số thập phân để tránh floating-point dư nhỏ (vd: 0.000001 coi là 0)
+const eff = (qty: number) => parseFloat(qty.toFixed(2))
+
 export default function BatchesTab() {
   const { sb } = useApp()
   const [batches, setBatches] = useState<Batch[]>([])
@@ -44,7 +47,7 @@ export default function BatchesTab() {
 
   const filtered = useMemo(() => {
     return batches.filter(b => {
-      if (!showEmpty && b.remaining_qty <= 0) return false
+      if (!showEmpty && eff(b.remaining_qty) <= 0) return false
       if (search && !b.product_name.toLowerCase().includes(search.toLowerCase())
         && !b.inv_code.toLowerCase().includes(search.toLowerCase())) return false
       return true
@@ -53,7 +56,7 @@ export default function BatchesTab() {
 
   // stats
   const stats = useMemo(() => {
-    const active = batches.filter(b => b.remaining_qty > 0)
+    const active = batches.filter(b => eff(b.remaining_qty) > 0)
     const expiredCount = active.filter(b => {
       const d = daysUntil(b.exp_date)
       return d !== null && d < 0
@@ -66,7 +69,7 @@ export default function BatchesTab() {
   }, [batches])
 
   const getBatchStatus = (b: Batch): 'expired' | 'warn' | 'ok' | 'empty' => {
-    if (b.remaining_qty <= 0) return 'empty'
+    if (eff(b.remaining_qty) <= 0) return 'empty'
     const d = daysUntil(b.exp_date)
     if (d === null) return 'ok'
     if (d < 0) return 'expired'
