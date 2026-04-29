@@ -268,6 +268,14 @@ try {
 - Thêm ô search tên/mã SP trong bảng tổng hợp (client-side useMemo, không reload)
 - Thêm try-catch-finally cho `loadData`, spinner xoay khi loading
 
+### Khoá sửa tay stock_qty / cost_price (ProductsPage)
+- **Lý do**: 2 field này quyết định Summary (`tonCuoi`, `tonDau`, `donGia`, `tienCuoi`). Sửa tay = phá lệch dữ liệu, gây tồn đầu âm như đã gặp.
+- **Form ProductsPage**: 2 input đổi thành ô **read-only** (bg xám, icon 🔒, ghi chú "Tự động cập nhật từ HĐ")
+- **handleSave**:
+  - CREATE: ép `stock_qty=0, cost_price=0` (sẽ tự cập nhật ở HĐ nhập đầu)
+  - UPDATE: STRIP `stock_qty` và `cost_price` khỏi payload bằng destructuring → dù bypass UI vẫn không ghi DB
+- `sell_price` không ảnh hưởng Summary → vẫn cho sửa bình thường
+
 ### Cảnh báo Tồn đầu ÂM (Summary)
 - **Triệu chứng**: Cột "Tồn đầu" trong Tổng kết hiển thị số âm
 - **Nguyên nhân**: dữ liệu lệch giữa `products.stock_qty` và lịch sử `invoices` — thường do:

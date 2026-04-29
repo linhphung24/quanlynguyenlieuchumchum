@@ -98,12 +98,18 @@ export default function ProductsPage() {
     if (!user) { toast('Chưa đăng nhập — vui lòng tải lại trang', 'error'); return }
     if (!editing) return
     if (!editing.name?.trim()) { toast('Tên sản phẩm không được trống', 'error'); return }
+
+    // ⚠ Không cho user sửa stock_qty / cost_price từ form này — 2 field
+    // được quản lý bởi HĐ nhập/xuất. Sửa tay sẽ phá Summary (tồn đầu âm).
     const payload = { ...editing, code: editing.code?.trim() || null }
     startLoading()
     try {
       if (editMode === 'create') {
+        // Tạo mới: stock_qty và cost_price BẮT BUỘC = 0
+        // (sẽ tự cập nhật khi có HĐ nhập đầu tiên)
+        const createPayload = { ...payload, stock_qty: 0, cost_price: 0 }
         const { data, error } = await sb.from('products').insert({
-          ...payload, created_by: user.id, created_at: new Date().toISOString(),
+          ...createPayload, created_by: user.id, created_at: new Date().toISOString(),
         }).select().single()
         if (!error && data) {
           await writeAudit('create', 'products', String(data.id), `Tạo sản phẩm: ${editing.name}`)
@@ -115,8 +121,12 @@ export default function ProductsPage() {
           toast('Không thể tạo sản phẩm — kiểm tra quyền truy cập', 'error')
         }
       } else {
+        // Cập nhật: STRIP stock_qty và cost_price khỏi payload — không bao giờ
+        // ghi đè 2 field này từ ProductsPage (chỉ HĐ mới được phép động vào).
+        const { stock_qty: _ignoreStock, cost_price: _ignoreCost, ...safePayload } = payload
+        void _ignoreStock; void _ignoreCost
         const { data: updated, error } = await sb.from('products').update({
-          ...payload, updated_by: user.id, updated_at: new Date().toISOString(),
+          ...safePayload, updated_by: user.id, updated_at: new Date().toISOString(),
         }).eq('id', editing.id!).select().single()
         if (error) {
           toast('Lỗi cập nhật: ' + error.message, 'error')
@@ -527,14 +537,18 @@ export default function ProductsPage() {
               <div className="bg-[#fafaf8] rounded-xl border border-[#e8ddd0] p-3 space-y-3">
                 <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Tồn kho</p>
                 <div className="grid grid-cols-2 gap-3">
+                  {/* Số lượng hiện tại — READ-ONLY (chỉ HĐ nhập/xuất mới sửa được) */}
                   <div>
-                    <label className="block text-xs font-medium text-[#3d1f0a] mb-1.5">Số lượng hiện tại</label>
-                    <input
-                      type="number" min={0} step="any"
-                      value={editing.stock_qty || 0}
-                      onChange={e => setEditing({ ...editing, stock_qty: Number(e.target.value) })}
-                      className="w-full px-3 py-2.5 border border-[#e8ddd0] rounded-xl text-sm bg-white text-[#1a0f07] outline-none focus:border-[#c8773a] transition-all"
-                    />
+                    <label className="block text-xs font-medium text-[#3d1f0a] mb-1.5">
+                      Số lượng hiện tại
+                      <span className="ml-1 text-gray-400 font-normal">🔒</span>
+                    </label>
+                    <div className="w-full px-3 py-2.5 border border-[#e8ddd0] rounded-xl text-sm bg-gray-100 text-gray-600 cursor-not-allowed select-none">
+                      {editing.stock_qty ?? 0} {editing.unit || ''}
+                    </div>
+                    <p className="text-[10px] text-gray-400 mt-1 leading-snug">
+                      Tự động cập nhật từ HĐ nhập / xuất
+                    </p>
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-[#3d1f0a] mb-1.5">Mức tối thiểu</label>
@@ -544,6 +558,7 @@ export default function ProductsPage() {
                       onChange={e => setEditing({ ...editing, min_stock: Number(e.target.value) })}
                       className="w-full px-3 py-2.5 border border-[#e8ddd0] rounded-xl text-sm bg-white text-[#1a0f07] outline-none focus:border-[#c8773a] transition-all"
                     />
+                    <p className="text-[10px] text-gray-400 mt-1 leading-snug">Cảnh báo khi tồn dưới mức này</p>
                   </div>
                 </div>
               </div>
@@ -552,14 +567,18 @@ export default function ProductsPage() {
               <div className="bg-[#fafaf8] rounded-xl border border-[#e8ddd0] p-3 space-y-3">
                 <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Giá</p>
                 <div className="grid grid-cols-2 gap-3">
+                  {/* Giá vốn — READ-ONLY (lấy từ HĐ nhập gần nhất) */}
                   <div>
-                    <label className="block text-xs font-medium text-[#3d1f0a] mb-1.5">Giá vốn (nhập)</label>
-                    <input
-                      type="number" min={0}
-                      value={editing.cost_price || 0}
-                      onChange={e => setEditing({ ...editing, cost_price: Number(e.target.value) })}
-                      className="w-full px-3 py-2.5 border border-[#e8ddd0] rounded-xl text-sm bg-white text-[#1a0f07] outline-none focus:border-[#c8773a] transition-all"
-                    />
+                    <label className="block text-xs font-medium text-[#3d1f0a] mb-1.5">
+                      Giá vốn (nhập)
+                      <span className="ml-1 text-gray-400 font-normal">🔒</span>
+                    </label>
+                    <div className="w-full px-3 py-2.5 border border-[#e8ddd0] rounded-xl text-sm bg-gray-100 text-gray-600 cursor-not-allowed select-none">
+                      {editing.cost_price ? fmtPrice(editing.cost_price) : '—'}
+                    </div>
+                    <p className="text-[10px] text-gray-400 mt-1 leading-snug">
+                      Tự động cập nhật từ HĐ nhập gần nhất
+                    </p>
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-[#3d1f0a] mb-1.5">Giá bán</label>
@@ -569,6 +588,7 @@ export default function ProductsPage() {
                       onChange={e => setEditing({ ...editing, sell_price: Number(e.target.value) })}
                       className="w-full px-3 py-2.5 border border-[#e8ddd0] rounded-xl text-sm bg-white text-[#1a0f07] outline-none focus:border-[#c8773a] transition-all"
                     />
+                    <p className="text-[10px] text-gray-400 mt-1 leading-snug">Giá bán cho khách (tham khảo)</p>
                   </div>
                 </div>
               </div>
