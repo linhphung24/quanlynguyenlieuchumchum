@@ -125,27 +125,32 @@ export default function InvoicesPage() {
     if (relevant.length === 0) { setBatchPreviews({}); return }
 
     const names = [...new Set(relevant.map(it => it.name.trim()))]
-    const { data } = await sb
-      .from('batches')
-      .select('id, product_name, inv_code, inv_date, remaining_qty, price, unit')
-      .in('product_name', names)
-      .gt('remaining_qty', 0)
-      .order('inv_date', { ascending: true })
-      .order('id', { ascending: true })
+    // Match case-insensitively bằng cách query song song với ilike (1 query / name)
+    const queries = names.map(n =>
+      sb.from('batches')
+        .select('id, product_name, inv_code, inv_date, remaining_qty, price, unit')
+        .ilike('product_name', n)
+        .gt('remaining_qty', 0)
+        .order('inv_date', { ascending: true })
+        .order('id', { ascending: true })
+    )
+    const results = await Promise.all(queries)
+    const data = results.flatMap(r => r.data || [])
 
-    // group by product_name, bỏ qua batch có remaining_qty gần 0 (floating-point dư)
+    // group by product_name (key = lowercase) — bỏ qua batch gần 0 (floating-point dư)
     const byProduct: Record<string, typeof data> = {}
-    for (const b of (data || [])) {
+    for (const b of data) {
       if (parseFloat(b.remaining_qty.toFixed(2)) <= 0) continue
-      if (!byProduct[b.product_name]) byProduct[b.product_name] = []
-      byProduct[b.product_name]!.push(b)
+      const key = b.product_name.toLowerCase().trim()
+      if (!byProduct[key]) byProduct[key] = []
+      byProduct[key]!.push(b)
     }
 
     const previews: Record<number, BatchAlloc[]> = {}
     items.forEach((item, idx) => {
       if (!item.name.trim() || !(item.amount || item.qty)) return
       const qty = item.amount || item.qty
-      const batchList = (byProduct[item.name.trim()] || [])
+      const batchList = (byProduct[item.name.trim().toLowerCase()] || [])
 
       if (batchList.length === 0) {
         // Không có lô nào trong kho
@@ -192,18 +197,24 @@ export default function InvoicesPage() {
   ): Promise<string | null> => {
     const records = invItems
       .filter(it => it.name && it.amount > 0)
-      .map(it => ({
-        product_name: it.name.trim(),
-        inv_id: invId,
-        inv_code: invCode,
-        inv_date: invDateStr,
-        quantity: it.amount,
-        remaining_qty: it.amount,
-        price: it.price || 0,
-        unit: it.unit,
-        mfg_date: it.mfg_date || null,
-        exp_date: it.exp_date || null,
-      }))
+      .map(it => {
+        // Chuẩn hoá tên về tên gốc trong products table (tránh "Cam" vs "cam")
+        const canonical = allProducts.find(
+          p => p.name.trim().toLowerCase() === it.name.trim().toLowerCase()
+        )
+        return {
+          product_name: (canonical?.name || it.name).trim(),
+          inv_id: invId,
+          inv_code: invCode,
+          inv_date: invDateStr,
+          quantity: it.amount,
+          remaining_qty: it.amount,
+          price: it.price || 0,
+          unit: it.unit,
+          mfg_date: it.mfg_date || null,
+          exp_date: it.exp_date || null,
+        }
+      })
     if (records.length === 0) return null
     const { error } = await sb.from('batches').insert(records)
     return error ? error.message : null
@@ -214,18 +225,23 @@ export default function InvoicesPage() {
     const names = [...new Set(invItems.filter(it => it.name && it.amount > 0).map(it => it.name.trim()))]
     if (names.length === 0) return
 
-    const { data: allBatches } = await sb
-      .from('batches')
-      .select('*')
-      .in('product_name', names)
-      .gt('remaining_qty', 0)
-      .order('inv_date', { ascending: true })
-      .order('id', { ascending: true })
+    // Case-insensitive: 1 ilike query per name, chạy song song
+    const queries = names.map(n =>
+      sb.from('batches')
+        .select('*')
+        .ilike('product_name', n)
+        .gt('remaining_qty', 0)
+        .order('inv_date', { ascending: true })
+        .order('id', { ascending: true })
+    )
+    const results = await Promise.all(queries)
+    const allBatches = results.flatMap(r => r.data || []) as Batch[]
 
     const byProduct: Record<string, Batch[]> = {}
-    for (const b of (allBatches || []) as Batch[]) {
-      if (!byProduct[b.product_name]) byProduct[b.product_name] = []
-      byProduct[b.product_name]!.push(b)
+    for (const b of allBatches) {
+      const key = b.product_name.toLowerCase().trim()
+      if (!byProduct[key]) byProduct[key] = []
+      byProduct[key]!.push(b)
     }
 
     const deductionRows: Omit<BatchDeduction, 'id' | 'created_at'>[] = []
@@ -233,7 +249,7 @@ export default function InvoicesPage() {
 
     for (const item of invItems) {
       if (!item.name || !item.amount) continue
-      const batchList = byProduct[item.name.trim()] || []
+      const batchList = byProduct[item.name.trim().toLowerCase()] || []
       let rem = item.amount
 
       for (const batch of batchList) {
@@ -384,24 +400,29 @@ export default function InvoicesPage() {
       // ── Kiểm tra FIFO: mỗi dòng xuất chỉ được lấy từ 1 lô ──
       if (invType === 'out') {
         const names = [...new Set(invItems.map(it => it.name))]
-        const { data: batchCheck } = await sb
-          .from('batches')
-          .select('id, product_name, inv_code, remaining_qty, unit')
-          .in('product_name', names)
-          .gt('remaining_qty', 0)
-          .order('inv_date', { ascending: true })
-          .order('id', { ascending: true })
+        // Case-insensitive: 1 ilike query per name, song song
+        const checkQueries = names.map(n =>
+          sb.from('batches')
+            .select('id, product_name, inv_code, remaining_qty, unit')
+            .ilike('product_name', n)
+            .gt('remaining_qty', 0)
+            .order('inv_date', { ascending: true })
+            .order('id', { ascending: true })
+        )
+        const checkResults = await Promise.all(checkQueries)
+        const batchCheck = checkResults.flatMap(r => r.data || [])
 
-        // Lấy lô cũ nhất cho từng sản phẩm, bỏ qua batch gần 0 (floating-point dư)
+        // Lấy lô cũ nhất cho từng sản phẩm (key = lowercase), bỏ qua batch gần 0
         const oldestBatch: Record<string, { inv_code: string; remaining_qty: number; unit: string }> = {}
-        for (const b of (batchCheck || []) as { id: number; product_name: string; inv_code: string; remaining_qty: number; unit: string }[]) {
+        for (const b of batchCheck as { id: number; product_name: string; inv_code: string; remaining_qty: number; unit: string }[]) {
           if (parseFloat(b.remaining_qty.toFixed(2)) <= 0) continue
-          if (!oldestBatch[b.product_name]) oldestBatch[b.product_name] = { inv_code: b.inv_code, remaining_qty: b.remaining_qty, unit: b.unit }
+          const key = b.product_name.toLowerCase().trim()
+          if (!oldestBatch[key]) oldestBatch[key] = { inv_code: b.inv_code, remaining_qty: b.remaining_qty, unit: b.unit }
         }
 
         const violations: string[] = []
         for (const item of invItems) {
-          const batch = oldestBatch[item.name]
+          const batch = oldestBatch[item.name.toLowerCase().trim()]
           if (!batch) continue
           const batchEff = parseFloat(batch.remaining_qty.toFixed(2))
           if (item.amount > batchEff) {
