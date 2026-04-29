@@ -242,3 +242,28 @@ try {
 - `useEffect` bị đặt SAU `if (profile?.role !== 'admin' ...) return` → vi phạm Rules of Hooks → crash toàn app khi re-render
 - **Quy tắc**: Tất cả hooks (`useEffect`, `useMemo`, `useState`...) phải được gọi TRƯỚC bất kỳ `return` sớm nào
 - **Fix**: chuyển `useEffect` lên trên, đặt role check BÊN TRONG effect body
+
+### Fix: Bug case-sensitive matching khi xuất FIFO
+- **Triệu chứng**: User gõ "Cam" (hoa) nhưng batch lưu "cam" (thường) → `.in('product_name', ['Cam'])` của Postgres case-sensitive → không tìm thấy → "Không có tồn kho" dù có hàng
+- **Fix InvoicesPage.tsx** ở 4 chỗ: `computeBatchPreviews`, `deductBatchesFifo`, `handleSave validation` — thay `.in()` bằng query song song `.ilike()` (1/name); group key trong byProduct/oldestBatch luôn lowercase; `createBatchRecords` chuẩn hoá `product_name` về tên gốc trong products table
+
+### Fix: Floating-point làm batch hiển thị 0 nhưng status "Còn hàng"
+- **Triệu chứng**: Lô hiển thị `0 kg` còn lại nhưng badge vẫn "Còn hàng" → không xuất tiếp được
+- **Nguyên nhân**: `toFixed(6)` lưu `0.000001` thay vì `0` vào DB → so sánh `<= 0` sai
+- **Fix BatchesTab.tsx**: thêm helper `eff = (qty) => parseFloat(qty.toFixed(2))`, dùng cho `getBatchStatus`, `filtered`, `stats`
+- **Fix InvoicesPage.tsx**: `toFixed(6)` → `toFixed(2)` khi lưu newRemaining + restored; FIFO preview/validation bỏ qua batch có `eff(remaining_qty) <= 0`
+
+### Fix: Data inconsistency products.stock_qty vs batches.remaining_qty
+- **Triệu chứng**: Tổng kết hiện tồn 36 nhưng FIFO báo "Không có lô tồn kho"
+- **Nguyên nhân**:
+  1. Một số sản phẩm seed qua SQL có `stock_qty > 0` nhưng không có batch
+  2. Bug case-sensitive trước đây cho phép xuất "ảo" — validation `if (!batch) continue` silent pass khi không tìm thấy batch
+  3. Kết quả: `products.stock_qty` cứ trừ đều, batches cạn từ lâu
+- **Fix code** (`InvoicesPage.tsx` handleSave): thay `if (!batch) continue` bằng `violations.push(...)` → CHẶN xuất khi không có batch
+- **Fix dữ liệu**: chạy `supabase/init_batches_for_existing_stock.sql` để tạo batch INIT (inv_id=0, inv_code='INIT-{product_id}') cho phần thiếu = `stock_qty - SUM(remaining_qty)`
+- **An toàn**: batch INIT có `inv_id=0` nên không bị xoá khi xoá hoá đơn nào khác
+
+### SummaryPage performance + search
+- Thay 1 query `select('*')` toàn bộ lịch sử → 2 query song song có filter ngày (`gte/lte` trong tháng + `gt` sau tháng)
+- Thêm ô search tên/mã SP trong bảng tổng hợp (client-side useMemo, không reload)
+- Thêm try-catch-finally cho `loadData`, spinner xoay khi loading

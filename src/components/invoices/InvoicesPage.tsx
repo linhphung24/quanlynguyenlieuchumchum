@@ -423,7 +423,14 @@ export default function InvoicesPage() {
         const violations: string[] = []
         for (const item of invItems) {
           const batch = oldestBatch[item.name.toLowerCase().trim()]
-          if (!batch) continue
+          if (!batch) {
+            // CHẶN: không có batch nào để xuất → tránh xuất "ảo" làm lệch tồn kho
+            violations.push(
+              `"${item.name}": KHÔNG CÓ lô tồn kho. Tạo hoá đơn nhập trước khi xuất, ` +
+              `hoặc liên hệ admin chạy SQL khởi tạo lô (init_batches_for_existing_stock.sql).`
+            )
+            continue
+          }
           const batchEff = parseFloat(batch.remaining_qty.toFixed(2))
           if (item.amount > batchEff) {
             violations.push(
