@@ -320,7 +320,14 @@ export default function SummaryPage() {
                     <td className="px-3 py-2 border-b border-[#f0e8d8] text-sm text-right text-[#8b5e3c]">
                       {row.donGia ? row.donGia.toLocaleString('vi-VN') : '—'}
                     </td>
-                    <td className="px-3 py-2 border-b border-[#f0e8d8] text-sm text-right text-[#3d1f0a]">{fmtNum(row.tonDau)}</td>
+                    <td
+                      className={`px-3 py-2 border-b border-[#f0e8d8] text-sm text-right ${row.tonDau < 0 ? 'text-[#d94f3d] font-bold bg-red-50' : 'text-[#3d1f0a]'}`}
+                      title={row.tonDau < 0
+                        ? `⚠ Tồn đầu ÂM (${fmtNum(row.tonDau)})\nNghĩa là tháng này xuất nhiều hơn (tồn đầu thực tế + nhập trong kỳ).\nNguyên nhân thường gặp:\n• Hoá đơn xuất "ảo" do bug case-sensitive cũ\n• Sản phẩm tạo mới sau khi đã có HĐ\n• HĐ nhập có ngày sai (sang tháng sau)`
+                        : ''}
+                    >
+                      {fmtNum(row.tonDau)}{row.tonDau < 0 ? ' ⚠' : ''}
+                    </td>
                     <td className="px-3 py-2 border-b border-[#f0e8d8] text-sm text-right font-semibold text-[#3aaa6e]">
                       {row.nhap ? fmtNum(row.nhap) : <span className="text-[#ddd]">—</span>}
                     </td>

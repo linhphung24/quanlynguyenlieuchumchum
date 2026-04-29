@@ -267,3 +267,16 @@ try {
 - Thay 1 query `select('*')` toàn bộ lịch sử → 2 query song song có filter ngày (`gte/lte` trong tháng + `gt` sau tháng)
 - Thêm ô search tên/mã SP trong bảng tổng hợp (client-side useMemo, không reload)
 - Thêm try-catch-finally cho `loadData`, spinner xoay khi loading
+
+### Cảnh báo Tồn đầu ÂM (Summary)
+- **Triệu chứng**: Cột "Tồn đầu" trong Tổng kết hiển thị số âm
+- **Nguyên nhân**: dữ liệu lệch giữa `products.stock_qty` và lịch sử `invoices` — thường do:
+  1. Bug case-sensitive cũ cho phép xuất "ảo" (đã fix code, nhưng dữ liệu cũ còn lệch)
+  2. Sản phẩm tạo mới với `stock_qty=0` nhưng đã có HĐ cũ
+  3. HĐ nhập có `inv_date` ghi sai sang tháng tương lai
+- **Fix UI** (`SummaryPage.tsx`): cell "Tồn đầu" tô đỏ + `bg-red-50` + tooltip giải thích khi giá trị âm
+- **SQL chẩn đoán**: `supabase/diagnose_negative_opening_stock.sql` — 4 phần:
+  - PHẦN 1: liệt kê SP có tồn đầu âm trong tháng X năm Y
+  - PHẦN 2: soi chi tiết HĐ của 1 sản phẩm cụ thể
+  - PHẦN 3: đối chiếu `stock_qty` vs (Σnhập − Σxuất) toàn lịch sử
+  - PHẦN 4 (commented): đồng bộ stock_qty về đúng lịch sử → chạy LẠI `init_batches_for_existing_stock.sql`
