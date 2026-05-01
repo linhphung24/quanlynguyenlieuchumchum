@@ -98,6 +98,7 @@ export default function InvoicesPage() {
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [openInvs, setOpenInvs] = useState<Set<number>>(new Set())
   const [imageUrl, setImageUrl] = useState('')
+  const [search, setSearch] = useState('')
 
   // batch state
   const [tab, setTab] = useState<'invoices' | 'batches'>('invoices')
@@ -555,6 +556,16 @@ export default function InvoicesPage() {
     return [...new Set(names)].sort((a, b) => a.localeCompare(b, 'vi'))
   }, [invoices, invType])
 
+  // ─── search filter ────────────────────────────────────────
+  const filteredInvoices = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    if (!q) return invoices
+    return invoices.filter(inv =>
+      inv.code.toLowerCase().includes(q) ||
+      (inv.partner ?? '').toLowerCase().includes(q)
+    )
+  }, [invoices, search])
+
   const formTotal = items.reduce((s, it) => s + (it.amount || it.qty || 0) * (it.price || 0), 0)
 
   const hasBatchPreview = invType === 'out' && Object.keys(batchPreviews).length > 0
@@ -753,12 +764,41 @@ export default function InvoicesPage() {
 
           {/* ── Invoice list ── */}
           <div className="bg-[#fffaf4] rounded-2xl p-5 border border-[#f5e6cc] shadow-[0_4px_20px_rgba(200,119,58,0.06)]">
-            <h3 className="text-sm font-semibold text-[#3d1f0a] mb-3">Danh sách hoá đơn</h3>
+            <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+              <h3 className="text-sm font-semibold text-[#3d1f0a]">
+                Danh sách hoá đơn
+                {invoices.length > 0 && (
+                  <span className="ml-2 text-xs font-normal text-[#8b5e3c]">
+                    {filteredInvoices.length !== invoices.length
+                      ? `(${filteredInvoices.length}/${invoices.length})`
+                      : `(${invoices.length})`}
+                  </span>
+                )}
+              </h3>
+              <div className="relative">
+                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#c8a87a] text-sm pointer-events-none">🔍</span>
+                <input
+                  type="text"
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  placeholder="Mã HĐ hoặc nhà CC / khách hàng..."
+                  className="pl-8 pr-7 py-1.5 text-xs border-[1.5px] border-[#f5e6cc] rounded-lg bg-white text-[#3d1f0a] placeholder-[#c8a87a] outline-none focus:border-[#c8773a] transition-colors w-60"
+                />
+                {search && (
+                  <button
+                    onClick={() => setSearch('')}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-[#c8a87a] hover:text-[#c8773a] text-xs cursor-pointer"
+                  >✕</button>
+                )}
+              </div>
+            </div>
             {invoices.length === 0 ? (
               <div className="text-sm text-[#8b5e3c] text-center py-4">Chưa có hoá đơn nào</div>
+            ) : filteredInvoices.length === 0 ? (
+              <div className="text-sm text-[#8b5e3c] text-center py-4">Không tìm thấy hoá đơn phù hợp</div>
             ) : (
               <div className="space-y-2">
-                {invoices.map(inv => {
+                {filteredInvoices.map(inv => {
                   const castItems = inv.items as CastItem[]
                   const invTotal = calcTotal(castItems)
                   return (
