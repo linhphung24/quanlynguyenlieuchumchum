@@ -134,6 +134,18 @@ export interface Batch {
   created_at: string
 }
 
+export interface OpeningStock {
+  id: number
+  product_name: string
+  month: number
+  year: number
+  qty: number
+  created_by: string
+  updated_by: string | null
+  created_at: string
+  updated_at: string | null
+}
+
 export interface BatchDeduction {
   id: number
   batch_id: number
