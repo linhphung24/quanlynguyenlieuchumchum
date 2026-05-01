@@ -26,7 +26,7 @@ interface XuatRow {
 }
 
 export default function SummaryPage() {
-  const { sb, allProducts, profile } = useApp()
+  const { sb, allProducts, profile, toast } = useApp()
   const canEdit = profile?.role === 'admin' || profile?.role === 'manager'
 
   const now = new Date()
@@ -55,35 +55,30 @@ export default function SummaryPage() {
       const startStr = `${year}-${pad(month)}-01`
       const endStr   = `${year}-${pad(month)}-${pad(new Date(year, month, 0).getDate())}`
 
-      // 3 query song song: hoá đơn trong tháng + sau tháng + điều chỉnh tồn đầu
-      const [{ data: inMonthData }, { data: afterData }, { data: adjData }] = await Promise.all([
+      // 2 query song song: hoá đơn trong tháng + điều chỉnh tồn đầu
+      const [{ data: inMonthData }, { data: adjData }] = await Promise.all([
         sb.from('invoices').select('*')
           .gte('inv_date', startStr).lte('inv_date', endStr)
-          .order('inv_date'),
-        sb.from('invoices').select('*')
-          .gt('inv_date', endStr)
           .order('inv_date'),
         sb.from('stock_opening_adj').select('product_name, adj_qty')
           .eq('year', year).eq('month', month),
       ])
       const inMonthInvs = (inMonthData || []) as Invoice[]
-      const afterInvs   = (afterData   || []) as Invoice[]
 
       // Cập nhật adjMap
       const newAdjMap = new Map<string, number>()
       for (const a of (adjData || [])) newAdjMap.set(a.product_name, a.adj_qty)
       setAdjMap(newAdjMap)
 
-      const pmap = new Map<string, { nhapM: number; xuatM: number; nhapAfter: number; xuatAfter: number; donGia: number }>()
+      const pmap = new Map<string, { nhapM: number; xuatM: number; donGia: number }>()
       const get  = (name: string) => {
-        if (!pmap.has(name)) pmap.set(name, { nhapM: 0, xuatM: 0, nhapAfter: 0, xuatAfter: 0, donGia: 0 })
+        if (!pmap.has(name)) pmap.set(name, { nhapM: 0, xuatM: 0, donGia: 0 })
         return pmap.get(name)!
       }
 
       const nhapRows: NhapRow[] = []
       const xuatRows: XuatRow[] = []
 
-      // Tích lũy hoá đơn TRONG THÁNG
       for (const inv of inMonthInvs) {
         if (inv.type === 'in') {
           for (const it of (inv.items as ItemIn[])) {
@@ -115,38 +110,20 @@ export default function SummaryPage() {
         }
       }
 
-      // Tích lũy hoá đơn SAU THÁNG (để tính ngược tồn đầu kỳ)
-      for (const inv of afterInvs) {
-        if (inv.type === 'in') {
-          for (const it of (inv.items as ItemIn[])) {
-            if (!it.name || !(it.amount > 0)) continue
-            get(it.name).nhapAfter += it.amount
-          }
-        } else {
-          for (const it of (inv.items as ItemOut[])) {
-            if (!it.name || !(it.amount! > 0)) continue
-            get(it.name).xuatAfter += it.amount!
-          }
-        }
-      }
-
-      // Xây dựng bảng TỔNG HỢP từ allProducts
+      // Công thức: tồn đầu = nhập tay (adj_qty, mặc định 0)
+      //            tồn cuối = tồn đầu + nhập − xuất
       const result: TongHopRow[] = []
       let stt = 1
       for (const p of allProducts.filter(p => p.is_active)) {
-        const e       = pmap.get(p.name) || { nhapM: 0, xuatM: 0, nhapAfter: 0, xuatAfter: 0, donGia: 0 }
+        const e       = pmap.get(p.name) || { nhapM: 0, xuatM: 0, donGia: 0 }
         const donGia  = p.cost_price || e.donGia || 0
-        // Tồn cuối tháng = tồn hiện tại − nhập sau tháng + xuất sau tháng
-        const tonCuoi = (p.stock_qty || 0) - e.nhapAfter + e.xuatAfter
-        const calcTonDau = tonCuoi - e.nhapM + e.xuatM
-        // Nếu có điều chỉnh tay → dùng giá trị override, còn lại dùng tính toán
-        const tonDau  = newAdjMap.has(p.name) ? newAdjMap.get(p.name)! : calcTonDau
-        const tonCuoiAdj = tonDau + e.nhapM - e.xuatM
-        if (e.nhapM === 0 && e.xuatM === 0 && tonDau === 0 && tonCuoiAdj === 0) continue
+        const tonDau  = newAdjMap.get(p.name) ?? 0
+        const tonCuoi = tonDau + e.nhapM - e.xuatM
+        if (e.nhapM === 0 && e.xuatM === 0 && tonDau === 0) continue
         result.push({
           stt: stt++, code: p.code || '', name: p.name, unit: p.unit,
           donGia, tonDau, nhap: e.nhapM, xuat: e.xuatM,
-          tonCuoi: tonCuoiAdj, tienCuoi: tonCuoiAdj * donGia,
+          tonCuoi, tienCuoi: tonCuoi * donGia,
         })
       }
 
@@ -189,7 +166,7 @@ export default function SummaryPage() {
         return { ...r, tonDau: qty, tonCuoi: tonCuoiAdj, tienCuoi: tonCuoiAdj * r.donGia }
       }))
     } catch (e) {
-      console.error('saveEdit error:', e)
+      toast('Lỗi khi lưu: ' + (e as Error).message, 'error')
     } finally {
       setSaving(false)
       cancelEdit()
@@ -199,14 +176,14 @@ export default function SummaryPage() {
   const removeAdj = async (productName: string) => {
     setSaving(true)
     try {
-      await sb.from('stock_opening_adj')
+      const { error } = await sb.from('stock_opening_adj')
         .delete()
         .eq('product_name', productName).eq('year', year).eq('month', month)
+      if (error) throw error
       setAdjMap(prev => { const m = new Map(prev); m.delete(productName); return m })
-      // reload để lấy lại giá trị tính toán
       loadData()
     } catch (e) {
-      console.error('removeAdj error:', e)
+      toast('Lỗi khi xoá điều chỉnh: ' + (e as Error).message, 'error')
     } finally {
       setSaving(false)
     }
@@ -332,9 +309,8 @@ export default function SummaryPage() {
           <div className="flex gap-3 text-xs text-[#8b5e3c] flex-wrap">
             <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-[#3aaa6e] inline-block"></span> Nhập</span>
             <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-[#c8773a] inline-block"></span> Xuất</span>
-            <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-[#d94f3d] inline-block"></span> Tồn âm</span>
-            <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-amber-100 border border-amber-400 inline-block"></span> Tồn đầu chỉnh tay ✏</span>
-            {canEdit && <span className="text-[#c8773a] italic">(click ô Tồn đầu để sửa)</span>}
+            <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-amber-100 border border-amber-400 inline-block"></span> Tồn đầu đã nhập ✏</span>
+            {canEdit && <span className="text-[#c8773a] italic">(click ô Tồn đầu để nhập)</span>}
           </div>
         </div>
 
@@ -394,17 +370,13 @@ export default function SummaryPage() {
                     </td>
                     <td
                       className={`px-3 py-2 border-b border-[#f0e8d8] text-sm text-right group relative
-                        ${row.tonDau < 0 && !adjMap.has(row.name) ? 'text-[#d94f3d] font-bold bg-red-50' : ''}
-                        ${adjMap.has(row.name) ? 'bg-amber-50' : ''}
+                        ${adjMap.has(row.name) ? 'bg-amber-50 text-amber-700' : 'text-[#8b5e3c]'}
                         ${canEdit && editingCell !== row.name ? 'cursor-pointer hover:bg-[#fff3e0]' : ''}
-                        ${!adjMap.has(row.name) && row.tonDau >= 0 ? 'text-[#3d1f0a]' : ''}
                       `}
                       title={
                         adjMap.has(row.name)
-                          ? `✏ Đã chỉnh tay: ${fmtNum(row.tonDau)}\nClick để sửa lại hoặc xoá điều chỉnh`
-                          : row.tonDau < 0
-                          ? `⚠ Tồn đầu ÂM (${fmtNum(row.tonDau)})\nClick để điều chỉnh tay`
-                          : canEdit ? 'Click để điều chỉnh tồn đầu' : ''
+                          ? `✏ Đã nhập tay: ${fmtNum(row.tonDau)}\nClick để sửa`
+                          : canEdit ? 'Click để nhập tồn đầu' : '(chưa nhập tồn đầu)'
                       }
                       onClick={() => editingCell !== row.name && openEdit(row.name, row.tonDau)}
                     >
@@ -437,19 +409,18 @@ export default function SummaryPage() {
                         </div>
                       ) : (
                         <span className="inline-flex items-center gap-1 justify-end">
-                          <span className={adjMap.has(row.name) ? 'text-amber-700 font-semibold' : ''}>
-                            {fmtNum(row.tonDau)}
+                          <span className={adjMap.has(row.name) ? 'font-semibold' : 'text-[#bbb]'}>
+                            {adjMap.has(row.name) ? fmtNum(row.tonDau) : '—'}
                           </span>
                           {adjMap.has(row.name) && (
                             <span
-                              className="text-amber-500 text-xs cursor-pointer hover:text-red-500"
-                              title="Xoá điều chỉnh (hoàn về tính toán)"
+                              className="text-amber-400 text-xs cursor-pointer hover:text-red-500"
+                              title="Xoá — hoàn về 0"
                               onClick={e => { e.stopPropagation(); removeAdj(row.name) }}
                             >✏</span>
                           )}
-                          {!adjMap.has(row.name) && row.tonDau < 0 && <span className="text-[#d94f3d]">⚠</span>}
                           {canEdit && !adjMap.has(row.name) && editingCell !== row.name && (
-                            <span className="opacity-0 group-hover:opacity-40 text-[#c8773a] text-xs transition-opacity">✏</span>
+                            <span className="opacity-0 group-hover:opacity-60 text-[#c8773a] text-xs transition-opacity">+</span>
                           )}
                         </span>
                       )}

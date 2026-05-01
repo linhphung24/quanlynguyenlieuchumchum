@@ -30,7 +30,14 @@ CREATE POLICY "read_adj" ON stock_opening_adj
   FOR SELECT USING (auth.role() = 'authenticated');
 
 CREATE POLICY "write_adj" ON stock_opening_adj
-  FOR ALL USING (
+  FOR ALL
+  USING (
+    EXISTS (
+      SELECT 1 FROM profiles
+      WHERE id = auth.uid() AND role IN ('admin', 'manager')
+    )
+  )
+  WITH CHECK (
     EXISTS (
       SELECT 1 FROM profiles
       WHERE id = auth.uid() AND role IN ('admin', 'manager')
