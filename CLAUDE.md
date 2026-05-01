@@ -288,3 +288,11 @@ try {
   - PHẦN 2: soi chi tiết HĐ của 1 sản phẩm cụ thể
   - PHẦN 3: đối chiếu `stock_qty` vs (Σnhập − Σxuất) toàn lịch sử
   - PHẦN 4 (commented): đồng bộ stock_qty về đúng lịch sử → chạy LẠI `init_batches_for_existing_stock.sql`
+
+### Chỉnh sửa Tồn đầu theo tháng (SummaryPage)
+- **Bảng DB mới**: `stock_opening_adj` — lưu override tồn đầu theo `(product_name, year, month)`
+- **Migration**: `supabase/migration_stock_opening_adj.sql` — chạy trong Supabase Dashboard trước
+- **UX**: admin/manager click vào ô "Tồn đầu" → input inline → Enter lưu / Esc huỷ
+- **Logic**: nếu có override thì `tonDau = adj_qty`, `tonCuoi = adj_qty + nhap - xuat`; không có override → tính bình thường theo lịch sử
+- Cell override hiển thị nền vàng nhạt + icon ✏; click lại icon ✏ để xoá override (hoàn về tính toán)
+- RLS: chỉ role admin/manager được upsert/delete; tất cả authenticated user đọc được

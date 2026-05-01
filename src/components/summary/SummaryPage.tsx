@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { useApp } from '@/contexts/AppContext'
 import { Invoice } from '@/types'
 import { fmtNum, fmtDate } from '@/lib/utils'
@@ -26,7 +26,8 @@ interface XuatRow {
 }
 
 export default function SummaryPage() {
-  const { sb, allProducts } = useApp()
+  const { sb, allProducts, profile } = useApp()
+  const canEdit = profile?.role === 'admin' || profile?.role === 'manager'
 
   const now = new Date()
   const [year, setYear]       = useState(now.getFullYear())
@@ -36,6 +37,13 @@ export default function SummaryPage() {
   const [xuatDet, setXuatDet] = useState<XuatRow[]>([])
   const [loading, setLoading] = useState(false)
   const [search, setSearch]   = useState('')
+
+  // Tồn đầu được chỉnh tay: product_name → qty override
+  const [adjMap, setAdjMap]           = useState<Map<string, number>>(new Map())
+  const [editingCell, setEditingCell] = useState<string | null>(null) // product_name đang edit
+  const [editVal, setEditVal]         = useState('')
+  const [saving, setSaving]           = useState(false)
+  const editInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { loadData() }, [year, month, allProducts]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -47,17 +55,24 @@ export default function SummaryPage() {
       const startStr = `${year}-${pad(month)}-01`
       const endStr   = `${year}-${pad(month)}-${pad(new Date(year, month, 0).getDate())}`
 
-      // ✅ 2 query song song, có filter ngày — không tải toàn bộ lịch sử
-      const [{ data: inMonthData }, { data: afterData }] = await Promise.all([
+      // 3 query song song: hoá đơn trong tháng + sau tháng + điều chỉnh tồn đầu
+      const [{ data: inMonthData }, { data: afterData }, { data: adjData }] = await Promise.all([
         sb.from('invoices').select('*')
           .gte('inv_date', startStr).lte('inv_date', endStr)
           .order('inv_date'),
         sb.from('invoices').select('*')
           .gt('inv_date', endStr)
           .order('inv_date'),
+        sb.from('stock_opening_adj').select('product_name, adj_qty')
+          .eq('year', year).eq('month', month),
       ])
       const inMonthInvs = (inMonthData || []) as Invoice[]
       const afterInvs   = (afterData   || []) as Invoice[]
+
+      // Cập nhật adjMap
+      const newAdjMap = new Map<string, number>()
+      for (const a of (adjData || [])) newAdjMap.set(a.product_name, a.adj_qty)
+      setAdjMap(newAdjMap)
 
       const pmap = new Map<string, { nhapM: number; xuatM: number; nhapAfter: number; xuatAfter: number; donGia: number }>()
       const get  = (name: string) => {
@@ -123,12 +138,15 @@ export default function SummaryPage() {
         const donGia  = p.cost_price || e.donGia || 0
         // Tồn cuối tháng = tồn hiện tại − nhập sau tháng + xuất sau tháng
         const tonCuoi = (p.stock_qty || 0) - e.nhapAfter + e.xuatAfter
-        const tonDau  = tonCuoi - e.nhapM + e.xuatM
-        if (e.nhapM === 0 && e.xuatM === 0 && tonDau === 0 && tonCuoi === 0) continue
+        const calcTonDau = tonCuoi - e.nhapM + e.xuatM
+        // Nếu có điều chỉnh tay → dùng giá trị override, còn lại dùng tính toán
+        const tonDau  = newAdjMap.has(p.name) ? newAdjMap.get(p.name)! : calcTonDau
+        const tonCuoiAdj = tonDau + e.nhapM - e.xuatM
+        if (e.nhapM === 0 && e.xuatM === 0 && tonDau === 0 && tonCuoiAdj === 0) continue
         result.push({
           stt: stt++, code: p.code || '', name: p.name, unit: p.unit,
           donGia, tonDau, nhap: e.nhapM, xuat: e.xuatM,
-          tonCuoi, tienCuoi: tonCuoi * donGia,
+          tonCuoi: tonCuoiAdj, tienCuoi: tonCuoiAdj * donGia,
         })
       }
 
@@ -139,6 +157,58 @@ export default function SummaryPage() {
       console.error('SummaryPage loadData error:', e)
     } finally {
       setLoading(false)
+    }
+  }
+
+  /* ── Inline edit tồn đầu ── */
+  const openEdit = (productName: string, currentTonDau: number) => {
+    if (!canEdit) return
+    setEditingCell(productName)
+    setEditVal(String(currentTonDau))
+    setTimeout(() => editInputRef.current?.select(), 30)
+  }
+
+  const cancelEdit = () => { setEditingCell(null); setEditVal('') }
+
+  const saveEdit = async (productName: string) => {
+    const qty = parseFloat(editVal)
+    if (isNaN(qty)) { cancelEdit(); return }
+    setSaving(true)
+    try {
+      const { error } = await sb.from('stock_opening_adj').upsert(
+        { product_name: productName, year, month, adj_qty: qty,
+          updated_by: profile?.full_name || '' },
+        { onConflict: 'product_name,year,month' }
+      )
+      if (error) throw error
+      setAdjMap(prev => new Map(prev).set(productName, qty))
+      // Cập nhật row tương ứng
+      setRows(prev => prev.map(r => {
+        if (r.name !== productName) return r
+        const tonCuoiAdj = qty + r.nhap - r.xuat
+        return { ...r, tonDau: qty, tonCuoi: tonCuoiAdj, tienCuoi: tonCuoiAdj * r.donGia }
+      }))
+    } catch (e) {
+      console.error('saveEdit error:', e)
+    } finally {
+      setSaving(false)
+      cancelEdit()
+    }
+  }
+
+  const removeAdj = async (productName: string) => {
+    setSaving(true)
+    try {
+      await sb.from('stock_opening_adj')
+        .delete()
+        .eq('product_name', productName).eq('year', year).eq('month', month)
+      setAdjMap(prev => { const m = new Map(prev); m.delete(productName); return m })
+      // reload để lấy lại giá trị tính toán
+      loadData()
+    } catch (e) {
+      console.error('removeAdj error:', e)
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -259,10 +329,12 @@ export default function SummaryPage() {
               </span>
             )}
           </h3>
-          <div className="flex gap-3 text-xs text-[#8b5e3c]">
+          <div className="flex gap-3 text-xs text-[#8b5e3c] flex-wrap">
             <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-[#3aaa6e] inline-block"></span> Nhập</span>
             <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-[#c8773a] inline-block"></span> Xuất</span>
             <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-[#d94f3d] inline-block"></span> Tồn âm</span>
+            <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-amber-100 border border-amber-400 inline-block"></span> Tồn đầu chỉnh tay ✏</span>
+            {canEdit && <span className="text-[#c8773a] italic">(click ô Tồn đầu để sửa)</span>}
           </div>
         </div>
 
@@ -321,12 +393,66 @@ export default function SummaryPage() {
                       {row.donGia ? row.donGia.toLocaleString('vi-VN') : '—'}
                     </td>
                     <td
-                      className={`px-3 py-2 border-b border-[#f0e8d8] text-sm text-right ${row.tonDau < 0 ? 'text-[#d94f3d] font-bold bg-red-50' : 'text-[#3d1f0a]'}`}
-                      title={row.tonDau < 0
-                        ? `⚠ Tồn đầu ÂM (${fmtNum(row.tonDau)})\nNghĩa là tháng này xuất nhiều hơn (tồn đầu thực tế + nhập trong kỳ).\nNguyên nhân thường gặp:\n• Hoá đơn xuất "ảo" do bug case-sensitive cũ\n• Sản phẩm tạo mới sau khi đã có HĐ\n• HĐ nhập có ngày sai (sang tháng sau)`
-                        : ''}
+                      className={`px-3 py-2 border-b border-[#f0e8d8] text-sm text-right group relative
+                        ${row.tonDau < 0 && !adjMap.has(row.name) ? 'text-[#d94f3d] font-bold bg-red-50' : ''}
+                        ${adjMap.has(row.name) ? 'bg-amber-50' : ''}
+                        ${canEdit && editingCell !== row.name ? 'cursor-pointer hover:bg-[#fff3e0]' : ''}
+                        ${!adjMap.has(row.name) && row.tonDau >= 0 ? 'text-[#3d1f0a]' : ''}
+                      `}
+                      title={
+                        adjMap.has(row.name)
+                          ? `✏ Đã chỉnh tay: ${fmtNum(row.tonDau)}\nClick để sửa lại hoặc xoá điều chỉnh`
+                          : row.tonDau < 0
+                          ? `⚠ Tồn đầu ÂM (${fmtNum(row.tonDau)})\nClick để điều chỉnh tay`
+                          : canEdit ? 'Click để điều chỉnh tồn đầu' : ''
+                      }
+                      onClick={() => editingCell !== row.name && openEdit(row.name, row.tonDau)}
                     >
-                      {fmtNum(row.tonDau)}{row.tonDau < 0 ? ' ⚠' : ''}
+                      {editingCell === row.name ? (
+                        <div className="flex items-center gap-1 justify-end" onClick={e => e.stopPropagation()}>
+                          <input
+                            ref={editInputRef}
+                            type="number"
+                            step="0.01"
+                            value={editVal}
+                            onChange={e => setEditVal(e.target.value)}
+                            onKeyDown={e => {
+                              if (e.key === 'Enter') saveEdit(row.name)
+                              if (e.key === 'Escape') cancelEdit()
+                            }}
+                            className="w-20 text-right text-sm border border-[#c8773a] rounded px-1 py-0.5 outline-none bg-white text-[#3d1f0a]"
+                            disabled={saving}
+                          />
+                          <button
+                            onClick={() => saveEdit(row.name)}
+                            disabled={saving}
+                            className="text-[#1e7a4a] hover:text-green-700 text-base font-bold leading-none"
+                            title="Lưu (Enter)"
+                          >✓</button>
+                          <button
+                            onClick={cancelEdit}
+                            className="text-[#aaa] hover:text-[#c8773a] text-base font-bold leading-none"
+                            title="Huỷ (Esc)"
+                          >✕</button>
+                        </div>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 justify-end">
+                          <span className={adjMap.has(row.name) ? 'text-amber-700 font-semibold' : ''}>
+                            {fmtNum(row.tonDau)}
+                          </span>
+                          {adjMap.has(row.name) && (
+                            <span
+                              className="text-amber-500 text-xs cursor-pointer hover:text-red-500"
+                              title="Xoá điều chỉnh (hoàn về tính toán)"
+                              onClick={e => { e.stopPropagation(); removeAdj(row.name) }}
+                            >✏</span>
+                          )}
+                          {!adjMap.has(row.name) && row.tonDau < 0 && <span className="text-[#d94f3d]">⚠</span>}
+                          {canEdit && !adjMap.has(row.name) && editingCell !== row.name && (
+                            <span className="opacity-0 group-hover:opacity-40 text-[#c8773a] text-xs transition-opacity">✏</span>
+                          )}
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-2 border-b border-[#f0e8d8] text-sm text-right font-semibold text-[#3aaa6e]">
                       {row.nhap ? fmtNum(row.nhap) : <span className="text-[#ddd]">—</span>}
