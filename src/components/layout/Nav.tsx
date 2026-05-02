@@ -37,6 +37,7 @@ const NAV_GROUPS: NavGroup[] = [
     minRole: 'manager' as const,
     items: [
       { id: 'personnel' as PageName, label: 'Nhân sự',        icon: '👩‍💼', minRole: 'manager' as const },
+      { id: 'units'     as PageName, label: 'Đơn vị tính',   icon: '📐', minRole: 'manager' as const },
       { id: 'users'     as PageName, label: 'Người dùng',     icon: '◉',  minRole: 'manager' as const },
       { id: 'admin'     as PageName, label: 'Quản trị',       icon: '⚙',  minRole: 'admin'   as const },
     ],

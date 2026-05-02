@@ -11,6 +11,7 @@ const PAGE_META: Record<PageName, { title: string; subtitle: string }> = {
   calc:      { title: 'Tính nhanh',            subtitle: 'Tính nguyên liệu theo mẻ' },
   log:       { title: 'Nhật ký sản xuất',      subtitle: 'Ghi nhận sản lượng hàng ngày' },
   personnel: { title: 'Nhân sự',               subtitle: 'Quản lý thông tin nhân viên' },
+  units:     { title: 'Đơn vị tính',           subtitle: 'Quản lý danh sách đơn vị đo lường' },
   users:     { title: 'Người dùng',            subtitle: 'Quản lý tài khoản nhân viên' },
   admin:     { title: 'Quản trị hệ thống',     subtitle: 'Nhật ký thao tác & phân quyền' },
 }

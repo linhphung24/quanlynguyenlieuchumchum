@@ -7,7 +7,7 @@ import { UNITS } from '@/lib/constants'
 import { fmtPrice } from '@/lib/utils'
 
 export default function RecipesPage() {
-  const { sb, user, profile, recipes, setRecipes, currentRecipeId, setCurrentRecipeId, toast, startLoading, stopLoading, writeAudit } = useApp()
+  const { sb, user, profile, recipes, setRecipes, currentRecipeId, setCurrentRecipeId, allUnits, toast, startLoading, stopLoading, writeAudit } = useApp()
 
   const [editName, setEditName] = useState('')
   const [editYield, setEditYield] = useState(1)
@@ -38,7 +38,7 @@ export default function RecipesPage() {
   }
 
   const addIngredient = () => {
-    setEditIngredients([...editIngredients, { name: '', amount: 0, unit: UNITS[0], price: 0 }])
+    setEditIngredients([...editIngredients, { name: '', amount: 0, unit: allUnits[0] || UNITS[0], price: 0 }])
     setDirty(true)
   }
 
@@ -273,7 +273,7 @@ export default function RecipesPage() {
                               onChange={e => handleIngChange(idx, 'unit', e.target.value)}
                               className="w-full px-2 py-1 border-[1.5px] border-[#f5e6cc] rounded text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors appearance-none"
                             >
-                              {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                              {allUnits.map(u => <option key={u} value={u}>{u}</option>)}
                             </select>
                           </td>
                           <td className="px-3 py-2.5 border-b border-[#f0e8d8]">

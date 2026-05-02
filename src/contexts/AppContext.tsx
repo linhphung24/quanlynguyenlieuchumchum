@@ -4,6 +4,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback, use
 import { SupabaseClient, User } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase'
 import { Profile, Recipe, Product, Toast } from '@/types'
+import { UNITS } from '@/lib/constants'
 
 interface AppContextValue {
   sb: SupabaseClient
@@ -17,6 +18,8 @@ interface AppContextValue {
   setCurrentRecipeId: React.Dispatch<React.SetStateAction<number | null>>
   allProducts: Product[]
   setAllProducts: React.Dispatch<React.SetStateAction<Product[]>>
+  allUnits: string[]
+  setAllUnits: React.Dispatch<React.SetStateAction<string[]>>
   toasts: Toast[]
   toast: (message: string, type?: 'success' | 'error' | 'info') => void
   loading: boolean
@@ -39,6 +42,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [recipes, setRecipes] = useState<Recipe[]>([])
   const [currentRecipeId, setCurrentRecipeId] = useState<number | null>(null)
   const [allProducts, setAllProducts] = useState<Product[]>([])
+  const [allUnits, setAllUnits]       = useState<string[]>(UNITS)
   const [toasts, setToasts] = useState<Toast[]>([])
   const [loading, setLoading] = useState(false)
   const [initialized, setInitialized] = useState(false)
@@ -78,6 +82,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       const { data: profilesData } = await sb.from('profiles').select('*').order('created_at')
       if (profilesData) setAllProfiles(profilesData as unknown as Profile[])
     } catch {}
+
+    try {
+      const { data: unitsData } = await sb.from('units').select('name').order('sort_order').order('name')
+      if (unitsData && unitsData.length > 0)
+        setAllUnits((unitsData as { name: string }[]).map(u => u.name))
+    } catch {}
   }, [sb])
 
   const clearState = useCallback(() => {
@@ -87,6 +97,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setRecipes([])
     setCurrentRecipeId(null)
     setAllProducts([])
+    setAllUnits(UNITS)
   }, [])
 
   const writeAudit = useCallback(async (
@@ -175,6 +186,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     sb, user, profile, allProfiles, setAllProfiles,
     recipes, setRecipes, currentRecipeId, setCurrentRecipeId,
     allProducts, setAllProducts,
+    allUnits, setAllUnits,
     toasts, toast, loading, startLoading, stopLoading,
     writeAudit, logout, initialized,
   }
