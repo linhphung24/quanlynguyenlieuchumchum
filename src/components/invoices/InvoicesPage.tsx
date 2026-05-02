@@ -86,7 +86,7 @@ ${total ? `<div class="total">Tổng cộng: ${fmtPrice(total)}</div>` : ''}
 
 // ─── main component ──────────────────────────────────────────
 export default function InvoicesPage() {
-  const { sb, user, recipes, allProducts, setAllProducts, toast, startLoading, stopLoading, writeAudit } = useApp()
+  const { sb, user, recipes, allProducts, setAllProducts, allUnits, toast, startLoading, stopLoading, writeAudit } = useApp()
 
   // form state
   const [invType, setInvType] = useState<'in' | 'out'>('in')
@@ -94,7 +94,7 @@ export default function InvoicesPage() {
   const [code, setCode] = useState(genCode())
   const [partner, setPartner] = useState('')
   const [note, setNote] = useState('')
-  const [items, setItems] = useState<FormItem[]>([{ name: '', amount: 0, unit: UNITS[0], price: 0, mfg_date: '', exp_date: '', recipeId: 0, qty: 0 }])
+  const [items, setItems] = useState<FormItem[]>([{ name: '', amount: 0, unit: allUnits[0] || UNITS[0], price: 0, mfg_date: '', exp_date: '', recipeId: 0, qty: 0 }])
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [openInvs, setOpenInvs] = useState<Set<number>>(new Set())
   const [imageUrl, setImageUrl] = useState('')
@@ -331,7 +331,7 @@ export default function InvoicesPage() {
   }
 
   // ─── item form helpers ────────────────────────────────────
-  const addItem = () => setItems([...items, { name: '', amount: 0, unit: UNITS[0], price: 0, mfg_date: '', exp_date: '', recipeId: 0, qty: 0 }])
+  const addItem = () => setItems([...items, { name: '', amount: 0, unit: allUnits[0] || UNITS[0], price: 0, mfg_date: '', exp_date: '', recipeId: 0, qty: 0 }])
   const removeItem = (idx: number) => setItems(items.filter((_, i) => i !== idx))
   const updateItem = (idx: number, field: string, val: unknown) => {
     setItems(prev => prev.map((it, i) => i === idx ? { ...it, [field]: val } : it))
@@ -482,7 +482,7 @@ export default function InvoicesPage() {
         setPartner('')
         setNote('')
         setImageUrl('')
-        setItems([{ name: '', amount: 0, unit: UNITS[0], price: 0, mfg_date: '', exp_date: '', recipeId: 0, qty: 0 }])
+        setItems([{ name: '', amount: 0, unit: allUnits[0] || UNITS[0], price: 0, mfg_date: '', exp_date: '', recipeId: 0, qty: 0 }])
         setBatchPreviews({})
       } else if (error) {
         toast('Lỗi lưu: ' + error.message, 'error')
@@ -685,7 +685,7 @@ export default function InvoicesPage() {
                       <td className="px-3 py-2.5 border-b border-[#f0e8d8]">
                         <select value={it.unit} onChange={e => updateItem(idx, 'unit', e.target.value)}
                           className="w-full px-2 py-1 border-[1.5px] border-[#f5e6cc] rounded text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors appearance-none">
-                          {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                          {allUnits.map(u => <option key={u} value={u}>{u}</option>)}
                         </select>
                       </td>
                       <td className="px-3 py-2.5 border-b border-[#f0e8d8]">

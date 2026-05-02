@@ -43,7 +43,7 @@ const emptyProduct = (): Partial<Product> => ({
 })
 
 export default function ProductsPage() {
-  const { sb, user, allProducts, setAllProducts, toast, startLoading, stopLoading, writeAudit } = useApp()
+  const { sb, user, allProducts, setAllProducts, allUnits, toast, startLoading, stopLoading, writeAudit } = useApp()
 
   const [view, setView] = useState<'card' | 'table'>('card')
   const [search, setSearch] = useState('')
@@ -524,11 +524,11 @@ export default function ProductsPage() {
                 <div>
                   <label className="block text-xs font-medium text-[#3d1f0a] mb-1.5">Đơn vị tính</label>
                   <select
-                    value={editing.unit || UNITS[0]}
+                    value={editing.unit || allUnits[0] || UNITS[0]}
                     onChange={e => setEditing({ ...editing, unit: e.target.value })}
                     className="w-full px-3 py-2.5 border border-[#e8ddd0] rounded-xl text-sm bg-[#fafaf8] text-[#1a0f07] outline-none focus:border-[#c8773a] transition-all appearance-none cursor-pointer"
                   >
-                    {UNITS.map(u => <option key={u} value={u}>{u}</option>)}
+                    {allUnits.map(u => <option key={u} value={u}>{u}</option>)}
                   </select>
                 </div>
               </div>
