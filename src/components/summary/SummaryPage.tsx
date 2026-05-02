@@ -28,7 +28,7 @@ interface XuatRow {
 
 export default function SummaryPage() {
   const { sb, allProducts, profile, toast } = useApp()
-  const canEdit = profile?.role === 'admin' || profile?.role === 'manager'
+  const canEdit = !!profile // tất cả user đã đăng nhập đều sửa được tồn đầu
 
   const now = new Date()
   const [year, setYear]       = useState(now.getFullYear())
