@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useRef } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useApp } from '@/contexts/AppContext'
 import { Invoice } from '@/types'
 import { fmtNum, fmtDate } from '@/lib/utils'
@@ -14,7 +14,6 @@ interface TongHopRow {
   stt: number; code: string; name: string; unit: string
   donGia: number; tonDau: number; nhap: number; xuat: number
   tonCuoi: number; tienCuoi: number
-  tonDauAuto: boolean // true = lấy từ tồn cuối tháng trước (chưa có adj)
 }
 interface NhapRow {
   ngay: string; soChungTu: string; ten: string; dvt: string
@@ -27,8 +26,7 @@ interface XuatRow {
 }
 
 export default function SummaryPage() {
-  const { sb, allProducts, profile, toast } = useApp()
-  const canEdit = !!profile // tất cả user đã đăng nhập đều sửa được tồn đầu
+  const { sb, allProducts } = useApp()
 
   const now = new Date()
   const [year, setYear]       = useState(now.getFullYear())
@@ -38,13 +36,6 @@ export default function SummaryPage() {
   const [xuatDet, setXuatDet] = useState<XuatRow[]>([])
   const [loading, setLoading] = useState(false)
   const [search, setSearch]   = useState('')
-
-  // Tồn đầu được chỉnh tay: product_name → qty override
-  const [adjMap, setAdjMap]           = useState<Map<string, number>>(new Map())
-  const [editingCell, setEditingCell] = useState<string | null>(null) // product_name đang edit
-  const [editVal, setEditVal]         = useState('')
-  const [saving, setSaving]           = useState(false)
-  const editInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => { loadData() }, [year, month, allProducts]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -56,54 +47,11 @@ export default function SummaryPage() {
       const startStr = `${year}-${pad(month)}-01`
       const endStr   = `${year}-${pad(month)}-${pad(new Date(year, month, 0).getDate())}`
 
-      const prevMonth    = month === 1 ? 12 : month - 1
-      const prevYear     = month === 1 ? year - 1 : year
-      const prevStartStr = `${prevYear}-${pad(prevMonth)}-01`
-      const prevEndStr   = `${prevYear}-${pad(prevMonth)}-${pad(new Date(prevYear, prevMonth, 0).getDate())}`
-
-      // 4 query song song: tháng hiện tại + tháng trước (để tính tồn đầu tự động)
-      const [
-        { data: inMonthData },
-        { data: adjData },
-        { data: prevMonthData },
-        { data: prevAdjData },
-      ] = await Promise.all([
-        sb.from('invoices').select('*').gte('inv_date', startStr).lte('inv_date', endStr).order('inv_date'),
-        sb.from('stock_opening_adj').select('product_name, adj_qty').eq('year', year).eq('month', month),
-        sb.from('invoices').select('*').gte('inv_date', prevStartStr).lte('inv_date', prevEndStr),
-        sb.from('stock_opening_adj').select('product_name, adj_qty').eq('year', prevYear).eq('month', prevMonth),
-      ])
+      // Chỉ query HĐ trong tháng — tồn cuối lấy thẳng từ products.stock_qty
+      const { data: inMonthData } = await sb.from('invoices').select('*')
+        .gte('inv_date', startStr).lte('inv_date', endStr).order('inv_date')
       const inMonthInvs = (inMonthData || []) as Invoice[]
 
-      // Adj map tháng hiện tại
-      const newAdjMap = new Map<string, number>()
-      for (const a of (adjData || [])) newAdjMap.set(a.product_name, a.adj_qty)
-      setAdjMap(newAdjMap)
-
-      // Tính tồn cuối tháng trước (adj tháng trước + nhập prev − xuất prev)
-      const prevAdjMapLocal = new Map<string, number>()
-      for (const a of (prevAdjData || [])) prevAdjMapLocal.set(a.product_name, a.adj_qty)
-
-      const prevpmap = new Map<string, { nhap: number; xuat: number }>()
-      const getprev  = (name: string) => {
-        if (!prevpmap.has(name)) prevpmap.set(name, { nhap: 0, xuat: 0 })
-        return prevpmap.get(name)!
-      }
-      for (const inv of (prevMonthData || []) as Invoice[]) {
-        if (inv.type === 'in') {
-          for (const it of (inv.items as ItemIn[])) {
-            if (!it.name || !(it.amount > 0)) continue
-            getprev(it.name).nhap += it.amount
-          }
-        } else {
-          for (const it of (inv.items as ItemOut[])) {
-            if (!it.name || !(it.amount! > 0)) continue
-            getprev(it.name).xuat += it.amount!
-          }
-        }
-      }
-
-      // Tháng hiện tại
       const pmap = new Map<string, { nhapM: number; xuatM: number; donGia: number }>()
       const get  = (name: string) => {
         if (!pmap.has(name)) pmap.set(name, { nhapM: 0, xuatM: 0, donGia: 0 })
@@ -144,30 +92,20 @@ export default function SummaryPage() {
         }
       }
 
-      // Tồn đầu = adj tháng này (nếu có) HOẶC tồn cuối tháng trước
+      // tonCuoi = stock_qty thực tế trong kho (khớp với tab Kho hàng)
+      // tonDau  = tonCuoi − nhập trong tháng + xuất trong tháng
       const result: TongHopRow[] = []
       let stt = 1
       for (const p of allProducts.filter(p => p.is_active)) {
         const e      = pmap.get(p.name) || { nhapM: 0, xuatM: 0, donGia: 0 }
         const donGia = p.cost_price || e.donGia || 0
-
-        let tonDau: number
-        let tonDauAuto: boolean
-        if (newAdjMap.has(p.name)) {
-          tonDau     = newAdjMap.get(p.name)!
-          tonDauAuto = false
-        } else {
-          const prevE = prevpmap.get(p.name) || { nhap: 0, xuat: 0 }
-          tonDau      = (prevAdjMapLocal.get(p.name) ?? 0) + prevE.nhap - prevE.xuat
-          tonDauAuto  = true
-        }
-
-        const tonCuoi = tonDau + e.nhapM - e.xuatM
-        if (e.nhapM === 0 && e.xuatM === 0 && tonDau === 0) continue
+        const tonCuoi = parseFloat((p.stock_qty || 0).toFixed(2))
+        const tonDau  = parseFloat((tonCuoi - e.nhapM + e.xuatM).toFixed(2))
+        if (e.nhapM === 0 && e.xuatM === 0 && tonCuoi === 0) continue
         result.push({
           stt: stt++, code: p.code || '', name: p.name, unit: p.unit,
           donGia, tonDau, nhap: e.nhapM, xuat: e.xuatM,
-          tonCuoi, tienCuoi: tonCuoi * donGia, tonDauAuto,
+          tonCuoi, tienCuoi: tonCuoi * donGia,
         })
       }
 
@@ -178,57 +116,6 @@ export default function SummaryPage() {
       console.error('SummaryPage loadData error:', e)
     } finally {
       setLoading(false)
-    }
-  }
-
-  /* ── Inline edit tồn đầu ── */
-  const openEdit = (productName: string, currentTonDau: number) => {
-    if (!canEdit) return
-    setEditingCell(productName)
-    setEditVal(String(currentTonDau))
-    setTimeout(() => editInputRef.current?.select(), 30)
-  }
-
-  const cancelEdit = () => { setEditingCell(null); setEditVal('') }
-
-  const saveEdit = async (productName: string) => {
-    const qty = parseFloat(editVal)
-    if (isNaN(qty)) { cancelEdit(); return }
-    setSaving(true)
-    try {
-      const { error } = await sb.from('stock_opening_adj').upsert(
-        { product_name: productName, year, month, adj_qty: qty,
-          updated_by: profile?.full_name || '' },
-        { onConflict: 'product_name,year,month' }
-      )
-      if (error) throw error
-      setAdjMap(prev => new Map(prev).set(productName, qty))
-      setRows(prev => prev.map(r => {
-        if (r.name !== productName) return r
-        const tonCuoiAdj = qty + r.nhap - r.xuat
-        return { ...r, tonDau: qty, tonCuoi: tonCuoiAdj, tienCuoi: tonCuoiAdj * r.donGia, tonDauAuto: false }
-      }))
-    } catch (e) {
-      toast('Lỗi khi lưu: ' + (e as Error).message, 'error')
-    } finally {
-      setSaving(false)
-      cancelEdit()
-    }
-  }
-
-  const removeAdj = async (productName: string) => {
-    setSaving(true)
-    try {
-      const { error } = await sb.from('stock_opening_adj')
-        .delete()
-        .eq('product_name', productName).eq('year', year).eq('month', month)
-      if (error) throw error
-      setAdjMap(prev => { const m = new Map(prev); m.delete(productName); return m })
-      loadData()
-    } catch (e) {
-      toast('Lỗi khi xoá điều chỉnh: ' + (e as Error).message, 'error')
-    } finally {
-      setSaving(false)
     }
   }
 
@@ -352,9 +239,7 @@ export default function SummaryPage() {
           <div className="flex gap-3 text-xs text-[#8b5e3c] flex-wrap">
             <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-[#3aaa6e] inline-block"></span> Nhập</span>
             <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-[#c8773a] inline-block"></span> Xuất</span>
-            <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-blue-50 border border-blue-300 inline-block"></span> Tồn đầu tự động (≈ tồn cuối T.trước)</span>
-            <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-amber-100 border border-amber-400 inline-block"></span> Tồn đầu ghi đè ✏</span>
-            {canEdit && <span className="text-[#c8773a] italic">(click ô Tồn đầu để ghi đè)</span>}
+            <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-[#d94f3d] inline-block"></span> Tồn âm</span>
           </div>
         </div>
 
@@ -412,64 +297,9 @@ export default function SummaryPage() {
                     <td className="px-3 py-2 border-b border-[#f0e8d8] text-sm text-right text-[#8b5e3c]">
                       {row.donGia ? row.donGia.toLocaleString('vi-VN') : '—'}
                     </td>
-                    <td
-                      className={`px-3 py-2 border-b border-[#f0e8d8] text-sm text-right group relative
-                        ${adjMap.has(row.name) ? 'bg-amber-50 text-amber-700' : row.tonDauAuto && row.tonDau !== 0 ? 'bg-blue-50 text-blue-700' : 'text-[#8b5e3c]'}
-                        ${canEdit && editingCell !== row.name ? 'cursor-pointer hover:bg-[#fff3e0]' : ''}
-                      `}
-                      title={
-                        adjMap.has(row.name)
-                          ? `✏ Ghi đè: ${fmtNum(row.tonDau)}\nClick để sửa · Click ✏ để xoá (hoàn về tồn cuối T.trước)`
-                          : row.tonDauAuto && row.tonDau !== 0
-                            ? `Tự động từ tồn cuối tháng trước: ${fmtNum(row.tonDau)}\n${canEdit ? 'Click để ghi đè' : ''}`
-                            : canEdit ? 'Click để ghi đè tồn đầu' : '—'
-                      }
-                      onClick={() => editingCell !== row.name && openEdit(row.name, row.tonDau)}
-                    >
-                      {editingCell === row.name ? (
-                        <div className="flex items-center gap-1 justify-end" onClick={e => e.stopPropagation()}>
-                          <input
-                            ref={editInputRef}
-                            type="number"
-                            step="0.01"
-                            value={editVal}
-                            onChange={e => setEditVal(e.target.value)}
-                            onKeyDown={e => {
-                              if (e.key === 'Enter') saveEdit(row.name)
-                              if (e.key === 'Escape') cancelEdit()
-                            }}
-                            className="w-20 text-right text-sm border border-[#c8773a] rounded px-1 py-0.5 outline-none bg-white text-[#3d1f0a]"
-                            disabled={saving}
-                          />
-                          <button
-                            onClick={() => saveEdit(row.name)}
-                            disabled={saving}
-                            className="text-[#1e7a4a] hover:text-green-700 text-base font-bold leading-none"
-                            title="Lưu (Enter)"
-                          >✓</button>
-                          <button
-                            onClick={cancelEdit}
-                            className="text-[#aaa] hover:text-[#c8773a] text-base font-bold leading-none"
-                            title="Huỷ (Esc)"
-                          >✕</button>
-                        </div>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 justify-end">
-                          <span className={adjMap.has(row.name) ? 'font-semibold' : row.tonDauAuto && row.tonDau !== 0 ? 'font-medium' : 'text-[#bbb]'}>
-                            {row.tonDau !== 0 ? fmtNum(row.tonDau) : adjMap.has(row.name) ? fmtNum(0) : '—'}
-                          </span>
-                          {adjMap.has(row.name) && (
-                            <span
-                              className="text-amber-400 text-xs cursor-pointer hover:text-red-500"
-                              title="Xoá ghi đè — hoàn về tồn cuối tháng trước"
-                              onClick={e => { e.stopPropagation(); removeAdj(row.name) }}
-                            >✏</span>
-                          )}
-                          {canEdit && !adjMap.has(row.name) && editingCell !== row.name && (
-                            <span className="opacity-0 group-hover:opacity-60 text-[#c8773a] text-xs transition-opacity">+</span>
-                          )}
-                        </span>
-                      )}
+                    <td className={`px-3 py-2 border-b border-[#f0e8d8] text-sm text-right ${row.tonDau < -0.005 ? 'text-[#d94f3d] font-bold bg-red-50' : 'text-[#8b5e3c]'}`}>
+                      {row.tonDau !== 0 ? fmtNum(row.tonDau) : '—'}
+                      {row.tonDau < -0.005 && ' ⚠'}
                     </td>
                     <td className="px-3 py-2 border-b border-[#f0e8d8] text-sm text-right font-semibold text-[#3aaa6e]">
                       {row.nhap ? fmtNum(row.nhap) : <span className="text-[#ddd]">—</span>}
