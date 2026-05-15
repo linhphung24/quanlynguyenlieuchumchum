@@ -43,7 +43,12 @@ interface FormItem {
 
 // ─── in-browser print ────────────────────────────────────────
 function doPrint(inv: Invoice, recipes: { id: number; name: string }[]) {
-  const isIn = inv.type === 'in'
+  if (inv.type === 'out') { doPrintXuatKho(inv); return }
+  doPrintNhap(inv, recipes)
+}
+
+/** Phiếu nhập hàng — giữ nguyên format cũ */
+function doPrintNhap(inv: Invoice, _recipes: { id: number; name: string }[]) {
   const castItems = inv.items as CastItem[]
   const total = calcTotal(castItems)
   const rows = castItems
@@ -60,25 +65,182 @@ function doPrint(inv: Invoice, recipes: { id: number; name: string }[]) {
       </tr>`
     })
     .join('')
-
   const w = window.open('', '_blank')!
-  w.document.write(`<html>
-<head><title>Hoá đơn ${inv.code}</title>
+  w.document.write(`<html><head><title>Hoá đơn nhập ${inv.code}</title>
 <style>body{font-family:Arial,sans-serif;padding:24px;color:#222}h2{color:#c8773a}table{width:100%;border-collapse:collapse}th{background:#f5e6cc;text-align:left;padding:6px 8px}td{padding:6px 8px;border-bottom:1px solid #eee}.meta{display:flex;gap:24px;margin-bottom:16px;font-size:13px}.total{text-align:right;font-weight:bold;margin-top:8px;font-size:14px}</style>
 </head><body>
-<h2>${isIn ? 'HOÁ ĐƠN NHẬP HÀNG' : 'HOÁ ĐƠN XUẤT/BÁN HÀNG'}</h2>
+<h2>HOÁ ĐƠN NHẬP HÀNG</h2>
 <div class="meta">
   <div><b>Mã:</b> ${inv.code}</div>
   <div><b>Ngày:</b> ${fmtDate(inv.inv_date)}</div>
-  ${inv.partner ? `<div><b>${isIn ? 'NCC' : 'KH'}:</b> ${inv.partner}</div>` : ''}
+  ${inv.partner ? `<div><b>NCC:</b> ${inv.partner}</div>` : ''}
 </div>
 ${inv.note ? `<div style="font-size:12px;color:#888;margin-bottom:12px">Ghi chú: ${inv.note}</div>` : ''}
 <table>
-  <thead><tr><th>#</th><th>${isIn ? 'Nguyên liệu' : 'Sản phẩm'}</th><th style="text-align:right">Số lượng</th><th style="text-align:right">${isIn ? 'Giá nhập' : 'Giá bán'}</th><th style="text-align:right">Thành tiền</th><th>NSX</th><th>HSD</th></tr></thead>
+  <thead><tr><th>#</th><th>Nguyên liệu</th><th style="text-align:right">Số lượng</th><th style="text-align:right">Giá nhập</th><th style="text-align:right">Thành tiền</th><th>NSX</th><th>HSD</th></tr></thead>
   <tbody>${rows}</tbody>
 </table>
 ${total ? `<div class="total">Tổng cộng: ${fmtPrice(total)}</div>` : ''}
 <div style="margin-top:20px;font-size:12px;color:#aaa">In lúc: ${new Date().toLocaleString('vi-VN')}</div>
+</body></html>`)
+  w.document.close()
+  w.print()
+}
+
+/** Phiếu xuất kho — Mẫu số 02-VT theo TT 99/2025/TT-BTC */
+function doPrintXuatKho(inv: Invoice) {
+  const castItems = inv.items as CastItem[]
+  const total = calcTotal(castItems)
+
+  // Tách ngày/tháng/năm từ inv_date (YYYY-MM-DD)
+  const [yyyy, mm, dd] = (inv.inv_date || '').split('-')
+
+  // Hàng bảng: STT | Tên | Mã số | ĐVT | Yêu cầu | Thực xuất | Đơn giá | Thành tiền
+  const rows = castItems.map((it, i) => {
+    const subtotal = (it.amount || 0) * (it.price || 0)
+    return `<tr>
+      <td style="text-align:center">${i + 1}</td>
+      <td>${it.name}</td>
+      <td style="text-align:center">—</td>
+      <td style="text-align:center">${it.unit || ''}</td>
+      <td style="text-align:right">${fmtNum(it.amount)}</td>
+      <td style="text-align:right">${fmtNum(it.amount)}</td>
+      <td style="text-align:right">${it.price ? fmtPrice(it.price) : ''}</td>
+      <td style="text-align:right">${subtotal ? fmtPrice(subtotal) : ''}</td>
+    </tr>`
+  }).join('')
+
+  const w = window.open('', '_blank')!
+  w.document.write(`<!DOCTYPE html><html lang="vi"><head>
+<meta charset="UTF-8">
+<title>Phiếu xuất kho ${inv.code}</title>
+<style>
+  * { box-sizing: border-box; }
+  body { font-family: "Times New Roman", Times, serif; font-size: 13px; color: #000; margin: 15mm 20mm; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
+  .header-left { font-size: 13px; line-height: 1.8; }
+  .header-right { text-align: center; font-size: 12px; max-width: 260px; }
+  .header-right .mau { font-weight: bold; font-size: 13px; }
+  .title-block { text-align: center; margin: 10px 0 4px; }
+  .title-block h1 { font-size: 18px; font-weight: bold; margin: 0; letter-spacing: 1px; }
+  .title-block .ngay { font-size: 13px; margin-top: 4px; }
+  .so-block { float: right; text-align: left; font-size: 13px; line-height: 1.8; margin-top: -48px; }
+  .clearfix::after { content:""; display:table; clear:both; }
+  .info-line { margin: 6px 0; font-size: 13px; border-bottom: 1px dotted #999; padding-bottom: 2px; }
+  table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+  table, th, td { border: 1px solid #000; }
+  th { text-align: center; padding: 5px 4px; font-size: 12px; line-height: 1.4; font-weight: bold; }
+  td { padding: 5px 6px; font-size: 12px; }
+  .row-ab td { text-align: center; font-style: italic; }
+  .row-cong td { font-weight: bold; text-align: center; }
+  .footer-text { margin-top: 8px; font-size: 13px; border-bottom: 1px dotted #999; padding-bottom: 2px; }
+  .sig-row { display: flex; margin-top: 32px; text-align: center; }
+  .sig-box { flex: 1; padding: 0 4px; font-size: 12px; line-height: 1.5; }
+  .sig-box .role { font-weight: bold; }
+  .sig-box .note { font-size: 11px; color: #333; }
+  .sig-box .space { height: 60px; }
+  @media print {
+    body { margin: 10mm 15mm; }
+    @page { size: A4; margin: 0; }
+  }
+</style>
+</head><body>
+<!-- HEADER -->
+<div class="header">
+  <div class="header-left">
+    Đơn vị: <u>Chum Chum Bakery</u><br>
+    Bộ phận: ......................................
+  </div>
+  <div class="header-right">
+    <div class="mau">Mẫu số 02 - VT</div>
+    <div><em>(Kèm theo Thông tư số 99/2025/TT-BTC<br>ngày 27 tháng 10 năm 2025<br>của Bộ trưởng Bộ Tài chính)</em></div>
+  </div>
+</div>
+
+<!-- TITLE -->
+<div class="title-block clearfix">
+  <h1>PHIẾU XUẤT KHO</h1>
+  <div class="ngay">Ngày&nbsp;<u>&nbsp;${dd || '.....'}&nbsp;</u>&nbsp;tháng&nbsp;<u>&nbsp;${mm || '.....'}&nbsp;</u>&nbsp;năm&nbsp;<u>&nbsp;${yyyy || '.....'}&nbsp;</u></div>
+  <div class="so-block">
+    Số: <u>&nbsp;${inv.code}&nbsp;</u><br>
+    Nợ: ..............................<br>
+    Có: ..............................
+  </div>
+</div>
+
+<!-- INFO LINES -->
+<div style="margin-top:12px">
+  <div class="info-line">- Họ và tên người nhận hàng: <strong>${inv.partner || '........................................'}</strong>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Địa chỉ (bộ phận): ......................................................................</div>
+  <div class="info-line">- Lý do xuất kho: ${inv.note || '......................................................................................................'}</div>
+  <div class="info-line">- Xuất tại kho (ngăn lô): ................................................................&nbsp;&nbsp;Địa điểm: .....................................................................</div>
+</div>
+
+<!-- TABLE -->
+<table>
+  <thead>
+    <tr>
+      <th rowspan="2" style="width:36px">STT</th>
+      <th rowspan="2">Tên, nhãn hiệu, quy cách, phẩm chất vật tư,<br>dụng cụ, sản phẩm, hàng hoá</th>
+      <th rowspan="2" style="width:54px">Mã số</th>
+      <th rowspan="2" style="width:54px">Đơn vị tính</th>
+      <th colspan="2">Số lượng</th>
+      <th rowspan="2" style="width:80px">Đơn giá</th>
+      <th rowspan="2" style="width:90px">Thành tiền</th>
+    </tr>
+    <tr>
+      <th style="width:60px">Yêu cầu</th>
+      <th style="width:60px">Thực xuất</th>
+    </tr>
+    <tr class="row-ab">
+      <td>A</td><td>B</td><td>C</td><td>D</td><td>1</td><td>2</td><td>3</td><td>4</td>
+    </tr>
+  </thead>
+  <tbody>
+    ${rows}
+    <tr class="row-cong">
+      <td colspan="4">Cộng</td>
+      <td>x</td>
+      <td style="text-align:right">&nbsp;</td>
+      <td>x</td>
+      <td style="text-align:right">${total ? fmtPrice(total) : ''}</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- FOOTER TEXT -->
+<div class="footer-text">- Tổng số tiền (viết bằng chữ): ...................................................................................................................</div>
+<div class="footer-text" style="margin-top:6px">- Số chứng từ gốc kèm theo: .........................................................................................</div>
+
+<!-- SIGNATURES -->
+<div style="text-align:right;font-size:12px;margin-top:8px;font-style:italic">Ngày&nbsp;${dd || '.....'}&nbsp;tháng&nbsp;${mm || '.....'}&nbsp;năm&nbsp;${yyyy || '.....'}</div>
+<div class="sig-row">
+  <div class="sig-box">
+    <div class="role">Người lập phiếu</div>
+    <div class="note">(Ký, họ tên)</div>
+    <div class="space"></div>
+  </div>
+  <div class="sig-box">
+    <div class="role">Người nhận hàng</div>
+    <div class="note">(Ký, họ tên)</div>
+    <div class="space"></div>
+  </div>
+  <div class="sig-box">
+    <div class="role">Thủ kho</div>
+    <div class="note">(Ký, họ tên)</div>
+    <div class="space"></div>
+  </div>
+  <div class="sig-box">
+    <div class="role">Kế toán trưởng</div>
+    <div class="note">(Hoặc bộ phận có nhu cầu nhập)</div>
+    <div class="note">(Ký, họ tên)</div>
+    <div class="space"></div>
+  </div>
+  <div class="sig-box">
+    <div class="role">Giám đốc</div>
+    <div class="note">(Ký, họ tên)</div>
+    <div class="space"></div>
+  </div>
+</div>
 </body></html>`)
   w.document.close()
   w.print()
