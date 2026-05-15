@@ -4,7 +4,6 @@ import { useState, useMemo } from 'react'
 import { useApp } from '@/contexts/AppContext'
 import { Product } from '@/types'
 import { UNITS } from '@/lib/constants'
-import { fmtPrice } from '@/lib/utils'
 
 const CATEGORIES = ['Nguyên liệu', 'Vật liệu', 'Thành phẩm', 'Bao bì', 'Khác']
 
@@ -14,26 +13,6 @@ const CAT_COLORS: Record<string, string> = {
   'Thành phẩm':  'bg-green-100 text-green-700',
   'Bao bì':      'bg-purple-100 text-purple-700',
   'Khác':        'bg-gray-100 text-gray-600',
-}
-
-function stockPct(p: Product): number {
-  if (!p.min_stock) return 100
-  return Math.min(100, Math.round((p.stock_qty / p.min_stock) * 100))
-}
-
-function stockColor(p: Product): string {
-  if (!p.min_stock) return 'bg-gray-200'
-  const pct = stockPct(p)
-  if (pct >= 100) return 'bg-emerald-400'
-  if (pct >= 50)  return 'bg-amber-400'
-  return 'bg-red-400'
-}
-
-function stockLabel(p: Product): { text: string; cls: string } {
-  if (!p.min_stock)              return { text: 'Chưa đặt tối thiểu', cls: 'text-gray-400' }
-  if (p.stock_qty >= p.min_stock) return { text: 'Đủ hàng',           cls: 'text-emerald-600' }
-  if (p.stock_qty > 0)            return { text: 'Sắp hết',           cls: 'text-amber-600' }
-  return { text: 'Hết hàng', cls: 'text-red-600' }
 }
 
 const emptyProduct = (): Partial<Product> => ({
@@ -52,26 +31,6 @@ export default function ProductsPage() {
   const [editing, setEditing] = useState<Partial<Product> | null>(null)
   const [editMode, setEditMode] = useState<'create' | 'edit'>('create')
   const [showForm, setShowForm] = useState(false)
-  const [alertSending, setAlertSending] = useState(false)
-
-  const sendAlerts = async () => {
-    setAlertSending(true)
-    try {
-      const res = await fetch('/api/alerts', { method: 'POST' })
-      const json = await res.json()
-      if (!res.ok) {
-        toast(json.error || 'Lỗi gửi cảnh báo', 'error')
-      } else if (!json.sent) {
-        toast('Tồn kho ổn định — không có cảnh báo nào cần gửi', 'info')
-      } else {
-        toast(`Đã gửi email: ${json.lowStockCount} SP thấp, ${json.expiringCount} lô sắp hết hạn`)
-      }
-    } catch {
-      toast('Không kết nối được API cảnh báo', 'error')
-    }
-    setAlertSending(false)
-  }
-
   const filtered = useMemo(() => allProducts.filter(p => {
     if (search && !p.name.toLowerCase().includes(search.toLowerCase()) && !(p.code ?? '').toLowerCase().includes(search.toLowerCase())) return false
     if (filterCat && p.category !== filterCat) return false
@@ -81,15 +40,9 @@ export default function ProductsPage() {
   }), [allProducts, search, filterCat, filterActive])
 
   const stats = useMemo(() => ({
-    total:      allProducts.length,
-    active:     allProducts.filter(p => p.is_active).length,
-    lowStock:   allProducts.filter(p => p.is_active && p.min_stock > 0 && p.stock_qty < p.min_stock).length,
-    totalValue: allProducts.reduce((s, p) => s + (p.stock_qty || 0) * (p.cost_price || 0), 0),
+    total:  allProducts.length,
+    active: allProducts.filter(p => p.is_active).length,
   }), [allProducts])
-
-  const lowStockList = useMemo(() =>
-    allProducts.filter(p => p.is_active && p.min_stock > 0 && p.stock_qty < p.min_stock),
-    [allProducts])
 
   const openCreate = () => { setEditing(emptyProduct()); setEditMode('create'); setShowForm(true) }
   const openEdit   = (p: Product) => { setEditing({ ...p }); setEditMode('edit'); setShowForm(true) }
@@ -174,7 +127,7 @@ export default function ProductsPage() {
     <div className="p-5 max-w-7xl mx-auto">
 
       {/* ── KPI cards ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-5">
+      <div className="grid grid-cols-2 gap-4 mb-5">
         {/* Total */}
         <div className="bg-white rounded-2xl p-4 border border-[#e8ddd0] shadow-sm">
           <div className="flex items-start justify-between mb-3">
@@ -183,16 +136,6 @@ export default function ProductsPage() {
           </div>
           <div className="text-3xl font-bold text-[#1a0f07]">{stats.total}</div>
           <div className="text-xs text-gray-400 mt-0.5">{stats.active} đang hoạt động</div>
-        </div>
-
-        {/* Low stock */}
-        <div className={`bg-white rounded-2xl p-4 border shadow-sm ${stats.lowStock > 0 ? 'border-red-200' : 'border-[#e8ddd0]'}`}>
-          <div className="flex items-start justify-between mb-3">
-            <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-base ${stats.lowStock > 0 ? 'bg-red-50 text-red-500' : 'bg-gray-50 text-gray-400'}`}>⚠</div>
-            <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">Cần nhập</span>
-          </div>
-          <div className={`text-3xl font-bold ${stats.lowStock > 0 ? 'text-red-600' : 'text-[#1a0f07]'}`}>{stats.lowStock}</div>
-          <div className="text-xs text-gray-400 mt-0.5">Dưới mức tối thiểu</div>
         </div>
 
         {/* Categories */}
@@ -204,50 +147,7 @@ export default function ProductsPage() {
           <div className="text-3xl font-bold text-[#1a0f07]">{new Set(allProducts.map(p => p.category)).size}</div>
           <div className="text-xs text-gray-400 mt-0.5">Loại hàng hoá</div>
         </div>
-
-        {/* Total value */}
-        <div className="bg-gradient-to-br from-[#c8773a] to-[#e8a44a] rounded-2xl p-4 shadow-sm">
-          <div className="flex items-start justify-between mb-3">
-            <div className="w-9 h-9 rounded-xl bg-white/20 flex items-center justify-center text-white text-base">$</div>
-            <span className="text-[10px] font-medium text-white/70 uppercase tracking-wider">Trị giá kho</span>
-          </div>
-          <div className="text-2xl font-bold text-white leading-tight">
-            {new Intl.NumberFormat('vi-VN', { notation: 'compact', compactDisplay: 'short' }).format(stats.totalValue)}
-            <span className="text-sm font-normal ml-0.5">đ</span>
-          </div>
-          <div className="text-xs text-white/60 mt-0.5">Theo giá vốn</div>
-        </div>
       </div>
-
-      {/* ── Low stock alert banner ── */}
-      {lowStockList.length > 0 && (
-        <div className="bg-red-50 border border-red-200 rounded-2xl p-4 mb-5">
-          <div className="flex items-center justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-              <p className="text-sm font-semibold text-red-800">{lowStockList.length} sản phẩm dưới mức tối thiểu</p>
-            </div>
-            <button
-              onClick={sendAlerts}
-              disabled={alertSending}
-              className="text-xs font-medium text-red-700 border border-red-300 bg-white px-3 py-1 rounded-lg hover:bg-red-50 transition-all cursor-pointer disabled:opacity-50"
-            >
-              {alertSending ? '📤 Đang gửi...' : '🔔 Gửi cảnh báo'}
-            </button>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            {lowStockList.slice(0, 8).map(p => (
-              <span key={p.id} className="inline-flex items-center gap-1 px-2 py-1 bg-white border border-red-200 rounded-lg text-xs text-red-700">
-                {p.name}
-                <span className="text-red-400">({p.stock_qty}/{p.min_stock} {p.unit})</span>
-              </span>
-            ))}
-            {lowStockList.length > 8 && (
-              <span className="text-xs text-red-500 self-center">+{lowStockList.length - 8} SP khác</span>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* ── Toolbar ── */}
       <div className="bg-white rounded-2xl border border-[#e8ddd0] px-4 py-3 mb-4 flex gap-3 items-center flex-wrap shadow-sm">
@@ -306,73 +206,35 @@ export default function ProductsPage() {
         </div>
       ) : view === 'card' ? (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-          {filtered.map(p => {
-            const pct = stockPct(p)
-            const bar = stockColor(p)
-            const lbl = stockLabel(p)
-            return (
-              <div
-                key={p.id}
-                className={`bg-white rounded-2xl border p-4 cursor-pointer group hover:shadow-md hover:-translate-y-0.5 transition-all relative ${
-                  p.is_active && p.min_stock > 0 && p.stock_qty < p.min_stock
-                    ? 'border-red-200'
-                    : 'border-[#e8ddd0] hover:border-[#c8773a]/40'
-                }`}
-                onClick={() => openEdit(p)}
-              >
-                {/* Status badge top-right */}
+          {filtered.map(p => (
+            <div
+              key={p.id}
+              className="bg-white rounded-2xl border border-[#e8ddd0] hover:border-[#c8773a]/40 p-4 cursor-pointer group hover:shadow-md hover:-translate-y-0.5 transition-all relative"
+              onClick={() => openEdit(p)}
+            >
+              {/* Status badge top-right */}
+              {!p.is_active && (
                 <div className="absolute top-3 right-3">
-                  {!p.is_active ? (
-                    <span className="px-2 py-0.5 bg-gray-100 text-gray-500 text-[10px] font-medium rounded-full">Ngừng</span>
-                  ) : p.min_stock > 0 && p.stock_qty < p.min_stock ? (
-                    <span className="px-2 py-0.5 bg-red-100 text-red-600 text-[10px] font-medium rounded-full">Cần nhập</span>
-                  ) : null}
+                  <span className="px-2 py-0.5 bg-gray-100 text-gray-500 text-[10px] font-medium rounded-full">Ngừng</span>
                 </div>
+              )}
 
-                {/* Product info */}
-                <div className="mb-3 pr-16">
-                  <div className="font-semibold text-[#1a0f07] text-sm leading-tight mb-0.5">{p.name}</div>
-                  {p.code && <div className="text-[10px] text-gray-400 font-mono">{p.code}</div>}
-                </div>
+              {/* Product info */}
+              <div className="mb-3 pr-14">
+                <div className="font-semibold text-[#1a0f07] text-sm leading-tight mb-0.5">{p.name}</div>
+                {p.code && <div className="text-[10px] text-gray-400 font-mono">{p.code}</div>}
+              </div>
 
-                <div className="mb-3 flex items-center gap-2 flex-wrap">
-                  <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium ${CAT_COLORS[p.category] || 'bg-gray-100 text-gray-600'}`}>
-                    {p.category}
-                  </span>
-                  {p.supplier && (
-                    <span className="text-[10px] text-gray-400 truncate max-w-[120px]" title={p.supplier}>🏭 {p.supplier}</span>
-                  )}
-                </div>
-
-                {/* Stock info */}
-                <div className="mb-2">
-                  <div className="flex justify-between items-baseline mb-1">
-                    <span className="text-[10px] text-gray-400">Tồn kho</span>
-                    <span className="text-xs font-semibold text-[#1a0f07]">{p.stock_qty} <span className="text-gray-400 font-normal">{p.unit}</span></span>
-                  </div>
-                  {p.min_stock > 0 && (
-                    <>
-                      <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
-                        <div className={`h-full rounded-full transition-all ${bar}`} style={{ width: `${pct}%` }} />
-                      </div>
-                      <div className="flex justify-between mt-0.5">
-                        <span className={`text-[9px] font-medium ${lbl.cls}`}>{lbl.text}</span>
-                        <span className="text-[9px] text-gray-400">Tối thiểu: {p.min_stock}</span>
-                      </div>
-                    </>
-                  )}
-                </div>
-
-                {/* Price row */}
-                {(p.cost_price > 0 || p.sell_price > 0) && (
-                  <div className="pt-2 border-t border-[#f0ebe4] flex gap-3 text-[10px] text-gray-400">
-                    {p.cost_price > 0 && <span>Nhập: <b className="text-[#8b5e3c]">{fmtPrice(p.cost_price)}</b></span>}
-                    {p.sell_price > 0 && <span>Bán: <b className="text-[#3aaa6e]">{fmtPrice(p.sell_price)}</b></span>}
-                  </div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-medium ${CAT_COLORS[p.category] || 'bg-gray-100 text-gray-600'}`}>
+                  {p.category}
+                </span>
+                {p.supplier && (
+                  <span className="text-[10px] text-gray-400 truncate max-w-[140px]" title={p.supplier}>🏭 {p.supplier}</span>
                 )}
               </div>
-            )
-          })}
+            </div>
+          ))}
         </div>
       ) : (
         /* Table view */
@@ -385,18 +247,12 @@ export default function ProductsPage() {
                   <th className="text-left text-[10px] font-semibold uppercase tracking-wider text-gray-400 px-4 py-3 bg-[#fafaf8]">Danh mục</th>
                   <th className="text-left text-[10px] font-semibold uppercase tracking-wider text-gray-400 px-4 py-3 bg-[#fafaf8]">Nhà CC</th>
                   <th className="text-left text-[10px] font-semibold uppercase tracking-wider text-gray-400 px-4 py-3 bg-[#fafaf8]">ĐVT</th>
-                  <th className="text-right text-[10px] font-semibold uppercase tracking-wider text-gray-400 px-4 py-3 bg-[#fafaf8]">Tồn</th>
-                  <th className="text-left text-[10px] font-semibold uppercase tracking-wider text-gray-400 px-4 py-3 bg-[#fafaf8] w-36">Mức kho</th>
-                  <th className="text-right text-[10px] font-semibold uppercase tracking-wider text-gray-400 px-4 py-3 bg-[#fafaf8]">Giá vốn</th>
                   <th className="text-left text-[10px] font-semibold uppercase tracking-wider text-gray-400 px-4 py-3 bg-[#fafaf8]">Trạng thái</th>
                   <th className="bg-[#fafaf8] w-20"></th>
                 </tr>
               </thead>
               <tbody>
-                {filtered.map(p => {
-                  const pct = stockPct(p)
-                  const bar = stockColor(p)
-                  return (
+                {filtered.map(p => (
                     <tr key={p.id} className="border-b border-[#f0ebe4] hover:bg-[#fdf8f3] transition-colors group">
                       <td className="px-4 py-3">
                         <div className="font-medium text-[#1a0f07]">{p.name}</div>
@@ -407,26 +263,10 @@ export default function ProductsPage() {
                           {p.category}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-xs text-gray-500 max-w-[140px] truncate" title={p.supplier || ''}>
+                      <td className="px-4 py-3 text-xs text-gray-500 max-w-[180px] truncate" title={p.supplier || ''}>
                         {p.supplier || <span className="text-gray-300">—</span>}
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-500">{p.unit}</td>
-                      <td className={`px-4 py-3 text-right font-semibold ${p.is_active && p.min_stock > 0 && p.stock_qty < p.min_stock ? 'text-red-600' : 'text-[#1a0f07]'}`}>
-                        {p.stock_qty}
-                      </td>
-                      <td className="px-4 py-3">
-                        {p.min_stock > 0 ? (
-                          <div>
-                            <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden mb-0.5">
-                              <div className={`h-full rounded-full ${bar}`} style={{ width: `${pct}%` }} />
-                            </div>
-                            <div className="text-[9px] text-gray-400">{p.stock_qty} / {p.min_stock}</div>
-                          </div>
-                        ) : <span className="text-[10px] text-gray-300">—</span>}
-                      </td>
-                      <td className="px-4 py-3 text-right text-xs text-gray-500">
-                        {p.cost_price > 0 ? fmtPrice(p.cost_price) : '—'}
-                      </td>
                       <td className="px-4 py-3">
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-medium ${p.is_active ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
                           {p.is_active ? 'Hoạt động' : 'Ngừng'}
@@ -440,8 +280,7 @@ export default function ProductsPage() {
                         </div>
                       </td>
                     </tr>
-                  )
-                })}
+                  ))}
               </tbody>
             </table>
           </div>
@@ -530,30 +369,6 @@ export default function ProductsPage() {
                   >
                     {allUnits.map(u => <option key={u} value={u}>{u}</option>)}
                   </select>
-                </div>
-              </div>
-
-              {/* Min stock + Sell price */}
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-[#3d1f0a] mb-1.5">Mức tối thiểu</label>
-                  <input
-                    type="number" min={0} step="any"
-                    value={editing.min_stock || 0}
-                    onChange={e => setEditing({ ...editing, min_stock: Number(e.target.value) })}
-                    className="w-full px-3 py-2.5 border border-[#e8ddd0] rounded-xl text-sm bg-[#fafaf8] text-[#1a0f07] outline-none focus:border-[#c8773a] focus:bg-white transition-all"
-                  />
-                  <p className="text-[10px] text-gray-400 mt-1 leading-snug">Cảnh báo khi tồn dưới mức này</p>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-[#3d1f0a] mb-1.5">Giá bán</label>
-                  <input
-                    type="number" min={0}
-                    value={editing.sell_price || 0}
-                    onChange={e => setEditing({ ...editing, sell_price: Number(e.target.value) })}
-                    className="w-full px-3 py-2.5 border border-[#e8ddd0] rounded-xl text-sm bg-[#fafaf8] text-[#1a0f07] outline-none focus:border-[#c8773a] focus:bg-white transition-all"
-                  />
-                  <p className="text-[10px] text-gray-400 mt-1 leading-snug">Giá bán cho khách (tham khảo)</p>
                 </div>
               </div>
 
