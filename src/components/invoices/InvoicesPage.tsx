@@ -718,21 +718,38 @@ export default function InvoicesPage() {
     return [...new Set(names)].sort((a, b) => a.localeCompare(b, 'vi'))
   }, [invoices, invType])
 
-  // ─── search filter + pagination ───────────────────────────
+  // ─── list filters + pagination ────────────────────────────
   const PAGE_SIZE = 20
   const [page, setPage] = useState(1)
+  const [filterType,    setFilterType]    = useState<'all' | 'in' | 'out'>('all')
+  const [filterDateFrom, setFilterDateFrom] = useState('')
+  const [filterDateTo,   setFilterDateTo]   = useState('')
+  const [filterProduct,  setFilterProduct]  = useState('')
 
   const filteredInvoices = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    if (!q) return invoices
-    return invoices.filter(inv =>
-      inv.code.toLowerCase().includes(q) ||
-      (inv.partner ?? '').toLowerCase().includes(q)
-    )
-  }, [invoices, search])
+    const q    = search.trim().toLowerCase()
+    const qProd = filterProduct.trim().toLowerCase()
+    return invoices.filter(inv => {
+      if (filterType !== 'all' && inv.type !== filterType) return false
+      if (filterDateFrom && inv.inv_date < filterDateFrom) return false
+      if (filterDateTo   && inv.inv_date > filterDateTo)   return false
+      if (q && !inv.code.toLowerCase().includes(q) && !(inv.partner ?? '').toLowerCase().includes(q)) return false
+      if (qProd) {
+        const items = inv.items as CastItem[]
+        if (!items.some(it => it.name.toLowerCase().includes(qProd))) return false
+      }
+      return true
+    })
+  }, [invoices, search, filterType, filterDateFrom, filterDateTo, filterProduct])
+
+  const hasActiveFilter = search || filterType !== 'all' || filterDateFrom || filterDateTo || filterProduct
+  const clearFilters = () => {
+    setSearch(''); setFilterType('all')
+    setFilterDateFrom(''); setFilterDateTo(''); setFilterProduct('')
+  }
 
   // Reset về trang 1 khi filter thay đổi
-  useEffect(() => { setPage(1) }, [search, invType])
+  useEffect(() => { setPage(1) }, [search, invType, filterType, filterDateFrom, filterDateTo, filterProduct])
 
   const totalPages = Math.max(1, Math.ceil(filteredInvoices.length / PAGE_SIZE))
   const pagedInvoices = filteredInvoices.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
@@ -935,6 +952,7 @@ export default function InvoicesPage() {
 
           {/* ── Invoice list ── */}
           <div className="bg-[#fffaf4] rounded-2xl p-5 border border-[#f5e6cc] shadow-[0_4px_20px_rgba(200,119,58,0.06)]">
+            {/* Header */}
             <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
               <h3 className="text-sm font-semibold text-[#3d1f0a]">
                 Danh sách hoá đơn
@@ -946,20 +964,85 @@ export default function InvoicesPage() {
                   </span>
                 )}
               </h3>
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#c8a87a] text-sm pointer-events-none">🔍</span>
+              {hasActiveFilter && (
+                <button onClick={clearFilters} className="text-xs text-[#c8773a] hover:underline cursor-pointer">
+                  ✕ Xoá bộ lọc
+                </button>
+              )}
+            </div>
+
+            {/* Filter bar */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-4">
+              {/* Mã HĐ / đối tác */}
+              <div className="relative lg:col-span-1">
+                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#c8a87a] text-xs pointer-events-none">🔍</span>
                 <input
                   type="text"
                   value={search}
                   onChange={e => setSearch(e.target.value)}
-                  placeholder="Mã HĐ hoặc nhà CC / khách hàng..."
-                  className="pl-8 pr-7 py-1.5 text-xs border-[1.5px] border-[#f5e6cc] rounded-lg bg-white text-[#3d1f0a] placeholder-[#c8a87a] outline-none focus:border-[#c8773a] transition-colors w-60"
+                  placeholder="Mã HĐ / đối tác..."
+                  className="w-full pl-7 pr-6 py-1.5 text-xs border-[1.5px] border-[#f5e6cc] rounded-lg bg-white text-[#3d1f0a] placeholder-[#c8a87a] outline-none focus:border-[#c8773a] transition-colors"
                 />
                 {search && (
+                  <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-[#c8a87a] hover:text-[#c8773a] text-xs cursor-pointer">✕</button>
+                )}
+              </div>
+
+              {/* Từ ngày */}
+              <div>
+                <input
+                  type="date"
+                  value={filterDateFrom}
+                  onChange={e => setFilterDateFrom(e.target.value)}
+                  className="w-full px-2.5 py-1.5 text-xs border-[1.5px] border-[#f5e6cc] rounded-lg bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors cursor-pointer"
+                  title="Từ ngày"
+                />
+                {filterDateFrom && <p className="text-[9px] text-[#8b5e3c] mt-0.5 ml-1">Từ ngày</p>}
+              </div>
+
+              {/* Đến ngày */}
+              <div>
+                <input
+                  type="date"
+                  value={filterDateTo}
+                  onChange={e => setFilterDateTo(e.target.value)}
+                  className="w-full px-2.5 py-1.5 text-xs border-[1.5px] border-[#f5e6cc] rounded-lg bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors cursor-pointer"
+                  title="Đến ngày"
+                />
+                {filterDateTo && <p className="text-[9px] text-[#8b5e3c] mt-0.5 ml-1">Đến ngày</p>}
+              </div>
+
+              {/* Loại nhập/xuất */}
+              <div className="flex rounded-lg overflow-hidden border-[1.5px] border-[#f5e6cc] text-xs">
+                {(['all', 'in', 'out'] as const).map(t => (
                   <button
-                    onClick={() => setSearch('')}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 text-[#c8a87a] hover:text-[#c8773a] text-xs cursor-pointer"
-                  >✕</button>
+                    key={t}
+                    onClick={() => setFilterType(t)}
+                    className={`flex-1 py-1.5 font-medium transition-colors cursor-pointer ${
+                      filterType === t
+                        ? t === 'in'  ? 'bg-[#d4f5e3] text-[#1e7a4a]'
+                        : t === 'out' ? 'bg-[#fdf0e0] text-[#c8773a]'
+                        : 'bg-[#c8773a] text-white'
+                        : 'bg-white text-[#8b5e3c] hover:bg-[#fdf6ec]'
+                    }`}
+                  >
+                    {t === 'all' ? 'Tất cả' : t === 'in' ? '↓ Nhập' : '↑ Xuất'}
+                  </button>
+                ))}
+              </div>
+
+              {/* Tên nguyên liệu trong items */}
+              <div className="relative">
+                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#c8a87a] text-xs pointer-events-none">📦</span>
+                <input
+                  type="text"
+                  value={filterProduct}
+                  onChange={e => setFilterProduct(e.target.value)}
+                  placeholder="Tên nguyên liệu..."
+                  className="w-full pl-7 pr-6 py-1.5 text-xs border-[1.5px] border-[#f5e6cc] rounded-lg bg-white text-[#3d1f0a] placeholder-[#c8a87a] outline-none focus:border-[#c8773a] transition-colors"
+                />
+                {filterProduct && (
+                  <button onClick={() => setFilterProduct('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-[#c8a87a] hover:text-[#c8773a] text-xs cursor-pointer">✕</button>
                 )}
               </div>
             </div>
