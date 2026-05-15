@@ -533,63 +533,27 @@ export default function ProductsPage() {
                 </div>
               </div>
 
-              {/* Stock */}
-              <div className="bg-[#fafaf8] rounded-xl border border-[#e8ddd0] p-3 space-y-3">
-                <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Tồn kho</p>
-                <div className="grid grid-cols-2 gap-3">
-                  {/* Số lượng hiện tại — READ-ONLY (chỉ HĐ nhập/xuất mới sửa được) */}
-                  <div>
-                    <label className="block text-xs font-medium text-[#3d1f0a] mb-1.5">
-                      Số lượng hiện tại
-                      <span className="ml-1 text-gray-400 font-normal">🔒</span>
-                    </label>
-                    <div className="w-full px-3 py-2.5 border border-[#e8ddd0] rounded-xl text-sm bg-gray-100 text-gray-600 cursor-not-allowed select-none">
-                      {editing.stock_qty ?? 0} {editing.unit || ''}
-                    </div>
-                    <p className="text-[10px] text-gray-400 mt-1 leading-snug">
-                      Tự động cập nhật từ HĐ nhập / xuất
-                    </p>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-[#3d1f0a] mb-1.5">Mức tối thiểu</label>
-                    <input
-                      type="number" min={0} step="any"
-                      value={editing.min_stock || 0}
-                      onChange={e => setEditing({ ...editing, min_stock: Number(e.target.value) })}
-                      className="w-full px-3 py-2.5 border border-[#e8ddd0] rounded-xl text-sm bg-white text-[#1a0f07] outline-none focus:border-[#c8773a] transition-all"
-                    />
-                    <p className="text-[10px] text-gray-400 mt-1 leading-snug">Cảnh báo khi tồn dưới mức này</p>
-                  </div>
+              {/* Min stock + Sell price */}
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-[#3d1f0a] mb-1.5">Mức tối thiểu</label>
+                  <input
+                    type="number" min={0} step="any"
+                    value={editing.min_stock || 0}
+                    onChange={e => setEditing({ ...editing, min_stock: Number(e.target.value) })}
+                    className="w-full px-3 py-2.5 border border-[#e8ddd0] rounded-xl text-sm bg-[#fafaf8] text-[#1a0f07] outline-none focus:border-[#c8773a] focus:bg-white transition-all"
+                  />
+                  <p className="text-[10px] text-gray-400 mt-1 leading-snug">Cảnh báo khi tồn dưới mức này</p>
                 </div>
-              </div>
-
-              {/* Prices */}
-              <div className="bg-[#fafaf8] rounded-xl border border-[#e8ddd0] p-3 space-y-3">
-                <p className="text-[10px] font-semibold text-gray-500 uppercase tracking-wider">Giá</p>
-                <div className="grid grid-cols-2 gap-3">
-                  {/* Giá vốn — READ-ONLY (lấy từ HĐ nhập gần nhất) */}
-                  <div>
-                    <label className="block text-xs font-medium text-[#3d1f0a] mb-1.5">
-                      Giá vốn (nhập)
-                      <span className="ml-1 text-gray-400 font-normal">🔒</span>
-                    </label>
-                    <div className="w-full px-3 py-2.5 border border-[#e8ddd0] rounded-xl text-sm bg-gray-100 text-gray-600 cursor-not-allowed select-none">
-                      {editing.cost_price ? fmtPrice(editing.cost_price) : '—'}
-                    </div>
-                    <p className="text-[10px] text-gray-400 mt-1 leading-snug">
-                      Tự động cập nhật từ HĐ nhập gần nhất
-                    </p>
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-[#3d1f0a] mb-1.5">Giá bán</label>
-                    <input
-                      type="number" min={0}
-                      value={editing.sell_price || 0}
-                      onChange={e => setEditing({ ...editing, sell_price: Number(e.target.value) })}
-                      className="w-full px-3 py-2.5 border border-[#e8ddd0] rounded-xl text-sm bg-white text-[#1a0f07] outline-none focus:border-[#c8773a] transition-all"
-                    />
-                    <p className="text-[10px] text-gray-400 mt-1 leading-snug">Giá bán cho khách (tham khảo)</p>
-                  </div>
+                <div>
+                  <label className="block text-xs font-medium text-[#3d1f0a] mb-1.5">Giá bán</label>
+                  <input
+                    type="number" min={0}
+                    value={editing.sell_price || 0}
+                    onChange={e => setEditing({ ...editing, sell_price: Number(e.target.value) })}
+                    className="w-full px-3 py-2.5 border border-[#e8ddd0] rounded-xl text-sm bg-[#fafaf8] text-[#1a0f07] outline-none focus:border-[#c8773a] focus:bg-white transition-all"
+                  />
+                  <p className="text-[10px] text-gray-400 mt-1 leading-snug">Giá bán cho khách (tham khảo)</p>
                 </div>
               </div>
 

@@ -17,12 +17,31 @@ function daysUntil(dateStr?: string): number | null {
 const eff = (qty: number) => parseFloat(qty.toFixed(2))
 
 export default function BatchesTab() {
-  const { sb } = useApp()
+  const { sb, toast } = useApp()
   const [batches, setBatches] = useState<Batch[]>([])
   const [loading, setLoading] = useState(true)
   const [dbError, setDbError] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [showEmpty, setShowEmpty] = useState(false)
+  const [alertSending, setAlertSending] = useState(false)
+
+  const sendAlerts = async () => {
+    setAlertSending(true)
+    try {
+      const res = await fetch('/api/alerts', { method: 'POST' })
+      const json = await res.json()
+      if (!res.ok) {
+        toast(json.error || 'Lỗi gửi cảnh báo', 'error')
+      } else if (!json.sent) {
+        toast('Không có lô nào cần cảnh báo', 'info')
+      } else {
+        toast(`Đã gửi email: ${json.lowStockCount} SP thấp tồn, ${json.expiringCount} lô sắp hết hạn`)
+      }
+    } catch {
+      toast('Không kết nối được API cảnh báo', 'error')
+    }
+    setAlertSending(false)
+  }
 
   useEffect(() => {
     loadBatches()
@@ -54,18 +73,22 @@ export default function BatchesTab() {
     })
   }, [batches, search, showEmpty])
 
-  // stats
-  const stats = useMemo(() => {
+  // stats + expiry lists
+  const { stats, expiredList, warnList } = useMemo(() => {
     const active = batches.filter(b => eff(b.remaining_qty) > 0)
-    const expiredCount = active.filter(b => {
+    const expired = active.filter(b => {
       const d = daysUntil(b.exp_date)
       return d !== null && d < 0
-    }).length
-    const warnCount = active.filter(b => {
+    })
+    const warn = active.filter(b => {
       const d = daysUntil(b.exp_date)
       return d !== null && d >= 0 && d <= DAYS_WARN
-    }).length
-    return { total: active.length, expired: expiredCount, warn: warnCount }
+    })
+    return {
+      stats: { total: active.length, expired: expired.length, warn: warn.length },
+      expiredList: expired,
+      warnList: warn,
+    }
   }, [batches])
 
   const getBatchStatus = (b: Batch): 'expired' | 'warn' | 'ok' | 'empty' => {
@@ -96,6 +119,73 @@ export default function BatchesTab() {
           <p className="text-[10px] text-[#8b5e3c] mt-0.5">Đã hết hạn</p>
         </div>
       </div>
+
+      {/* Expiry warning banners */}
+      {(expiredList.length > 0 || warnList.length > 0) && (
+        <div className="mb-4 space-y-2">
+          {expiredList.length > 0 && (
+            <div className="bg-red-50 border border-red-200 rounded-2xl p-4">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                  <p className="text-sm font-semibold text-red-800">{expiredList.length} lô đã hết hạn sử dụng</p>
+                </div>
+                <button
+                  onClick={sendAlerts}
+                  disabled={alertSending}
+                  className="text-xs font-medium text-red-700 border border-red-300 bg-white px-3 py-1 rounded-lg hover:bg-red-50 transition-all cursor-pointer disabled:opacity-50"
+                >
+                  {alertSending ? '📤 Đang gửi...' : '🔔 Gửi cảnh báo'}
+                </button>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {expiredList.slice(0, 8).map(b => (
+                  <span key={b.id} className="inline-flex items-center gap-1 px-2 py-1 bg-white border border-red-200 rounded-lg text-xs text-red-700">
+                    {b.product_name}
+                    <span className="text-red-400">({fmtNum(b.remaining_qty)} {b.unit})</span>
+                  </span>
+                ))}
+                {expiredList.length > 8 && (
+                  <span className="text-xs text-red-500 self-center">+{expiredList.length - 8} lô khác</span>
+                )}
+              </div>
+            </div>
+          )}
+          {warnList.length > 0 && (
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+                  <p className="text-sm font-semibold text-amber-800">{warnList.length} lô sắp hết hạn (≤{DAYS_WARN} ngày)</p>
+                </div>
+                {expiredList.length === 0 && (
+                  <button
+                    onClick={sendAlerts}
+                    disabled={alertSending}
+                    className="text-xs font-medium text-amber-700 border border-amber-300 bg-white px-3 py-1 rounded-lg hover:bg-amber-50 transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    {alertSending ? '📤 Đang gửi...' : '🔔 Gửi cảnh báo'}
+                  </button>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {warnList.slice(0, 8).map(b => {
+                  const d = daysUntil(b.exp_date)
+                  return (
+                    <span key={b.id} className="inline-flex items-center gap-1 px-2 py-1 bg-white border border-amber-200 rounded-lg text-xs text-amber-700">
+                      {b.product_name}
+                      <span className="text-amber-500">(còn {d}d)</span>
+                    </span>
+                  )
+                })}
+                {warnList.length > 8 && (
+                  <span className="text-xs text-amber-600 self-center">+{warnList.length - 8} lô khác</span>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Filter row */}
       <div className="bg-[#fffaf4] rounded-2xl p-4 border border-[#f5e6cc] shadow-[0_4px_20px_rgba(200,119,58,0.06)]">
