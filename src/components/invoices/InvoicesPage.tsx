@@ -718,7 +718,10 @@ export default function InvoicesPage() {
     return [...new Set(names)].sort((a, b) => a.localeCompare(b, 'vi'))
   }, [invoices, invType])
 
-  // ─── search filter ────────────────────────────────────────
+  // ─── search filter + pagination ───────────────────────────
+  const PAGE_SIZE = 20
+  const [page, setPage] = useState(1)
+
   const filteredInvoices = useMemo(() => {
     const q = search.trim().toLowerCase()
     if (!q) return invoices
@@ -727,6 +730,12 @@ export default function InvoicesPage() {
       (inv.partner ?? '').toLowerCase().includes(q)
     )
   }, [invoices, search])
+
+  // Reset về trang 1 khi filter thay đổi
+  useEffect(() => { setPage(1) }, [search, invType])
+
+  const totalPages = Math.max(1, Math.ceil(filteredInvoices.length / PAGE_SIZE))
+  const pagedInvoices = filteredInvoices.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
 
   const formTotal = items.reduce((s, it) => s + (it.amount || it.qty || 0) * (it.price || 0), 0)
 
@@ -960,7 +969,7 @@ export default function InvoicesPage() {
               <div className="text-sm text-[#8b5e3c] text-center py-4">Không tìm thấy hoá đơn phù hợp</div>
             ) : (
               <div className="space-y-2">
-                {filteredInvoices.map(inv => {
+                {pagedInvoices.map(inv => {
                   const castItems = inv.items as CastItem[]
                   const invTotal = calcTotal(castItems)
                   return (
@@ -1092,6 +1101,59 @@ export default function InvoicesPage() {
                     </div>
                   )
                 })}
+
+                {/* ── Pagination ── */}
+                {totalPages > 1 && (
+                  <div className="flex items-center justify-between pt-2 border-t border-[#f0e8d8] mt-1">
+                    <span className="text-xs text-[#8b5e3c]">
+                      Trang <b>{page}</b>/{totalPages} · {filteredInvoices.length} hoá đơn
+                    </span>
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => setPage(1)}
+                        disabled={page === 1}
+                        className="px-2 py-1 text-xs rounded-lg border border-[#f5e6cc] bg-white text-[#8b5e3c] hover:border-[#c8773a] hover:text-[#c8773a] transition-all cursor-pointer disabled:opacity-30 disabled:cursor-default"
+                      >«</button>
+                      <button
+                        onClick={() => setPage(p => p - 1)}
+                        disabled={page === 1}
+                        className="px-2.5 py-1 text-xs rounded-lg border border-[#f5e6cc] bg-white text-[#8b5e3c] hover:border-[#c8773a] hover:text-[#c8773a] transition-all cursor-pointer disabled:opacity-30 disabled:cursor-default"
+                      >‹</button>
+                      {/* Số trang xung quanh page hiện tại */}
+                      {Array.from({ length: totalPages }, (_, i) => i + 1)
+                        .filter(p => p === 1 || p === totalPages || Math.abs(p - page) <= 1)
+                        .reduce<(number | 'ellipsis')[]>((acc, p, idx, arr) => {
+                          if (idx > 0 && (p as number) - (arr[idx - 1] as number) > 1) acc.push('ellipsis')
+                          acc.push(p)
+                          return acc
+                        }, [])
+                        .map((p, i) =>
+                          p === 'ellipsis'
+                            ? <span key={`e${i}`} className="px-1 text-xs text-[#8b5e3c]">…</span>
+                            : <button
+                                key={p}
+                                onClick={() => setPage(p as number)}
+                                className={`px-2.5 py-1 text-xs rounded-lg border transition-all cursor-pointer ${
+                                  p === page
+                                    ? 'bg-[#c8773a] border-[#c8773a] text-white font-semibold'
+                                    : 'border-[#f5e6cc] bg-white text-[#8b5e3c] hover:border-[#c8773a] hover:text-[#c8773a]'
+                                }`}
+                              >{p}</button>
+                        )
+                      }
+                      <button
+                        onClick={() => setPage(p => p + 1)}
+                        disabled={page === totalPages}
+                        className="px-2.5 py-1 text-xs rounded-lg border border-[#f5e6cc] bg-white text-[#8b5e3c] hover:border-[#c8773a] hover:text-[#c8773a] transition-all cursor-pointer disabled:opacity-30 disabled:cursor-default"
+                      >›</button>
+                      <button
+                        onClick={() => setPage(totalPages)}
+                        disabled={page === totalPages}
+                        className="px-2 py-1 text-xs rounded-lg border border-[#f5e6cc] bg-white text-[#8b5e3c] hover:border-[#c8773a] hover:text-[#c8773a] transition-all cursor-pointer disabled:opacity-30 disabled:cursor-default"
+                      >»</button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </div>
