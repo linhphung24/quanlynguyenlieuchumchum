@@ -13,11 +13,11 @@ function daysUntil(dateStr?: string): number | null {
   return Math.ceil(diff / (1000 * 60 * 60 * 24))
 }
 
-// Làm tròn 2 chữ số thập phân để tránh floating-point dư nhỏ (vd: 0.000001 coi là 0)
+// Làm tròn 2 chữ số thập phân để tránh floating-point dư nhỏ
 const eff = (qty: number) => parseFloat(qty.toFixed(2))
 
 export default function BatchesTab() {
-  const { sb, toast } = useApp()
+  const { sb, toast, allProducts } = useApp()
   const [batches, setBatches] = useState<Batch[]>([])
   const [loading, setLoading] = useState(true)
   const [dbError, setDbError] = useState<string | null>(null)
@@ -25,6 +25,7 @@ export default function BatchesTab() {
   const [showEmpty, setShowEmpty] = useState(false)
   const [alertSending, setAlertSending] = useState(false)
 
+  // ─── Gửi email cảnh báo ─────────────────────────────────────
   const sendAlerts = async () => {
     setAlertSending(true)
     try {
@@ -33,7 +34,7 @@ export default function BatchesTab() {
       if (!res.ok) {
         toast(json.error || 'Lỗi gửi cảnh báo', 'error')
       } else if (!json.sent) {
-        toast('Không có lô nào cần cảnh báo', 'info')
+        toast('Không có cảnh báo nào cần gửi', 'info')
       } else {
         toast(`Đã gửi email: ${json.lowStockCount} SP thấp tồn, ${json.expiringCount} lô sắp hết hạn`)
       }
@@ -43,9 +44,7 @@ export default function BatchesTab() {
     setAlertSending(false)
   }
 
-  useEffect(() => {
-    loadBatches()
-  }, [])
+  useEffect(() => { loadBatches() }, [])
 
   const loadBatches = async () => {
     setLoading(true)
@@ -56,40 +55,38 @@ export default function BatchesTab() {
       .order('product_name', { ascending: true })
       .order('inv_date', { ascending: true })
       .order('id', { ascending: true })
-    if (error) {
-      setDbError(error.message)
-    } else {
-      setBatches((data || []) as Batch[])
-    }
+    if (error) { setDbError(error.message) }
+    else { setBatches((data || []) as Batch[]) }
     setLoading(false)
   }
 
-  const filtered = useMemo(() => {
-    return batches.filter(b => {
-      if (!showEmpty && eff(b.remaining_qty) <= 0) return false
-      if (search && !b.product_name.toLowerCase().includes(search.toLowerCase())
-        && !b.inv_code.toLowerCase().includes(search.toLowerCase())) return false
-      return true
-    })
-  }, [batches, search, showEmpty])
-
-  // stats + expiry lists
+  // ─── Computed lists ─────────────────────────────────────────
   const { stats, expiredList, warnList } = useMemo(() => {
     const active = batches.filter(b => eff(b.remaining_qty) > 0)
-    const expired = active.filter(b => {
-      const d = daysUntil(b.exp_date)
-      return d !== null && d < 0
-    })
-    const warn = active.filter(b => {
-      const d = daysUntil(b.exp_date)
-      return d !== null && d >= 0 && d <= DAYS_WARN
-    })
+    const expired = active.filter(b => { const d = daysUntil(b.exp_date); return d !== null && d < 0 })
+    const warn    = active.filter(b => { const d = daysUntil(b.exp_date); return d !== null && d >= 0 && d <= DAYS_WARN })
     return {
       stats: { total: active.length, expired: expired.length, warn: warn.length },
       expiredList: expired,
       warnList: warn,
     }
   }, [batches])
+
+  // Sản phẩm hết hàng (stock_qty = 0) và sắp hết (dưới mức tối thiểu)
+  const { outOfStockList, lowStockList } = useMemo(() => {
+    const active = allProducts.filter(p => p.is_active)
+    return {
+      outOfStockList: active.filter(p => eff(p.stock_qty) <= 0),
+      lowStockList:   active.filter(p => p.min_stock > 0 && p.stock_qty > 0 && p.stock_qty < p.min_stock),
+    }
+  }, [allProducts])
+
+  const filtered = useMemo(() => batches.filter(b => {
+    if (!showEmpty && eff(b.remaining_qty) <= 0) return false
+    if (search && !b.product_name.toLowerCase().includes(search.toLowerCase())
+      && !b.inv_code.toLowerCase().includes(search.toLowerCase())) return false
+    return true
+  }), [batches, search, showEmpty])
 
   const getBatchStatus = (b: Batch): 'expired' | 'warn' | 'ok' | 'empty' => {
     if (eff(b.remaining_qty) <= 0) return 'empty'
@@ -102,9 +99,11 @@ export default function BatchesTab() {
 
   const pct = (b: Batch) => b.quantity > 0 ? Math.round(((b.quantity - b.remaining_qty) / b.quantity) * 100) : 100
 
+  const hasAlerts = expiredList.length > 0 || warnList.length > 0 || outOfStockList.length > 0 || lowStockList.length > 0
+
   return (
     <div>
-      {/* Stats */}
+      {/* ── 3 KPI nhanh ── */}
       <div className="grid grid-cols-3 gap-3 mb-4">
         <div className="bg-[#fffaf4] rounded-xl p-3 border border-[#f5e6cc] text-center">
           <p className="text-2xl font-bold text-[#3d1f0a]">{stats.total}</p>
@@ -120,74 +119,151 @@ export default function BatchesTab() {
         </div>
       </div>
 
-      {/* Expiry warning banners */}
-      {(expiredList.length > 0 || warnList.length > 0) && (
-        <div className="mb-4 space-y-2">
-          {expiredList.length > 0 && (
-            <div className="bg-red-50 border border-red-200 rounded-2xl p-4">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
-                  <p className="text-sm font-semibold text-red-800">{expiredList.length} lô đã hết hạn sử dụng</p>
-                </div>
-                <button
-                  onClick={sendAlerts}
-                  disabled={alertSending}
-                  className="text-xs font-medium text-red-700 border border-red-300 bg-white px-3 py-1 rounded-lg hover:bg-red-50 transition-all cursor-pointer disabled:opacity-50"
-                >
-                  {alertSending ? '📤 Đang gửi...' : '🔔 Gửi cảnh báo'}
-                </button>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {expiredList.slice(0, 8).map(b => (
-                  <span key={b.id} className="inline-flex items-center gap-1 px-2 py-1 bg-white border border-red-200 rounded-lg text-xs text-red-700">
-                    {b.product_name}
-                    <span className="text-red-400">({fmtNum(b.remaining_qty)} {b.unit})</span>
-                  </span>
-                ))}
-                {expiredList.length > 8 && (
-                  <span className="text-xs text-red-500 self-center">+{expiredList.length - 8} lô khác</span>
-                )}
+      {/* ── 2 panel cảnh báo (luôn hiển thị) ── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+
+        {/* Panel 1: Hạn sử dụng */}
+        <div className={`rounded-2xl border p-4 ${expiredList.length > 0 ? 'bg-red-50 border-red-200' : warnList.length > 0 ? 'bg-amber-50 border-amber-200' : 'bg-[#fffaf4] border-[#f5e6cc]'}`}>
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <span className="text-base">🗓</span>
+              <div>
+                <p className="text-xs font-semibold text-[#3d1f0a]">Hạn sử dụng lô hàng</p>
+                <p className="text-[10px] text-[#8b5e3c]">
+                  {expiredList.length > 0
+                    ? <span className="text-red-600 font-medium">{expiredList.length} lô hết hạn</span>
+                    : warnList.length > 0
+                    ? <span className="text-amber-600 font-medium">{warnList.length} lô sắp hết hạn</span>
+                    : <span className="text-emerald-600">Tất cả trong hạn ✓</span>}
+                  {expiredList.length > 0 && warnList.length > 0 && (
+                    <span className="text-amber-600 font-medium"> · {warnList.length} sắp hết</span>
+                  )}
+                </p>
               </div>
             </div>
-          )}
-          {warnList.length > 0 && (
-            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
-              <div className="flex items-center justify-between mb-2">
-                <div className="flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
-                  <p className="text-sm font-semibold text-amber-800">{warnList.length} lô sắp hết hạn (≤{DAYS_WARN} ngày)</p>
+            {(expiredList.length > 0 || warnList.length > 0) && (
+              <button
+                onClick={sendAlerts}
+                disabled={alertSending}
+                className="text-xs font-medium text-[#8b5e3c] border border-[#e8ddd0] bg-white px-2.5 py-1 rounded-lg hover:border-[#c8773a] hover:text-[#c8773a] transition-all cursor-pointer disabled:opacity-50 shrink-0"
+              >
+                {alertSending ? '📤...' : '🔔 Cảnh báo'}
+              </button>
+            )}
+          </div>
+
+          {expiredList.length === 0 && warnList.length === 0 ? (
+            <p className="text-xs text-[#8b5e3c] text-center py-3">Không có lô nào cần cảnh báo</p>
+          ) : (
+            <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
+              {expiredList.map(b => (
+                <div key={b.id} className="flex items-center justify-between bg-white rounded-lg px-2.5 py-1.5 border border-red-200">
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-[#3d1f0a] truncate">{b.product_name}</p>
+                    <p className="text-[10px] text-red-500">
+                      {b.inv_code} · HSD {fmtDate(b.exp_date ?? '')} · quá {Math.abs(daysUntil(b.exp_date)!)}d
+                    </p>
+                  </div>
+                  <span className="text-[10px] text-red-600 font-semibold shrink-0 ml-2">
+                    {fmtNum(b.remaining_qty)} {b.unit}
+                  </span>
                 </div>
-                {expiredList.length === 0 && (
-                  <button
-                    onClick={sendAlerts}
-                    disabled={alertSending}
-                    className="text-xs font-medium text-amber-700 border border-amber-300 bg-white px-3 py-1 rounded-lg hover:bg-amber-50 transition-all cursor-pointer disabled:opacity-50"
-                  >
-                    {alertSending ? '📤 Đang gửi...' : '🔔 Gửi cảnh báo'}
-                  </button>
-                )}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {warnList.slice(0, 8).map(b => {
-                  const d = daysUntil(b.exp_date)
-                  return (
-                    <span key={b.id} className="inline-flex items-center gap-1 px-2 py-1 bg-white border border-amber-200 rounded-lg text-xs text-amber-700">
-                      {b.product_name}
-                      <span className="text-amber-500">(còn {d}d)</span>
+              ))}
+              {warnList.map(b => {
+                const d = daysUntil(b.exp_date)
+                return (
+                  <div key={b.id} className="flex items-center justify-between bg-white rounded-lg px-2.5 py-1.5 border border-amber-200">
+                    <div className="min-w-0">
+                      <p className="text-xs font-medium text-[#3d1f0a] truncate">{b.product_name}</p>
+                      <p className="text-[10px] text-amber-600">
+                        {b.inv_code} · HSD {fmtDate(b.exp_date ?? '')} · còn {d}d
+                      </p>
+                    </div>
+                    <span className="text-[10px] text-amber-700 font-semibold shrink-0 ml-2">
+                      {fmtNum(b.remaining_qty)} {b.unit}
                     </span>
-                  )
-                })}
-                {warnList.length > 8 && (
-                  <span className="text-xs text-amber-600 self-center">+{warnList.length - 8} lô khác</span>
-                )}
-              </div>
+                  </div>
+                )
+              })}
             </div>
           )}
         </div>
+
+        {/* Panel 2: Tồn kho sản phẩm */}
+        <div className={`rounded-2xl border p-4 ${outOfStockList.length > 0 ? 'bg-red-50 border-red-200' : lowStockList.length > 0 ? 'bg-amber-50 border-amber-200' : 'bg-[#fffaf4] border-[#f5e6cc]'}`}>
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <span className="text-base">📦</span>
+              <div>
+                <p className="text-xs font-semibold text-[#3d1f0a]">Tồn kho sản phẩm</p>
+                <p className="text-[10px] text-[#8b5e3c]">
+                  {outOfStockList.length > 0
+                    ? <span className="text-red-600 font-medium">{outOfStockList.length} SP hết hàng</span>
+                    : lowStockList.length > 0
+                    ? <span className="text-amber-600 font-medium">{lowStockList.length} SP dưới mức tối thiểu</span>
+                    : <span className="text-emerald-600">Tất cả đủ hàng ✓</span>}
+                  {outOfStockList.length > 0 && lowStockList.length > 0 && (
+                    <span className="text-amber-600 font-medium"> · {lowStockList.length} sắp hết</span>
+                  )}
+                </p>
+              </div>
+            </div>
+            {(outOfStockList.length > 0 || lowStockList.length > 0) && (
+              <button
+                onClick={sendAlerts}
+                disabled={alertSending}
+                className="text-xs font-medium text-[#8b5e3c] border border-[#e8ddd0] bg-white px-2.5 py-1 rounded-lg hover:border-[#c8773a] hover:text-[#c8773a] transition-all cursor-pointer disabled:opacity-50 shrink-0"
+              >
+                {alertSending ? '📤...' : '🔔 Cảnh báo'}
+              </button>
+            )}
+          </div>
+
+          {outOfStockList.length === 0 && lowStockList.length === 0 ? (
+            <p className="text-xs text-[#8b5e3c] text-center py-3">Không có sản phẩm nào cần nhập thêm</p>
+          ) : (
+            <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
+              {outOfStockList.map(p => (
+                <div key={p.id} className="flex items-center justify-between bg-white rounded-lg px-2.5 py-1.5 border border-red-200">
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-[#3d1f0a] truncate">{p.name}</p>
+                    <p className="text-[10px] text-red-500">{p.category}{p.supplier ? ` · ${p.supplier}` : ''}</p>
+                  </div>
+                  <span className="px-1.5 py-0.5 bg-red-100 text-red-700 rounded text-[9px] font-semibold shrink-0 ml-2">
+                    Hết hàng
+                  </span>
+                </div>
+              ))}
+              {lowStockList.map(p => (
+                <div key={p.id} className="flex items-center justify-between bg-white rounded-lg px-2.5 py-1.5 border border-amber-200">
+                  <div className="min-w-0">
+                    <p className="text-xs font-medium text-[#3d1f0a] truncate">{p.name}</p>
+                    <p className="text-[10px] text-amber-600">{p.category}{p.supplier ? ` · ${p.supplier}` : ''}</p>
+                  </div>
+                  <span className="text-[10px] text-amber-700 font-semibold shrink-0 ml-2">
+                    {fmtNum(p.stock_qty)}/{p.min_stock} {p.unit}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Nút gửi email tổng nếu có bất kỳ cảnh báo ── */}
+      {hasAlerts && (
+        <div className="flex justify-end mb-4">
+          <button
+            onClick={sendAlerts}
+            disabled={alertSending}
+            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-medium rounded-xl bg-gradient-to-br from-[#c8773a] to-[#e8a44a] text-white hover:opacity-90 transition-all cursor-pointer disabled:opacity-50"
+          >
+            {alertSending ? '📤 Đang gửi...' : '🔔 Gửi email cảnh báo'}
+          </button>
+        </div>
       )}
 
-      {/* Filter row */}
+      {/* ── Bảng lô hàng ── */}
       <div className="bg-[#fffaf4] rounded-2xl p-4 border border-[#f5e6cc] shadow-[0_4px_20px_rgba(200,119,58,0.06)]">
         <div className="flex gap-3 items-center mb-3 flex-wrap">
           <input
@@ -208,13 +284,12 @@ export default function BatchesTab() {
           </button>
         </div>
 
-        {/* Lỗi bảng chưa tạo hoặc RLS */}
         {dbError && (
           <div className="mb-3 p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700 space-y-1">
             <p className="font-semibold">⚠ Không thể tải dữ liệu lô hàng</p>
             <p className="text-red-600 font-mono">{dbError}</p>
             <p className="text-red-500 pt-1">
-              👉 Hãy chạy file <code className="bg-red-100 px-1 rounded">supabase/migration_batches.sql</code> trong <b>Supabase Dashboard → SQL Editor</b> để tạo bảng <code className="bg-red-100 px-1 rounded">batches</code> và <code className="bg-red-100 px-1 rounded">batch_deductions</code>.
+              👉 Hãy chạy file <code className="bg-red-100 px-1 rounded">supabase/migration_batches.sql</code> trong <b>Supabase Dashboard → SQL Editor</b>.
             </p>
           </div>
         )}
@@ -256,7 +331,6 @@ export default function BatchesTab() {
                         <span className={`font-semibold ${b.remaining_qty <= 0 ? 'text-gray-400' : 'text-[#3d1f0a]'}`}>
                           {fmtNum(b.remaining_qty)} {b.unit}
                         </span>
-                        {/* mini progress bar */}
                         <div className="mt-0.5 w-full h-1 bg-gray-200 rounded-full overflow-hidden">
                           <div
                             className={`h-full rounded-full transition-all ${consumed >= 100 ? 'bg-gray-400' : consumed >= 80 ? 'bg-amber-400' : 'bg-green-400'}`}
@@ -278,9 +352,9 @@ export default function BatchesTab() {
                       </td>
                       <td className="px-2 py-2">
                         {status === 'expired' && <span className="px-1.5 py-0.5 bg-red-100 text-red-700 rounded text-[9px] font-medium">Hết hạn</span>}
-                        {status === 'warn' && <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[9px] font-medium">Sắp HH</span>}
-                        {status === 'empty' && <span className="px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded text-[9px] font-medium">Đã dùng hết</span>}
-                        {status === 'ok' && <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-[9px] font-medium">Còn hàng</span>}
+                        {status === 'warn'    && <span className="px-1.5 py-0.5 bg-amber-100 text-amber-700 rounded text-[9px] font-medium">Sắp HH</span>}
+                        {status === 'empty'   && <span className="px-1.5 py-0.5 bg-gray-100 text-gray-500 rounded text-[9px] font-medium">Đã dùng hết</span>}
+                        {status === 'ok'      && <span className="px-1.5 py-0.5 bg-green-100 text-green-700 rounded text-[9px] font-medium">Còn hàng</span>}
                       </td>
                     </tr>
                   )
