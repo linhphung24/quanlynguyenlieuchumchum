@@ -1,6 +1,5 @@
 'use client'
 
-import { useApp } from '@/contexts/AppContext'
 import { PageName } from '@/types'
 
 const PAGE_META: Record<PageName, { title: string; subtitle: string }> = {
@@ -22,10 +21,7 @@ interface HeaderProps {
 }
 
 export default function Header({ currentPage, onMenuClick }: HeaderProps) {
-  const { allProducts } = useApp()
   const meta = PAGE_META[currentPage]
-
-  const lowStockCount = allProducts.filter(p => p.is_active && p.min_stock > 0 && p.stock_qty < p.min_stock).length
 
   return (
     <header className="bg-white/70 backdrop-blur-sm border-b border-[#e8ddd0] px-5 py-3 flex items-center gap-4 sticky top-0 z-40">
@@ -45,14 +41,6 @@ export default function Header({ currentPage, onMenuClick }: HeaderProps) {
         <h1 className="text-sm font-semibold text-[#1a0f07] leading-tight truncate">{meta.title}</h1>
         <p className="text-[11px] text-[#8b5e3c]/70 leading-tight hidden sm:block">{meta.subtitle}</p>
       </div>
-
-      {/* Low stock badge */}
-      {lowStockCount > 0 && (
-        <div className="flex items-center gap-1.5 px-3 py-1.5 bg-red-50 border border-red-200 rounded-lg">
-          <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse flex-shrink-0" />
-          <span className="text-xs font-medium text-red-700">{lowStockCount} SP sắp hết</span>
-        </div>
-      )}
 
       {/* Date */}
       <div className="hidden lg:block text-right flex-shrink-0">

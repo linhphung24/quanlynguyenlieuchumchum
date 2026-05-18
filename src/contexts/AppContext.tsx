@@ -44,7 +44,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [allProducts, setAllProducts] = useState<Product[]>([])
   const [allUnits, setAllUnits]       = useState<string[]>(UNITS)
   const [toasts, setToasts] = useState<Toast[]>([])
-  const [loading, setLoading] = useState(false)
+  const [loadingCount, setLoadingCount] = useState(0)
+  const loading = loadingCount > 0
   const [initialized, setInitialized] = useState(false)
 
   const toast = useCallback((message: string, type: 'success' | 'error' | 'info' = 'success') => {
@@ -55,8 +56,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     }, 3500)
   }, [])
 
-  const startLoading = useCallback(() => setLoading(true), [])
-  const stopLoading = useCallback(() => setLoading(false), [])
+  const startLoading = useCallback(() => setLoadingCount(c => c + 1), [])
+  const stopLoading  = useCallback(() => setLoadingCount(c => Math.max(0, c - 1)), [])
 
   const loadAppData = useCallback(async (userId: string) => {
     try {

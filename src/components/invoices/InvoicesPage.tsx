@@ -267,6 +267,7 @@ export default function InvoicesPage() {
   const [batchPreviews, setBatchPreviews] = useState<Record<number, BatchAlloc[]>>({})
   const [invBatchUsage, setInvBatchUsage] = useState<Record<number, BatchDeduction[]>>({})
   const [uploadingImgFor, setUploadingImgFor] = useState<number | null>(null)
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => { loadInvoices() }, [])
 
@@ -544,6 +545,7 @@ export default function InvoicesPage() {
 
   // ─── save invoice ─────────────────────────────────────────
   const handleSave = async () => {
+    if (saving) return   // chặn double-click / concurrent save
     if (!user) { toast('Chưa đăng nhập — vui lòng tải lại trang', 'error'); return }
     const invItems = items
       .filter(it => it.name && (it.amount > 0 || it.qty > 0))
@@ -558,6 +560,7 @@ export default function InvoicesPage() {
 
     if (invItems.length === 0) { toast('Thêm ít nhất một mặt hàng hợp lệ', 'error'); return }
 
+    setSaving(true)
     startLoading()
     try {
       // ── Kiểm tra FIFO: mỗi dòng xuất chỉ được lấy từ 1 lô ──
@@ -652,6 +655,7 @@ export default function InvoicesPage() {
     } catch (e) {
       toast('Lỗi: ' + (e as Error).message, 'error')
     } finally {
+      setSaving(false)
       stopLoading()
     }
   }
@@ -944,8 +948,12 @@ export default function InvoicesPage() {
               <button onClick={addItem} className="mt-2 inline-flex items-center gap-1 px-3 py-1.5 bg-transparent border-[1.5px] border-dashed border-[#c8773a] rounded-lg text-[#c8773a] text-xs cursor-pointer hover:bg-[#fef4e8] transition-all">
                 + Thêm dòng
               </button>
-              <button onClick={handleSave} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-gradient-to-br from-[#c8773a] to-[#e8a44a] text-white text-xs font-medium cursor-pointer hover:opacity-90 transition-all mt-2">
-                💾 Lưu hoá đơn
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-gradient-to-br from-[#c8773a] to-[#e8a44a] text-white text-xs font-medium transition-all mt-2 disabled:opacity-60 disabled:cursor-not-allowed hover:enabled:opacity-90 cursor-pointer"
+              >
+                {saving ? '⏳ Đang lưu...' : '💾 Lưu hoá đơn'}
               </button>
             </div>
           </div>
