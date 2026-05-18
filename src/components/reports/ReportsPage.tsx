@@ -5,6 +5,7 @@ import { useApp } from '@/contexts/AppContext'
 import { Invoice } from '@/types'
 import { fmtNum, fmtPrice, fmtDate, todayStr } from '@/lib/utils'
 import DateInput from '@/components/shared/DateInput'
+import ProductPicker from '@/components/shared/ProductPicker'
 import * as XLSX from 'xlsx'
 
 // ─── Date helpers ─────────────────────────────────────────────
@@ -441,8 +442,9 @@ export default function ReportsPage() {
   const [nxtSearch,  setNxtSearch]  = useState('')
 
   // ── Chi tiết state ───────────────────────────────────────────
-  const [cdProductId, setCdProductId] = useState<number | null>(null)
-  const [cdFrom,      setCdFrom]      = useState(getRangeForPreset('month')[0])
+  const [cdProductId,   setCdProductId]   = useState<number | null>(null)
+  const [cdProductName, setCdProductName] = useState('')
+  const [cdFrom,        setCdFrom]        = useState(getRangeForPreset('month')[0])
   const [cdTo,        setCdTo]        = useState(getRangeForPreset('month')[1])
   const [cdRows,      setCdRows]      = useState<LedgerRow[]>([])
   const [cdTonDau,    setCdTonDau]    = useState(0)
@@ -474,7 +476,31 @@ export default function ReportsPage() {
         sb.from('invoices').select('*').gt('inv_date', nxtTo),
       ])
 
-      type PMap = Record<string, { nhapSL: number; nhapTien: number; xuatSL: number; xuatTien: number }>
+      const periodInvs = (pData    || []) as Invoice[]
+      const postInvs   = (postData || []) as Invoice[]
+
+      // ── FIFO xuất tiền: lấy từ batch_deductions × batch_price ──
+      // (chính xác hơn dùng giá ghi trên HĐ xuất)
+      const fifoXuatTien: Record<string, number> = {}
+      const periodOutIds = periodInvs.filter(inv => inv.type === 'out').map(inv => inv.id)
+      if (periodOutIds.length > 0) {
+        const { data: deductData } = await sb
+          .from('batch_deductions')
+          .select('qty_used, batch_price, batches!batch_id(product_name)')
+          .in('inv_id', periodOutIds)
+        for (const d of (deductData || []) as {
+          qty_used: number; batch_price: number
+          batches: { product_name: string } | null
+        }[]) {
+          const pName = d.batches?.product_name
+          if (!pName) continue
+          const key = pName.toLowerCase().trim()
+          fifoXuatTien[key] = (fifoXuatTien[key] || 0) + d.qty_used * d.batch_price
+        }
+      }
+
+      // ── SL map (dùng cho tonDau/tonCuoi + nhapTien) ──────────
+      type PMap = Record<string, { nhapSL: number; nhapTien: number; xuatSL: number }>
       const periodMap: PMap = {}
       const postMap:   PMap = {}
 
@@ -483,23 +509,23 @@ export default function ReportsPage() {
           for (const it of (inv.items as { name?: string; amount?: number; price?: number }[])) {
             if (!it.name) continue
             const key = it.name.toLowerCase().trim()
-            if (!map[key]) map[key] = { nhapSL: 0, nhapTien: 0, xuatSL: 0, xuatTien: 0 }
+            if (!map[key]) map[key] = { nhapSL: 0, nhapTien: 0, xuatSL: 0 }
             const amt   = Number(it.amount) || 0
             const price = Number(it.price)  || 0
             if (inv.type === 'in') { map[key].nhapSL += amt; map[key].nhapTien += amt * price }
-            else                   { map[key].xuatSL += amt; map[key].xuatTien += amt * price }
+            else                   { map[key].xuatSL += amt }
           }
         }
       }
 
-      addInv(periodMap, (pData    || []) as Invoice[])
-      addInv(postMap,   (postData || []) as Invoice[])
+      addInv(periodMap, periodInvs)
+      addInv(postMap,   postInvs)
 
       const rows: NXTRow[] = []
       for (const p of allProducts.filter(p => p.is_active)) {
         const key  = p.name.toLowerCase().trim()
-        const per  = periodMap[key] || { nhapSL: 0, nhapTien: 0, xuatSL: 0, xuatTien: 0 }
-        const post = postMap[key]   || { nhapSL: 0, nhapTien: 0, xuatSL: 0, xuatTien: 0 }
+        const per  = periodMap[key] || { nhapSL: 0, nhapTien: 0, xuatSL: 0 }
+        const post = postMap[key]   || { nhapSL: 0, nhapTien: 0, xuatSL: 0 }
 
         // tonCuoi of period = current stock_qty corrected by post-period movements
         const tonCuoi = p.stock_qty - post.nhapSL + post.xuatSL
@@ -511,7 +537,8 @@ export default function ReportsPage() {
         rows.push({
           code: p.code || '', name: p.name, unit: p.unit, donGia: p.cost_price || 0,
           tonDau, nhapSL: per.nhapSL, nhapTien: per.nhapTien,
-          xuatSL: per.xuatSL, xuatTien: per.xuatTien,
+          xuatSL: per.xuatSL,
+          xuatTien: fifoXuatTien[key] || 0,   // ← giá vốn FIFO từ batch_deductions
           tonCuoi,
           tonCuoiTien: Math.max(0, tonCuoi) * (p.cost_price || 0),
         })
@@ -844,23 +871,20 @@ export default function ReportsPage() {
           {/* Filter bar */}
           <div className={`${sectionBox} p-4`}>
             <div className="flex flex-wrap items-end gap-3">
-              {/* Product selector */}
-              <div className="flex-1 min-w-[200px]">
+              {/* Product selector — autocomplete search */}
+              <div className="flex-1 min-w-[240px]">
                 <div className="text-[11px] text-[#8b5e3c]/60 mb-1 font-medium">Sản phẩm / vật tư</div>
-                <select
-                  value={cdProductId ?? ''}
-                  onChange={e => { setCdProductId(e.target.value ? Number(e.target.value) : null); setCdLoaded(false) }}
-                  className={inputCls + ' w-full text-sm'}
-                >
-                  <option value="">-- Chọn sản phẩm --</option>
-                  {[...allProducts]
-                    .filter(p => p.is_active)
-                    .sort((a, b) => a.name.localeCompare(b.name, 'vi'))
-                    .map(p => (
-                      <option key={p.id} value={p.id}>{p.name}{p.code ? ` (${p.code})` : ''}</option>
-                    ))
-                  }
-                </select>
+                <ProductPicker
+                  products={allProducts}
+                  value={cdProductName}
+                  placeholder="🔍 Gõ tên để tìm sản phẩm..."
+                  onChange={(name) => {
+                    setCdProductName(name)
+                    const found = allProducts.find(p => p.is_active && p.name === name)
+                    setCdProductId(found?.id ?? null)
+                    setCdLoaded(false)
+                  }}
+                />
               </div>
               {/* Date range */}
               <div>
