@@ -17,6 +17,7 @@ import AdminPage from '@/components/admin/AdminPage'
 import UsersPage from '@/components/users/UsersPage'
 import PersonnelPage from '@/components/personnel/PersonnelPage'
 import UnitsPage from '@/components/units/UnitsPage'
+import ReportsPage from '@/components/reports/ReportsPage'
 import { PageName } from '@/types'
 
 export default function Home() {
@@ -24,7 +25,7 @@ export default function Home() {
   const [currentPage, setCurrentPage] = useState<PageName>('products')
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
-  const VALID_PAGES: PageName[] = ['products', 'invoices', 'summary', 'recipes', 'calc', 'log', 'personnel', 'units', 'users', 'admin']
+  const VALID_PAGES: PageName[] = ['products', 'invoices', 'summary', 'recipes', 'calc', 'log', 'personnel', 'units', 'users', 'admin', 'reports']
 
   // Khôi phục tab đã lưu khi load lại trang
   useEffect(() => {
@@ -90,6 +91,7 @@ export default function Home() {
               {currentPage === 'units'     && <UnitsPage />}
               {currentPage === 'users'     && <UsersPage />}
               {currentPage === 'admin'     && <AdminPage />}
+              {currentPage === 'reports'   && <ReportsPage />}
             </main>
           </div>
 
