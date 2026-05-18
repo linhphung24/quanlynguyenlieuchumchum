@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useApp } from '@/contexts/AppContext'
 import { DailyLog } from '@/types'
 import { todayStr, fmtDate, fmtNum, xlsxDateToStr } from '@/lib/utils'
+import DateInput from '@/components/shared/DateInput'
 
 interface LogEntry {
   recipe_id: number
@@ -216,10 +217,9 @@ export default function LogPage() {
       <div className="bg-[#fffaf4] rounded-2xl p-5 mb-4 border border-[#f5e6cc] shadow-[0_4px_20px_rgba(200,119,58,0.06)]">
         <div className="flex items-center gap-2 mb-3">
           <label className="text-xs font-medium text-[#8b5e3c]">Ngày sản xuất:</label>
-          <input
-            type="date"
+          <DateInput
             value={logDate}
-            onChange={e => setLogDate(e.target.value)}
+            onChange={v => setLogDate(v)}
             className="px-3 py-2 border-[1.5px] border-[#f5e6cc] rounded-lg text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors"
           />
         </div>

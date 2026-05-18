@@ -998,24 +998,22 @@ export default function InvoicesPage() {
 
               {/* Từ ngày */}
               <div>
-                <input
-                  type="date"
+                <DateInput
                   value={filterDateFrom}
-                  onChange={e => setFilterDateFrom(e.target.value)}
-                  className="w-full px-2.5 py-1.5 text-xs border-[1.5px] border-[#f5e6cc] rounded-lg bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors cursor-pointer"
-                  title="Từ ngày"
+                  onChange={v => setFilterDateFrom(v)}
+                  placeholder="Từ ngày"
+                  className="w-full px-2.5 py-1.5 text-xs border-[1.5px] border-[#f5e6cc] rounded-lg bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors"
                 />
                 {filterDateFrom && <p className="text-[9px] text-[#8b5e3c] mt-0.5 ml-1">Từ ngày</p>}
               </div>
 
               {/* Đến ngày */}
               <div>
-                <input
-                  type="date"
+                <DateInput
                   value={filterDateTo}
-                  onChange={e => setFilterDateTo(e.target.value)}
-                  className="w-full px-2.5 py-1.5 text-xs border-[1.5px] border-[#f5e6cc] rounded-lg bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors cursor-pointer"
-                  title="Đến ngày"
+                  onChange={v => setFilterDateTo(v)}
+                  placeholder="Đến ngày"
+                  className="w-full px-2.5 py-1.5 text-xs border-[1.5px] border-[#f5e6cc] rounded-lg bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors"
                 />
                 {filterDateTo && <p className="text-[9px] text-[#8b5e3c] mt-0.5 ml-1">Đến ngày</p>}
               </div>

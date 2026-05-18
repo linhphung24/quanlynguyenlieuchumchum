@@ -4,6 +4,7 @@ import { useState, useMemo } from 'react'
 import { useApp } from '@/contexts/AppContext'
 import { Invoice } from '@/types'
 import { fmtNum, fmtPrice, fmtDate, todayStr } from '@/lib/utils'
+import DateInput from '@/components/shared/DateInput'
 import * as XLSX from 'xlsx'
 
 // ─── Date helpers ─────────────────────────────────────────────
@@ -720,13 +721,13 @@ export default function ReportsPage() {
               <div className="flex items-center gap-2">
                 <div>
                   <div className="text-[11px] text-[#8b5e3c]/60 mb-1">Từ ngày</div>
-                  <input type="date" value={nxtFrom} onChange={e => { setNxtFrom(e.target.value); setNxtPreset('custom') }}
+                  <DateInput value={nxtFrom} onChange={v => { setNxtFrom(v); setNxtPreset('custom'); setNxtLoaded(false) }}
                     className={inputCls + ' text-xs'} />
                 </div>
                 <div className="text-[#8b5e3c]/40 mt-5">–</div>
                 <div>
                   <div className="text-[11px] text-[#8b5e3c]/60 mb-1">Đến ngày</div>
-                  <input type="date" value={nxtTo} onChange={e => { setNxtTo(e.target.value); setNxtPreset('custom') }}
+                  <DateInput value={nxtTo} onChange={v => { setNxtTo(v); setNxtPreset('custom'); setNxtLoaded(false) }}
                     className={inputCls + ' text-xs'} />
                 </div>
               </div>
@@ -864,13 +865,13 @@ export default function ReportsPage() {
               {/* Date range */}
               <div>
                 <div className="text-[11px] text-[#8b5e3c]/60 mb-1">Từ ngày</div>
-                <input type="date" value={cdFrom} onChange={e => { setCdFrom(e.target.value); setCdLoaded(false) }}
+                <DateInput value={cdFrom} onChange={v => { setCdFrom(v); setCdLoaded(false) }}
                   className={inputCls + ' text-xs'} />
               </div>
               <div className="text-[#8b5e3c]/40 mb-2">–</div>
               <div>
                 <div className="text-[11px] text-[#8b5e3c]/60 mb-1">Đến ngày</div>
-                <input type="date" value={cdTo} onChange={e => { setCdTo(e.target.value); setCdLoaded(false) }}
+                <DateInput value={cdTo} onChange={v => { setCdTo(v); setCdLoaded(false) }}
                   className={inputCls + ' text-xs'} />
               </div>
               <button onClick={loadChiTiet} disabled={cdLoading || !cdProductId}
@@ -981,7 +982,7 @@ export default function ReportsPage() {
             <div className="flex flex-wrap items-end gap-4">
               <div>
                 <div className="text-[11px] text-[#8b5e3c]/60 mb-1 font-medium">Ngày kiểm kê</div>
-                <input type="date" value={kkDate} onChange={e => setKkDate(e.target.value)}
+                <DateInput value={kkDate} onChange={v => setKkDate(v)}
                   className={inputCls + ' text-sm'} />
               </div>
               <div className="flex-1 min-w-[200px]">
