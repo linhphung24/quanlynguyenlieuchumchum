@@ -49,6 +49,7 @@ interface NXTRow {
   code: string; name: string; unit: string; donGia: number
   tonDau: number; nhapSL: number; nhapTien: number
   xuatSL: number; xuatTien: number; tonCuoi: number; tonCuoiTien: number
+  hasAdj: boolean  // true = tonDau lấy từ khai báo thủ công
 }
 interface Batch {
   id: number; inv_id: number; inv_code: string; inv_date: string
@@ -432,7 +433,7 @@ const PRESETS: { key: PeriodPreset; label: string }[] = [
 
 // ─── MAIN COMPONENT ───────────────────────────────────────────
 export default function ReportsPage() {
-  const { sb, allProducts, toast } = useApp()
+  const { sb, allProducts, toast, user, profile } = useApp()
 
   // ── tab ──────────────────────────────────────────────────────
   const [tab, setTab] = useState<TabKey>('nxt')
@@ -447,6 +448,13 @@ export default function ReportsPage() {
   const [nxtLoading,    setNxtLoading]    = useState(false)
   const [nxtLoaded,     setNxtLoaded]     = useState(false)
   const [nxtSearch,     setNxtSearch]     = useState('')
+  // ── Khai báo tồn đầu kỳ ──────────────────────────────────────
+  const [adjRefDate,      setAdjRefDate]      = useState<{ y: number; m: number } | null>(null)
+  const [nxtOpeningAdj,   setNxtOpeningAdj]   = useState<Record<string, number>>({})   // đã lưu DB
+  const [nxtOpeningLocal, setNxtOpeningLocal] = useState<Record<string, string>>({})   // đang edit
+  const [showKhaiBao,     setShowKhaiBao]     = useState(false)
+  const [kbSearch,        setKbSearch]        = useState('')
+  const [savingAdj,       setSavingAdj]       = useState(false)
 
   // ── Chi tiết state ───────────────────────────────────────────
   const [cdProductId,   setCdProductId]   = useState<number | null>(null)
@@ -573,13 +581,50 @@ export default function ReportsPage() {
           code: p.code || '', name: p.name, unit: p.unit, donGia: p.cost_price || 0,
           tonDau, nhapSL: per.nhapSL, nhapTien: per.nhapTien,
           xuatSL: per.xuatSL,
-          xuatTien: fifoXuatTien[key] || 0,   // ← giá vốn FIFO từ batch_deductions
+          xuatTien: fifoXuatTien[key] || 0,
           tonCuoi,
           tonCuoiTien: Math.max(0, tonCuoi) * (p.cost_price || 0),
+          hasAdj: false,
         })
       }
 
       rows.sort((a, b) => a.name.localeCompare(b.name, 'vi'))
+
+      // ── Load khai báo tồn đầu từ stock_opening_adj ────────────
+      const fromDate = new Date(nxtFrom)
+      const adjY = fromDate.getFullYear(), adjM = fromDate.getMonth() + 1
+      setAdjRefDate({ y: adjY, m: adjM })
+
+      const { data: adjData } = await sb
+        .from('stock_opening_adj')
+        .select('product_name, adj_qty')
+        .eq('year', adjY).eq('month', adjM)
+
+      const adjMap: Record<string, number> = {}
+      for (const a of (adjData || []) as { product_name: string; adj_qty: number }[]) {
+        adjMap[a.product_name.toLowerCase().trim()] = Number(a.adj_qty)
+      }
+      setNxtOpeningAdj(adjMap)
+
+      // Khởi tạo editing state (hiển thị giá trị đã lưu hoặc rỗng)
+      const initLocal: Record<string, string> = {}
+      for (const p of allProducts.filter(p => p.is_active)) {
+        const key = p.name.toLowerCase().trim()
+        initLocal[key] = adjMap[key] !== undefined ? String(adjMap[key]) : ''
+      }
+      setNxtOpeningLocal(initLocal)
+
+      // Áp dụng adj vào rows (override tonDau + recompute tonCuoi)
+      for (const row of rows) {
+        const key = row.name.toLowerCase().trim()
+        if (adjMap[key] !== undefined) {
+          row.tonDau      = adjMap[key]
+          row.tonCuoi     = adjMap[key] + row.nhapSL - row.xuatSL
+          row.tonCuoiTien = Math.max(0, row.tonCuoi) * row.donGia
+          row.hasAdj      = true
+        }
+      }
+
       setNxtRows(rows)
 
       // ── Fetch all batches (paginated) for batch breakdown view ──
@@ -609,6 +654,41 @@ export default function ReportsPage() {
       toast('Lỗi tải báo cáo: ' + (e as Error).message, 'error')
     } finally {
       setNxtLoading(false)
+    }
+  }
+
+  // ── Lưu khai báo tồn đầu kỳ ─────────────────────────────────
+  const saveOpeningAdj = async (setAllZero = false) => {
+    if (!adjRefDate) return
+    const canWrite = profile?.role === 'admin' || profile?.role === 'manager'
+    if (!canWrite) { toast('Chỉ Admin/Manager được khai báo tồn đầu', 'error'); return }
+    setSavingAdj(true)
+    try {
+      const localMap = setAllZero
+        ? Object.fromEntries(allProducts.filter(p => p.is_active).map(p => [p.name.toLowerCase().trim(), '0']))
+        : nxtOpeningLocal
+
+      const upsertData = allProducts
+        .filter(p => p.is_active)
+        .map(p => ({
+          product_name: p.name,
+          year:         adjRefDate.y,
+          month:        adjRefDate.m,
+          adj_qty:      parseFloat(localMap[p.name.toLowerCase().trim()] || '0') || 0,
+          updated_by:   user?.email || '',
+        }))
+
+      const { error } = await sb
+        .from('stock_opening_adj')
+        .upsert(upsertData, { onConflict: 'product_name,year,month' })
+
+      if (error) { toast('Lỗi lưu: ' + error.message, 'error'); return }
+      toast(`✅ Đã lưu khai báo tồn đầu tháng ${adjRefDate.m}/${adjRefDate.y} (${upsertData.length} sản phẩm)`)
+      if (setAllZero) setNxtOpeningLocal(localMap)
+      setNxtLoaded(false)
+      await loadNXT()
+    } finally {
+      setSavingAdj(false)
     }
   }
 
@@ -829,20 +909,40 @@ export default function ReportsPage() {
           {nxtLoaded && (
             <div className={`${sectionBox} p-4`}>
               {/* Toolbar */}
-              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-                <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                <div className="flex items-center gap-2 flex-wrap">
                   <span className="text-sm font-semibold text-[#3d1f0a]">
                     Kết quả: <span className="text-[#c8773a]">{filteredNXT.length}</span> mặt hàng
                   </span>
                   {nxtSearch && (
                     <span className="text-xs text-[#8b5e3c]/60">(lọc từ {nxtRows.length})</span>
                   )}
+                  {/* Adj status badge */}
+                  {adjRefDate && (
+                    Object.keys(nxtOpeningAdj).length > 0
+                      ? <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-amber-100 text-amber-800 text-[10px] font-medium rounded-full">
+                          ✅ Đã khai báo tồn đầu {adjRefDate.m}/{adjRefDate.y}
+                        </span>
+                      : <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-50 text-red-600 text-[10px] font-medium rounded-full">
+                          ⚠ Chưa khai báo — đang dùng công thức
+                        </span>
+                  )}
                 </div>
                 <div className="flex flex-wrap gap-2 items-center">
                   <input
                     type="text" placeholder="🔍 Tìm tên / mã SP..." value={nxtSearch}
                     onChange={e => setNxtSearch(e.target.value)}
-                    className={inputCls + ' text-xs w-48'} />
+                    className={inputCls + ' text-xs w-44'} />
+                  <button
+                    onClick={() => setShowKhaiBao(v => !v)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium transition-all cursor-pointer ${
+                      showKhaiBao
+                        ? 'bg-amber-500 text-white border-amber-500'
+                        : 'border-amber-500 text-amber-700 hover:bg-amber-50'
+                    }`}
+                  >
+                    📋 {showKhaiBao ? 'Đóng khai báo' : 'Khai báo Tồn đầu'}
+                  </button>
                   <button
                     onClick={() => setNxtShowBatch(v => !v)}
                     className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium transition-all cursor-pointer ${
@@ -854,13 +954,115 @@ export default function ReportsPage() {
                     📦 {nxtShowBatch ? 'Ẩn lô hàng' : 'Xem theo lô'}
                   </button>
                   <button onClick={() => printNXT(filteredNXT, nxtFrom, nxtTo)} className={btnOutline}>
-                    🖨 In báo cáo
+                    🖨 In
                   </button>
                   <button onClick={exportNXTExcel} className={btnOutline}>
-                    📥 Xuất Excel
+                    📥 Excel
                   </button>
                 </div>
               </div>
+
+              {/* ── Panel Khai báo Tồn đầu kỳ ── */}
+              {showKhaiBao && adjRefDate && (
+                <div className="mb-4 border border-amber-200 rounded-xl bg-amber-50/60 p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                    <div>
+                      <div className="text-sm font-semibold text-amber-900">
+                        📋 Khai báo Tồn đầu kỳ — tháng {adjRefDate.m}/{adjRefDate.y}
+                      </div>
+                      <div className="text-[11px] text-amber-700/70 mt-0.5">
+                        Nhập tồn đầu kỳ thủ công cho từng sản phẩm. Ô để trống = dùng công thức tính.
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <input
+                        type="text" placeholder="🔍 Tìm sản phẩm..." value={kbSearch}
+                        onChange={e => setKbSearch(e.target.value)}
+                        className="border border-amber-300 rounded-lg px-3 py-1.5 text-xs bg-white focus:outline-none focus:border-amber-500 w-44" />
+                      <button
+                        onClick={() => saveOpeningAdj(true)}
+                        disabled={savingAdj}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-slate-600 text-white text-xs font-medium hover:bg-slate-700 disabled:opacity-60 cursor-pointer"
+                      >
+                        {savingAdj ? '⏳' : '🔄'} Set tất cả = 0
+                      </button>
+                      <button
+                        onClick={() => saveOpeningAdj(false)}
+                        disabled={savingAdj}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-amber-600 text-white text-xs font-medium hover:bg-amber-700 disabled:opacity-60 cursor-pointer"
+                      >
+                        {savingAdj ? '⏳ Đang lưu...' : '💾 Lưu khai báo'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Khai báo table */}
+                  <div className="overflow-y-auto max-h-80 rounded-lg border border-amber-200">
+                    <table className="w-full text-xs border-collapse">
+                      <thead className="sticky top-0 z-10">
+                        <tr className="bg-amber-100">
+                          <th className="border border-amber-200 px-2 py-1.5 text-center w-8">STT</th>
+                          <th className="border border-amber-200 px-2 py-1.5 text-left">Tên sản phẩm</th>
+                          <th className="border border-amber-200 px-2 py-1.5 text-center w-16">ĐVT</th>
+                          <th className="border border-amber-200 px-2 py-1.5 text-right w-32">
+                            Tồn đầu khai báo
+                          </th>
+                          <th className="border border-amber-200 px-2 py-1.5 text-right w-28 text-amber-700/70">
+                            Công thức (gốc)
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {allProducts
+                          .filter(p => p.is_active && (
+                            kbSearch === '' ||
+                            p.name.toLowerCase().includes(kbSearch.toLowerCase()) ||
+                            (p.code || '').toLowerCase().includes(kbSearch.toLowerCase())
+                          ))
+                          .sort((a, b) => a.name.localeCompare(b.name, 'vi'))
+                          .map((p, i) => {
+                            const key = p.name.toLowerCase().trim()
+                            const nxtRow = nxtRows.find(r => r.name.toLowerCase().trim() === key)
+                            // Công thức gốc (tonDau trước khi adj)
+                            const formulaTonDau = nxtRow
+                              ? (nxtRow.hasAdj
+                                  ? nxtOpeningAdj[key] !== undefined
+                                    ? nxtRow.tonDau  // adj applied
+                                    : nxtRow.tonDau
+                                  : nxtRow.tonDau)
+                              : null
+                            return (
+                              <tr key={p.id} className={i % 2 === 0 ? 'bg-white' : 'bg-amber-50/30'}>
+                                <td className="border border-amber-100 px-2 py-1 text-center text-[#8b5e3c]/50">{i + 1}</td>
+                                <td className="border border-amber-100 px-2 py-1 font-medium text-[#1a0f07]">
+                                  {p.name}
+                                  {p.code && <span className="ml-1 text-[10px] text-[#8b5e3c]/40">{p.code}</span>}
+                                </td>
+                                <td className="border border-amber-100 px-2 py-1 text-center text-[#8b5e3c]">{p.unit}</td>
+                                <td className="border border-amber-100 px-1 py-0.5">
+                                  <input
+                                    type="number" min={0} step="0.01"
+                                    value={nxtOpeningLocal[key] ?? ''}
+                                    placeholder="0"
+                                    onChange={e => setNxtOpeningLocal(prev => ({ ...prev, [key]: e.target.value }))}
+                                    className="w-full text-right px-2 py-1 rounded border border-amber-200 focus:outline-none focus:border-amber-400 text-xs bg-white"
+                                  />
+                                </td>
+                                <td className="border border-amber-100 px-2 py-1 text-right text-[#8b5e3c]/50 italic">
+                                  {formulaTonDau !== null ? (
+                                    <span className={formulaTonDau < 0 ? 'text-red-400' : ''}>
+                                      {formulaTonDau.toFixed(2)}
+                                    </span>
+                                  ) : '—'}
+                                </td>
+                              </tr>
+                            )
+                          })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
 
               {/* Table */}
               <div className="overflow-x-auto">
@@ -896,7 +1098,16 @@ export default function ReportsPage() {
                               {r.code && <span className="ml-1 text-[10px] text-[#8b5e3c]/50">{r.code}</span>}
                             </td>
                             <td className="border border-[#e8ddd0] px-2 py-1.5 text-center text-[#8b5e3c]">{r.unit}</td>
-                            <td className="border border-[#e8ddd0] px-2 py-1.5 text-right text-[#3d1f0a]">{fmtNum(r.tonDau)}</td>
+                            <td className={`border border-[#e8ddd0] px-2 py-1.5 text-right ${
+                              r.hasAdj
+                                ? 'bg-amber-50 text-amber-900 font-semibold'
+                                : r.tonDau < 0
+                                  ? 'text-red-600'
+                                  : 'text-[#3d1f0a]'
+                            }`}>
+                              {fmtNum(r.tonDau)}
+                              {r.hasAdj && <span className="ml-0.5 text-[9px] text-amber-500">✎</span>}
+                            </td>
                             <td className="border border-[#e8ddd0] px-2 py-1.5 text-right text-green-700 bg-green-50/50">
                               {r.nhapSL > 0.001 ? fmtNum(r.nhapSL) : <span className="text-[#8b5e3c]/30">—</span>}
                             </td>
