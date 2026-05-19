@@ -49,15 +49,30 @@ export default function BatchesTab() {
   const loadBatches = async () => {
     setLoading(true)
     setDbError(null)
-    const { data, error } = await sb
-      .from('batches')
-      .select('*')
-      .order('product_name', { ascending: true })
-      .order('inv_date', { ascending: true })
-      .order('id', { ascending: true })
-    if (error) { setDbError(error.message) }
-    else { setBatches((data || []) as Batch[]) }
-    setLoading(false)
+    try {
+      const PAGE = 1000
+      const all: Batch[] = []
+      let from = 0
+      let fetchError: string | null = null
+      while (true) {
+        const { data, error } = await sb
+          .from('batches')
+          .select('*')
+          .order('product_name', { ascending: true })
+          .order('inv_date',     { ascending: true })
+          .order('id',           { ascending: true })
+          .range(from, from + PAGE - 1)
+        if (error) { fetchError = error.message; break }
+        if (!data || data.length === 0) break
+        all.push(...(data as Batch[]))
+        if (data.length < PAGE) break   // trang cuối → dừng
+        from += PAGE
+      }
+      if (fetchError) setDbError(fetchError)
+      else setBatches(all)
+    } finally {
+      setLoading(false)
+    }
   }
 
   // ─── Computed lists ─────────────────────────────────────────
