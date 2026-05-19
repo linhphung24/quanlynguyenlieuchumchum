@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import React, { useState, useMemo } from 'react'
 import { useApp } from '@/contexts/AppContext'
 import { Invoice } from '@/types'
 import { fmtNum, fmtPrice, fmtDate, todayStr } from '@/lib/utils'
@@ -49,6 +49,11 @@ interface NXTRow {
   code: string; name: string; unit: string; donGia: number
   tonDau: number; nhapSL: number; nhapTien: number
   xuatSL: number; xuatTien: number; tonCuoi: number; tonCuoiTien: number
+}
+interface Batch {
+  id: number; inv_id: number; inv_code: string; inv_date: string
+  product_name: string; unit: string; quantity: number; cost_price: number
+  remaining_qty: number; exp_date?: string | null; supplier?: string | null
 }
 interface LedgerRow {
   id: number; ngay: string; code: string; type: 'in' | 'out'
@@ -436,10 +441,12 @@ export default function ReportsPage() {
   const [nxtPreset,  setNxtPreset]  = useState<PeriodPreset>('month')
   const [nxtFrom,    setNxtFrom]    = useState(getRangeForPreset('month')[0])
   const [nxtTo,      setNxtTo]      = useState(getRangeForPreset('month')[1])
-  const [nxtRows,    setNxtRows]    = useState<NXTRow[]>([])
-  const [nxtLoading, setNxtLoading] = useState(false)
-  const [nxtLoaded,  setNxtLoaded]  = useState(false)
-  const [nxtSearch,  setNxtSearch]  = useState('')
+  const [nxtRows,       setNxtRows]       = useState<NXTRow[]>([])
+  const [nxtBatches,    setNxtBatches]    = useState<Record<string, Batch[]>>({})
+  const [nxtShowBatch,  setNxtShowBatch]  = useState(false)
+  const [nxtLoading,    setNxtLoading]    = useState(false)
+  const [nxtLoaded,     setNxtLoaded]     = useState(false)
+  const [nxtSearch,     setNxtSearch]     = useState('')
 
   // ── Chi tiết state ───────────────────────────────────────────
   const [cdProductId,   setCdProductId]   = useState<number | null>(null)
@@ -488,7 +495,7 @@ export default function ReportsPage() {
           .from('batch_deductions')
           .select('qty_used, batch_price, batches!batch_id(product_name)')
           .in('inv_id', periodOutIds)
-        for (const d of (deductData || []) as {
+        for (const d of (deductData || []) as unknown as {
           qty_used: number; batch_price: number
           batches: { product_name: string } | null
         }[]) {
@@ -545,7 +552,31 @@ export default function ReportsPage() {
       }
 
       rows.sort((a, b) => a.name.localeCompare(b.name, 'vi'))
-      setNxtRows(rows); setNxtLoaded(true)
+      setNxtRows(rows)
+
+      // ── Fetch all batches (paginated) for batch breakdown view ──
+      const allBatches: Batch[] = []; let bFrom = 0; const BPAGE = 1000
+      while (true) {
+        const { data: bd, error: be } = await sb.from('batches').select('*')
+          .order('product_name', { ascending: true })
+          .order('inv_date',     { ascending: true })
+          .order('id',           { ascending: true })
+          .range(bFrom, bFrom + BPAGE - 1)
+        if (be || !bd || bd.length === 0) break
+        allBatches.push(...(bd as Batch[]))
+        if (bd.length < BPAGE) break
+        bFrom += BPAGE
+      }
+      const productSet = new Set(rows.map(r => r.name.toLowerCase().trim()))
+      const batchMap: Record<string, Batch[]> = {}
+      for (const b of allBatches) {
+        const key = b.product_name.toLowerCase().trim()
+        if (!productSet.has(key)) continue
+        if (!batchMap[key]) batchMap[key] = []
+        batchMap[key].push(b)
+      }
+      setNxtBatches(batchMap)
+      setNxtLoaded(true)
     } catch (e) {
       toast('Lỗi tải báo cáo: ' + (e as Error).message, 'error')
     } finally {
@@ -784,6 +815,16 @@ export default function ReportsPage() {
                     type="text" placeholder="🔍 Tìm tên / mã SP..." value={nxtSearch}
                     onChange={e => setNxtSearch(e.target.value)}
                     className={inputCls + ' text-xs w-48'} />
+                  <button
+                    onClick={() => setNxtShowBatch(v => !v)}
+                    className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border text-xs font-medium transition-all cursor-pointer ${
+                      nxtShowBatch
+                        ? 'bg-[#c8773a] text-white border-[#c8773a]'
+                        : 'border-[#c8773a] text-[#c8773a] hover:bg-[#fef4e8]'
+                    }`}
+                  >
+                    📦 {nxtShowBatch ? 'Ẩn lô hàng' : 'Xem theo lô'}
+                  </button>
                   <button onClick={() => printNXT(filteredNXT, nxtFrom, nxtTo)} className={btnOutline}>
                     🖨 In báo cáo
                   </button>
@@ -811,35 +852,107 @@ export default function ReportsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredNXT.map((r, i) => (
-                      <tr key={r.name} className={i % 2 === 0 ? 'bg-white' : 'bg-[#fdfaf6]'}>
-                        <td className="border border-[#e8ddd0] px-2 py-1.5 text-center text-[#8b5e3c]/60">{i + 1}</td>
-                        <td className="border border-[#e8ddd0] px-2 py-1.5 font-medium text-[#1a0f07]">
-                          {r.name}
-                          {r.code && <span className="ml-1 text-[10px] text-[#8b5e3c]/50">{r.code}</span>}
-                        </td>
-                        <td className="border border-[#e8ddd0] px-2 py-1.5 text-center text-[#8b5e3c]">{r.unit}</td>
-                        <td className="border border-[#e8ddd0] px-2 py-1.5 text-right text-[#3d1f0a]">{fmtNum(r.tonDau)}</td>
-                        <td className="border border-[#e8ddd0] px-2 py-1.5 text-right text-green-700 bg-green-50/50">
-                          {r.nhapSL > 0.001 ? fmtNum(r.nhapSL) : <span className="text-[#8b5e3c]/30">—</span>}
-                        </td>
-                        <td className="border border-[#e8ddd0] px-2 py-1.5 text-right text-green-700 bg-green-50/50">
-                          {r.nhapTien > 0.1 ? Number(r.nhapTien).toLocaleString('vi-VN') : <span className="text-[#8b5e3c]/30">—</span>}
-                        </td>
-                        <td className="border border-[#e8ddd0] px-2 py-1.5 text-right text-orange-700 bg-orange-50/50">
-                          {r.xuatSL > 0.001 ? fmtNum(r.xuatSL) : <span className="text-[#8b5e3c]/30">—</span>}
-                        </td>
-                        <td className="border border-[#e8ddd0] px-2 py-1.5 text-right text-orange-700 bg-orange-50/50">
-                          {r.xuatTien > 0.1 ? Number(r.xuatTien).toLocaleString('vi-VN') : <span className="text-[#8b5e3c]/30">—</span>}
-                        </td>
-                        <td className={`border border-[#e8ddd0] px-2 py-1.5 text-right font-bold ${r.tonCuoi < 0 ? 'text-red-600' : 'text-[#1a0f07]'}`}>
-                          {fmtNum(r.tonCuoi)}
-                        </td>
-                        <td className="border border-[#e8ddd0] px-2 py-1.5 text-right text-[#8b5e3c]">
-                          {r.tonCuoiTien > 0.1 ? Number(r.tonCuoiTien).toLocaleString('vi-VN') : <span className="text-[#8b5e3c]/30">—</span>}
-                        </td>
-                      </tr>
-                    ))}
+                    {filteredNXT.map((r, i) => {
+                      const bKey     = r.name.toLowerCase().trim()
+                      const batches  = nxtShowBatch ? (nxtBatches[bKey] || []) : []
+                      const eff      = (q: number) => parseFloat(q.toFixed(2))
+                      const hasBatch = batches.length > 0
+                      return (
+                        <React.Fragment key={r.name}>
+                          {/* ── Product summary row ── */}
+                          <tr className={`${hasBatch && nxtShowBatch ? 'bg-[#fdf4eb]' : i % 2 === 0 ? 'bg-white' : 'bg-[#fdfaf6]'}`}>
+                            <td className="border border-[#e8ddd0] px-2 py-1.5 text-center text-[#8b5e3c]/60">{i + 1}</td>
+                            <td className="border border-[#e8ddd0] px-2 py-1.5 font-medium text-[#1a0f07]">
+                              {nxtShowBatch && hasBatch && <span className="mr-1 text-[10px] text-[#c8773a]">▼</span>}
+                              {r.name}
+                              {r.code && <span className="ml-1 text-[10px] text-[#8b5e3c]/50">{r.code}</span>}
+                            </td>
+                            <td className="border border-[#e8ddd0] px-2 py-1.5 text-center text-[#8b5e3c]">{r.unit}</td>
+                            <td className="border border-[#e8ddd0] px-2 py-1.5 text-right text-[#3d1f0a]">{fmtNum(r.tonDau)}</td>
+                            <td className="border border-[#e8ddd0] px-2 py-1.5 text-right text-green-700 bg-green-50/50">
+                              {r.nhapSL > 0.001 ? fmtNum(r.nhapSL) : <span className="text-[#8b5e3c]/30">—</span>}
+                            </td>
+                            <td className="border border-[#e8ddd0] px-2 py-1.5 text-right text-green-700 bg-green-50/50">
+                              {r.nhapTien > 0.1 ? Number(r.nhapTien).toLocaleString('vi-VN') : <span className="text-[#8b5e3c]/30">—</span>}
+                            </td>
+                            <td className="border border-[#e8ddd0] px-2 py-1.5 text-right text-orange-700 bg-orange-50/50">
+                              {r.xuatSL > 0.001 ? fmtNum(r.xuatSL) : <span className="text-[#8b5e3c]/30">—</span>}
+                            </td>
+                            <td className="border border-[#e8ddd0] px-2 py-1.5 text-right text-orange-700 bg-orange-50/50">
+                              {r.xuatTien > 0.1 ? Number(r.xuatTien).toLocaleString('vi-VN') : <span className="text-[#8b5e3c]/30">—</span>}
+                            </td>
+                            <td className={`border border-[#e8ddd0] px-2 py-1.5 text-right font-bold ${r.tonCuoi < 0 ? 'text-red-600' : 'text-[#1a0f07]'}`}>
+                              {fmtNum(r.tonCuoi)}
+                            </td>
+                            <td className="border border-[#e8ddd0] px-2 py-1.5 text-right text-[#8b5e3c]">
+                              {r.tonCuoiTien > 0.1 ? Number(r.tonCuoiTien).toLocaleString('vi-VN') : <span className="text-[#8b5e3c]/30">—</span>}
+                            </td>
+                          </tr>
+
+                          {/* ── Batch sub-rows ── */}
+                          {nxtShowBatch && batches.map((b) => {
+                            const remaining = eff(b.remaining_qty)
+                            const qtyUsed   = eff(Math.max(0, b.quantity - b.remaining_qty))
+                            const isEmpty   = remaining <= 0
+                            const isExpired = b.exp_date ? b.exp_date < todayStr() : false
+                            const statusColor = isEmpty ? 'bg-gray-100 text-gray-400' : isExpired ? 'bg-red-50 text-red-500' : 'bg-green-50 text-green-700'
+                            return (
+                              <tr key={`b-${b.id}`} className="bg-[#fdf9f4]">
+                                <td className="border border-[#e8ddd0] px-2 py-1 text-center"></td>
+                                <td className="border border-[#e8ddd0] px-2 py-1 pl-5">
+                                  <span className="text-[#c8773a]/50 mr-1 text-[10px]">↳</span>
+                                  <span className="font-mono text-[11px] text-[#c8773a] font-medium">{b.inv_code}</span>
+                                  <span className="mx-1.5 text-[#e8ddd0]">·</span>
+                                  <span className="text-[10px] text-[#8b5e3c]/70">{fmtDate(b.inv_date)}</span>
+                                  {b.exp_date && (
+                                    <span className={`ml-1.5 text-[10px] ${isExpired ? 'text-red-500 font-medium' : 'text-[#8b5e3c]/40'}`}>
+                                      HH:{fmtDate(b.exp_date)}
+                                    </span>
+                                  )}
+                                  <span className={`ml-2 inline-block px-1.5 py-0.5 rounded text-[9px] font-medium ${statusColor}`}>
+                                    {isEmpty ? 'Hết' : isExpired ? 'Hết hạn' : 'Còn hàng'}
+                                  </span>
+                                </td>
+                                {/* ĐVT col → show unit price */}
+                                <td className="border border-[#e8ddd0] px-2 py-1 text-center text-[10px] text-[#8b5e3c]/70">
+                                  {b.cost_price > 0 ? Number(b.cost_price).toLocaleString('vi-VN') + '₫' : '—'}
+                                </td>
+                                {/* Tồn đầu → empty */}
+                                <td className="border border-[#e8ddd0] px-2 py-1"></td>
+                                {/* Nhập SL → batch initial qty */}
+                                <td className="border border-[#e8ddd0] px-2 py-1 text-right text-[11px] text-green-700 bg-green-50/30">
+                                  {fmtNum(b.quantity)}
+                                </td>
+                                {/* Nhập tiền → qty × cost_price */}
+                                <td className="border border-[#e8ddd0] px-2 py-1 text-right text-[11px] text-green-700 bg-green-50/30">
+                                  {b.cost_price > 0 ? Number(b.quantity * b.cost_price).toLocaleString('vi-VN') : ''}
+                                </td>
+                                {/* Xuất SL → qty used */}
+                                <td className="border border-[#e8ddd0] px-2 py-1 text-right text-[11px] text-orange-700 bg-orange-50/30">
+                                  {qtyUsed > 0.001 ? fmtNum(qtyUsed) : ''}
+                                </td>
+                                {/* Xuất tiền → qty_used × cost */}
+                                <td className="border border-[#e8ddd0] px-2 py-1 text-right text-[11px] text-orange-700 bg-orange-50/30">
+                                  {qtyUsed > 0.001 && b.cost_price > 0
+                                    ? Number(qtyUsed * b.cost_price).toLocaleString('vi-VN') : ''}
+                                </td>
+                                {/* Tồn cuối → remaining */}
+                                <td className={`border border-[#e8ddd0] px-2 py-1 text-right text-[11px] font-semibold ${
+                                  isEmpty ? 'text-[#8b5e3c]/30' : isExpired ? 'text-red-600' : 'text-[#1a0f07]'
+                                }`}>
+                                  {remaining > 0 ? fmtNum(remaining) : '—'}
+                                </td>
+                                {/* Giá trị tồn → remaining × cost */}
+                                <td className="border border-[#e8ddd0] px-2 py-1 text-right text-[11px] text-[#8b5e3c]/70">
+                                  {remaining > 0 && b.cost_price > 0
+                                    ? Number(remaining * b.cost_price).toLocaleString('vi-VN') : ''}
+                                </td>
+                              </tr>
+                            )
+                          })}
+                        </React.Fragment>
+                      )
+                    })}
                     {/* Total row */}
                     <tr className="bg-[#f5e6cc]/80 font-bold text-[#3d1f0a]">
                       <td colSpan={3} className="border border-[#e8ddd0] px-2 py-2 text-center">TỔNG CỘNG</td>
