@@ -52,7 +52,7 @@ interface NXTRow {
 }
 interface Batch {
   id: number; inv_id: number; inv_code: string; inv_date: string
-  product_name: string; unit: string; quantity: number; cost_price: number
+  product_name: string; unit: string; quantity: number; price: number
   remaining_qty: number; exp_date?: string | null; supplier?: string | null
 }
 interface LedgerRow {
@@ -915,7 +915,7 @@ export default function ReportsPage() {
                                 </td>
                                 {/* ĐVT col → show unit price */}
                                 <td className="border border-[#e8ddd0] px-2 py-1 text-center text-[10px] text-[#8b5e3c]/70">
-                                  {b.cost_price > 0 ? Number(b.cost_price).toLocaleString('vi-VN') + '₫' : '—'}
+                                  {b.price > 0 ? Number(b.price).toLocaleString('vi-VN') + '₫' : '—'}
                                 </td>
                                 {/* Tồn đầu → empty */}
                                 <td className="border border-[#e8ddd0] px-2 py-1"></td>
@@ -925,7 +925,7 @@ export default function ReportsPage() {
                                 </td>
                                 {/* Nhập tiền → qty × cost_price */}
                                 <td className="border border-[#e8ddd0] px-2 py-1 text-right text-[11px] text-green-700 bg-green-50/30">
-                                  {b.cost_price > 0 ? Number(b.quantity * b.cost_price).toLocaleString('vi-VN') : ''}
+                                  {b.price > 0 ? Number(b.quantity * b.price).toLocaleString('vi-VN') : ''}
                                 </td>
                                 {/* Xuất SL → qty used */}
                                 <td className="border border-[#e8ddd0] px-2 py-1 text-right text-[11px] text-orange-700 bg-orange-50/30">
@@ -933,8 +933,8 @@ export default function ReportsPage() {
                                 </td>
                                 {/* Xuất tiền → qty_used × cost */}
                                 <td className="border border-[#e8ddd0] px-2 py-1 text-right text-[11px] text-orange-700 bg-orange-50/30">
-                                  {qtyUsed > 0.001 && b.cost_price > 0
-                                    ? Number(qtyUsed * b.cost_price).toLocaleString('vi-VN') : ''}
+                                  {qtyUsed > 0.001 && b.price > 0
+                                    ? Number(qtyUsed * b.price).toLocaleString('vi-VN') : ''}
                                 </td>
                                 {/* Tồn cuối → remaining */}
                                 <td className={`border border-[#e8ddd0] px-2 py-1 text-right text-[11px] font-semibold ${
@@ -944,8 +944,8 @@ export default function ReportsPage() {
                                 </td>
                                 {/* Giá trị tồn → remaining × cost */}
                                 <td className="border border-[#e8ddd0] px-2 py-1 text-right text-[11px] text-[#8b5e3c]/70">
-                                  {remaining > 0 && b.cost_price > 0
-                                    ? Number(remaining * b.cost_price).toLocaleString('vi-VN') : ''}
+                                  {remaining > 0 && b.price > 0
+                                    ? Number(remaining * b.price).toLocaleString('vi-VN') : ''}
                                 </td>
                               </tr>
                             )
