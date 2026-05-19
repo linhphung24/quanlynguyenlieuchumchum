@@ -272,7 +272,7 @@ export default function InvoicesPage() {
   useEffect(() => { loadInvoices() }, [])
 
   const loadInvoices = async () => {
-    const { data } = await sb.from('invoices').select('*').order('inv_date', { ascending: false }).order('id', { ascending: false })
+    const { data } = await sb.from('invoices').select('*').order('inv_date', { ascending: false }).order('id', { ascending: false }).limit(5000)
     if (data) setInvoices(data as Invoice[])
   }
 
