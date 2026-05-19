@@ -272,8 +272,21 @@ export default function InvoicesPage() {
   useEffect(() => { loadInvoices() }, [])
 
   const loadInvoices = async () => {
-    const { data } = await sb.from('invoices').select('*').order('inv_date', { ascending: false }).order('id', { ascending: false }).limit(5000)
-    if (data) setInvoices(data as Invoice[])
+    const PAGE = 1000
+    const all: Invoice[] = []
+    let from = 0
+    while (true) {
+      const { data, error } = await sb
+        .from('invoices').select('*')
+        .order('inv_date', { ascending: false })
+        .order('id',       { ascending: false })
+        .range(from, from + PAGE - 1)
+      if (error || !data || data.length === 0) break
+      all.push(...(data as Invoice[]))
+      if (data.length < PAGE) break   // trang cuối → dừng
+      from += PAGE
+    }
+    setInvoices(all)
   }
 
   // ─── FIFO batch preview (chỉ cho xuất) ───────────────────
