@@ -21,7 +21,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: 'products' as PageName,  label: 'Kho hàng',       icon: '▦' },
       { id: 'invoices' as PageName,  label: 'Hoá đơn',        icon: '≡' },
-      { id: 'summary'  as PageName,  label: 'Tổng kết',       icon: '◈' },
+      // { id: 'summary'  as PageName,  label: 'Tổng kết',       icon: '◈' },
       { id: 'reports'  as PageName,  label: 'Báo cáo',        icon: '📑' },
     ],
   },

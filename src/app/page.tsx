@@ -11,7 +11,7 @@ import RecipesPage from '@/components/recipes/RecipesPage'
 import CalcPage from '@/components/calc/CalcPage'
 import LogPage from '@/components/log/LogPage'
 import InvoicesPage from '@/components/invoices/InvoicesPage'
-import SummaryPage from '@/components/summary/SummaryPage'
+// import SummaryPage from '@/components/summary/SummaryPage'
 import ProductsPage from '@/components/products/ProductsPage'
 import AdminPage from '@/components/admin/AdminPage'
 import UsersPage from '@/components/users/UsersPage'
@@ -25,7 +25,7 @@ export default function Home() {
   const [currentPage, setCurrentPage] = useState<PageName>('products')
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
-  const VALID_PAGES: PageName[] = ['products', 'invoices', 'summary', 'recipes', 'calc', 'log', 'personnel', 'units', 'users', 'admin', 'reports']
+  const VALID_PAGES: PageName[] = ['products', 'invoices', /*'summary',*/ 'recipes', 'calc', 'log', 'personnel', 'units', 'users', 'admin', 'reports']
 
   // Khôi phục tab đã lưu khi load lại trang
   useEffect(() => {
@@ -83,7 +83,7 @@ export default function Home() {
             <main className="flex-1 overflow-y-auto">
               {currentPage === 'products'  && <ProductsPage />}
               {currentPage === 'invoices'  && <InvoicesPage />}
-              {currentPage === 'summary'   && <SummaryPage />}
+              {/* {currentPage === 'summary'   && <SummaryPage />} */}
               {currentPage === 'recipes'   && <RecipesPage />}
               {currentPage === 'calc'      && <CalcPage />}
               {currentPage === 'log'       && <LogPage />}

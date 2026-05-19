@@ -448,6 +448,7 @@ export default function ReportsPage() {
   const [nxtLoading,    setNxtLoading]    = useState(false)
   const [nxtLoaded,     setNxtLoaded]     = useState(false)
   const [nxtSearch,     setNxtSearch]     = useState('')
+  const [nxtPage,       setNxtPage]       = useState(1)
   // ── Khai báo tồn đầu kỳ ──────────────────────────────────────
   const [adjRefDate,      setAdjRefDate]      = useState<{ y: number; m: number } | null>(null)
   const [nxtOpeningAdj,   setNxtOpeningAdj]   = useState<Record<string, number>>({})   // đã lưu DB
@@ -764,14 +765,22 @@ export default function ReportsPage() {
     }).length
   , [kkProducts, kkActual])
 
-  // ── NXT filtered ─────────────────────────────────────────────
+  // ── NXT filtered + paging ────────────────────────────────────
+  const NXT_PAGE_SIZE = 20
+
   const filteredNXT = useMemo(() => {
-    if (!nxtSearch) return nxtRows
     const q = nxtSearch.toLowerCase()
-    return nxtRows.filter(r =>
-      r.name.toLowerCase().includes(q) || (r.code || '').toLowerCase().includes(q)
-    )
+    const result = nxtSearch
+      ? nxtRows.filter(r => r.name.toLowerCase().includes(q) || (r.code || '').toLowerCase().includes(q))
+      : nxtRows
+    setNxtPage(1)   // reset về trang 1 khi filter thay đổi
+    return result
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [nxtRows, nxtSearch])
+
+  const nxtTotalPages = Math.max(1, Math.ceil(filteredNXT.length / NXT_PAGE_SIZE))
+  const safePage      = Math.min(nxtPage, nxtTotalPages)
+  const pagedNXT      = filteredNXT.slice((safePage - 1) * NXT_PAGE_SIZE, safePage * NXT_PAGE_SIZE)
 
   const nxtTotals = useMemo(() => ({
     nhapSL:      filteredNXT.reduce((s, r) => s + r.nhapSL,      0),
@@ -1082,16 +1091,17 @@ export default function ReportsPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {filteredNXT.map((r, i) => {
+                    {pagedNXT.map((r, i) => {
                       const bKey     = r.name.toLowerCase().trim()
                       const batches  = nxtShowBatch ? (nxtBatches[bKey] || []) : []
                       const eff      = (q: number) => parseFloat(q.toFixed(2))
                       const hasBatch = batches.length > 0
+                      const globalIdx = (safePage - 1) * NXT_PAGE_SIZE + i
                       return (
                         <React.Fragment key={r.name}>
                           {/* ── Product summary row ── */}
                           <tr className={`${hasBatch && nxtShowBatch ? 'bg-[#fdf4eb]' : i % 2 === 0 ? 'bg-white' : 'bg-[#fdfaf6]'}`}>
-                            <td className="border border-[#e8ddd0] px-2 py-1.5 text-center text-[#8b5e3c]/60">{i + 1}</td>
+                            <td className="border border-[#e8ddd0] px-2 py-1.5 text-center text-[#8b5e3c]/60">{globalIdx + 1}</td>
                             <td className="border border-[#e8ddd0] px-2 py-1.5 font-medium text-[#1a0f07]">
                               {nxtShowBatch && hasBatch && <span className="mr-1 text-[10px] text-[#c8773a]">▼</span>}
                               {r.name}
@@ -1206,6 +1216,60 @@ export default function ReportsPage() {
                   </tbody>
                 </table>
               </div>
+
+              {/* ── Pagination ── */}
+              {nxtTotalPages > 1 && (
+                <div className="flex items-center justify-between mt-3 pt-3 border-t border-[#f0e4d0]">
+                  <span className="text-xs text-[#8b5e3c]/60">
+                    Trang <b>{safePage}</b> / {nxtTotalPages}
+                    &nbsp;·&nbsp;
+                    {filteredNXT.length} mặt hàng
+                    &nbsp;·&nbsp;
+                    hiển thị {(safePage - 1) * NXT_PAGE_SIZE + 1}–{Math.min(safePage * NXT_PAGE_SIZE, filteredNXT.length)}
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      onClick={() => setNxtPage(1)} disabled={safePage === 1}
+                      className="px-2 py-1 rounded text-xs border border-[#e8ddd0] disabled:opacity-40 hover:bg-[#f5e6cc] cursor-pointer disabled:cursor-default"
+                    >«</button>
+                    <button
+                      onClick={() => setNxtPage(p => Math.max(1, p - 1))} disabled={safePage === 1}
+                      className="px-2.5 py-1 rounded text-xs border border-[#e8ddd0] disabled:opacity-40 hover:bg-[#f5e6cc] cursor-pointer disabled:cursor-default"
+                    >‹</button>
+
+                    {/* Số trang hiển thị xung quanh trang hiện tại */}
+                    {Array.from({ length: nxtTotalPages }, (_, idx) => idx + 1)
+                      .filter(p => p === 1 || p === nxtTotalPages || Math.abs(p - safePage) <= 2)
+                      .reduce<(number | '…')[]>((acc, p, i, arr) => {
+                        if (i > 0 && p - (arr[i - 1] as number) > 1) acc.push('…')
+                        acc.push(p)
+                        return acc
+                      }, [])
+                      .map((p, idx) =>
+                        p === '…'
+                          ? <span key={`e${idx}`} className="px-1 text-xs text-[#8b5e3c]/40">…</span>
+                          : <button
+                              key={p}
+                              onClick={() => setNxtPage(p as number)}
+                              className={`px-2.5 py-1 rounded text-xs border cursor-pointer ${
+                                safePage === p
+                                  ? 'bg-[#c8773a] text-white border-[#c8773a] font-medium'
+                                  : 'border-[#e8ddd0] hover:bg-[#f5e6cc] text-[#3d1f0a]'
+                              }`}
+                            >{p}</button>
+                      )}
+
+                    <button
+                      onClick={() => setNxtPage(p => Math.min(nxtTotalPages, p + 1))} disabled={safePage === nxtTotalPages}
+                      className="px-2.5 py-1 rounded text-xs border border-[#e8ddd0] disabled:opacity-40 hover:bg-[#f5e6cc] cursor-pointer disabled:cursor-default"
+                    >›</button>
+                    <button
+                      onClick={() => setNxtPage(nxtTotalPages)} disabled={safePage === nxtTotalPages}
+                      className="px-2 py-1 rounded text-xs border border-[#e8ddd0] disabled:opacity-40 hover:bg-[#f5e6cc] cursor-pointer disabled:cursor-default"
+                    >»</button>
+                  </div>
+                </div>
+              )}
             </div>
           )}
 
