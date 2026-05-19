@@ -478,31 +478,59 @@ export default function ReportsPage() {
     if (!nxtFrom || !nxtTo) { toast('Chọn khoảng thời gian hợp lệ', 'error'); return }
     setNxtLoading(true)
     try {
-      const [{ data: pData }, { data: postData }] = await Promise.all([
-        sb.from('invoices').select('*').gte('inv_date', nxtFrom).lte('inv_date', nxtTo),
-        sb.from('invoices').select('*').gt('inv_date', nxtTo),
-      ])
+      // ── Fetch period invoices (paginated) ────────────────────
+      const PAGE = 1000
+      const periodInvs: Invoice[] = []; let pFrom = 0
+      while (true) {
+        const { data, error } = await sb.from('invoices').select('*')
+          .gte('inv_date', nxtFrom).lte('inv_date', nxtTo)
+          .range(pFrom, pFrom + PAGE - 1)
+        if (error || !data || data.length === 0) break
+        periodInvs.push(...(data as Invoice[]))
+        if (data.length < PAGE) break
+        pFrom += PAGE
+      }
 
-      const periodInvs = (pData    || []) as Invoice[]
-      const postInvs   = (postData || []) as Invoice[]
+      // ── Fetch post-period invoices (paginated) ────────────────
+      const postInvs: Invoice[] = []; let qFrom = 0
+      while (true) {
+        const { data, error } = await sb.from('invoices').select('*')
+          .gt('inv_date', nxtTo)
+          .range(qFrom, qFrom + PAGE - 1)
+        if (error || !data || data.length === 0) break
+        postInvs.push(...(data as Invoice[]))
+        if (data.length < PAGE) break
+        qFrom += PAGE
+      }
 
-      // ── FIFO xuất tiền: lấy từ batch_deductions × batch_price ──
-      // (chính xác hơn dùng giá ghi trên HĐ xuất)
+      // ── FIFO xuất tiền: paginated batch_deductions ────────────
       const fifoXuatTien: Record<string, number> = {}
       const periodOutIds = periodInvs.filter(inv => inv.type === 'out').map(inv => inv.id)
       if (periodOutIds.length > 0) {
-        const { data: deductData } = await sb
-          .from('batch_deductions')
-          .select('qty_used, batch_price, batches!batch_id(product_name)')
-          .in('inv_id', periodOutIds)
-        for (const d of (deductData || []) as unknown as {
-          qty_used: number; batch_price: number
-          batches: { product_name: string } | null
-        }[]) {
-          const pName = d.batches?.product_name
-          if (!pName) continue
-          const key = pName.toLowerCase().trim()
-          fifoXuatTien[key] = (fifoXuatTien[key] || 0) + d.qty_used * d.batch_price
+        // Chunk IDs to avoid URL length limit, then paginate each chunk
+        const CHUNK = 200; const PAGE = 1000
+        for (let ci = 0; ci < periodOutIds.length; ci += CHUNK) {
+          const chunk = periodOutIds.slice(ci, ci + CHUNK)
+          let from = 0
+          while (true) {
+            const { data: deductData } = await sb
+              .from('batch_deductions')
+              .select('qty_used, batch_price, batches!batch_id(product_name)')
+              .in('inv_id', chunk)
+              .range(from, from + PAGE - 1)
+            const rows = (deductData || []) as unknown as {
+              qty_used: number; batch_price: number
+              batches: { product_name: string } | null
+            }[]
+            for (const d of rows) {
+              const pName = d.batches?.product_name
+              if (!pName) continue
+              const key = pName.toLowerCase().trim()
+              fifoXuatTien[key] = (fifoXuatTien[key] || 0) + d.qty_used * d.batch_price
+            }
+            if (rows.length < PAGE) break
+            from += PAGE
+          }
         }
       }
 
