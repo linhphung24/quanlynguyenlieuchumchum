@@ -604,7 +604,7 @@ export default function InvoicesPage() {
       const { data } = await sb
         .from('batches')
         .select('unit, mfg_date, exp_date')
-        .eq('product_name', name.trim())
+        .ilike('product_name', name.trim())
         .gt('remaining_qty', 0)
         .order('inv_date', { ascending: true })
         .order('id', { ascending: true })
