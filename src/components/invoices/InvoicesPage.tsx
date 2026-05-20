@@ -269,6 +269,12 @@ export default function InvoicesPage() {
   const [uploadingImgFor, setUploadingImgFor] = useState<number | null>(null)
   const [saving, setSaving] = useState(false)
 
+  // manual batch allocation state (Giải pháp 2)
+  type BatchRow = { id: number; inv_code: string; inv_date: string; remaining_qty: number; price: number; unit: string }
+  const [itemBatchData, setItemBatchData] = useState<Record<string, BatchRow[]>>({})  // key = product name lowercase
+  const [manualAlloc, setManualAlloc] = useState<Record<number, Record<number, string>>>({})  // itemIdx → {batchId: qty string}
+  const [showAllocFor, setShowAllocFor] = useState<Set<number>>(new Set())
+
   useEffect(() => { loadInvoices() }, [])
 
   const loadInvoices = async () => {
@@ -291,7 +297,12 @@ export default function InvoicesPage() {
 
   // ─── FIFO batch preview (chỉ cho xuất) ───────────────────
   useEffect(() => {
-    if (invType !== 'out') { setBatchPreviews({}); return }
+    if (invType !== 'out') {
+      setBatchPreviews({})
+      setManualAlloc({})
+      setShowAllocFor(new Set())
+      return
+    }
     const timer = setTimeout(() => { computeBatchPreviews() }, 400)
     return () => clearTimeout(timer)
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -323,6 +334,13 @@ export default function InvoicesPage() {
       byProduct[key]!.push(b)
     }
 
+    // Store batch data for manual allocation panel
+    const newItemBatchData: Record<string, typeof data> = {}
+    for (const key of Object.keys(byProduct)) {
+      newItemBatchData[key] = byProduct[key]!
+    }
+    setItemBatchData(newItemBatchData)
+
     const previews: Record<number, BatchAlloc[]> = {}
     items.forEach((item, idx) => {
       if (!item.name.trim() || !(item.amount || item.qty)) return
@@ -335,23 +353,22 @@ export default function InvoicesPage() {
         return
       }
 
-      const oldest = batchList[0]!
-      if (qty <= oldest.remaining_qty) {
-        // Đủ hàng trong lô cũ nhất — OK
-        previews[idx] = [{ batch_id: oldest.id, inv_code: oldest.inv_code, inv_date: oldest.inv_date, qty, price: oldest.price, unit: oldest.unit }]
-      } else {
-        // Vượt quá lô hiện tại — phải tách hoá đơn
-        previews[idx] = [{
-          batch_id: oldest.id,
-          inv_code: oldest.inv_code,
-          inv_date: oldest.inv_date,
-          qty,
-          price: oldest.price,
-          unit: oldest.unit,
-          exceedsBatch: true,
-          maxQty: oldest.remaining_qty,
-        }]
+      // Span nhiều lô FIFO cho đến khi đủ số lượng
+      const allocs: BatchAlloc[] = []
+      let rem = qty
+      for (const b of batchList) {
+        if (rem <= 0) break
+        const avail = parseFloat(b.remaining_qty.toFixed(2))
+        if (avail <= 0) continue
+        const take = Math.min(rem, avail)
+        allocs.push({ batch_id: b.id, inv_code: b.inv_code, inv_date: b.inv_date, qty: take, price: b.price, unit: b.unit })
+        rem = parseFloat((rem - take).toFixed(6))
       }
+      if (rem > 0.001) {
+        // Vẫn còn thiếu sau khi hết tất cả lô — báo insufficient
+        allocs.push({ batch_id: -1, inv_code: '', inv_date: '', qty: rem, price: 0, unit: item.unit, insufficient: true })
+      }
+      previews[idx] = allocs
     })
     setBatchPreviews(previews)
   }, [sb, items])
@@ -422,7 +439,7 @@ export default function InvoicesPage() {
     }
 
     const deductionRows: Omit<BatchDeduction, 'id' | 'created_at'>[] = []
-    const batchUpdates: Promise<unknown>[] = []
+    const batchUpdates: PromiseLike<unknown>[] = []
 
     for (const item of invItems) {
       if (!item.name || !item.amount) continue
@@ -449,6 +466,48 @@ export default function InvoicesPage() {
     }
 
     // Chạy tất cả batch updates + insert deductions song song
+    await Promise.all([
+      ...batchUpdates,
+      deductionRows.length > 0 ? sb.from('batch_deductions').insert(deductionRows) : Promise.resolve(),
+    ])
+  }
+
+  // ─── manual batch deduction (Giải pháp 2) ────────────────
+  const deductBatchesManual = async (
+    allInvItems: { name: string; amount: number; unit: string }[],
+    allocMap: Record<number, Record<number, string>>,
+    exportInvId: number
+  ) => {
+    const deductionRows: Omit<BatchDeduction, 'id' | 'created_at'>[] = []
+    const batchUpdates: PromiseLike<unknown>[] = []
+
+    for (let idx = 0; idx < allInvItems.length; idx++) {
+      const alloc = allocMap[idx]
+      if (!alloc) continue
+      const item = allInvItems[idx]!
+      const batches = itemBatchData[item.name.toLowerCase().trim()] || []
+
+      for (const [bIdStr, qStr] of Object.entries(alloc)) {
+        const batchId = parseInt(bIdStr)
+        const qty = parseFloat(qStr) || 0
+        if (qty <= 0) continue
+        const batch = batches.find(b => b.id === batchId)
+        if (!batch) continue
+
+        const newRemaining = Math.max(0, +(batch.remaining_qty - qty).toFixed(2))
+        batchUpdates.push(sb.from('batches').update({ remaining_qty: newRemaining }).eq('id', batchId))
+        deductionRows.push({
+          batch_id: batchId,
+          inv_id: exportInvId,
+          qty_used: qty,
+          batch_inv_code: batch.inv_code,
+          batch_inv_date: batch.inv_date,
+          batch_price: batch.price,
+          batch_unit: batch.unit,
+        })
+      }
+    }
+
     await Promise.all([
       ...batchUpdates,
       deductionRows.length > 0 ? sb.from('batch_deductions').insert(deductionRows) : Promise.resolve(),
@@ -519,6 +578,9 @@ export default function InvoicesPage() {
   const handleProductSelect = async (idx: number, name: string, unit: string) => {
     updateItem(idx, 'name', name)
     if (unit) updateItem(idx, 'unit', unit)
+    // Xoá manual alloc khi đổi sản phẩm
+    setManualAlloc(prev => { const n = { ...prev }; delete n[idx]; return n })
+    setShowAllocFor(prev => { const n = new Set(prev); n.delete(idx); return n })
     if (!name.trim()) return
 
     if (invType === 'in') {
@@ -591,36 +653,65 @@ export default function InvoicesPage() {
         const checkResults = await Promise.all(checkQueries)
         const batchCheck = checkResults.flatMap(r => r.data || [])
 
-        // Lấy lô cũ nhất cho từng sản phẩm (key = lowercase), bỏ qua batch gần 0
-        const oldestBatch: Record<string, { inv_code: string; remaining_qty: number; unit: string }> = {}
+        // Tổng tồn kho khả dụng cho từng sản phẩm (tất cả lô cộng lại)
+        const totalAvail: Record<string, { total: number; unit: string }> = {}
         for (const b of batchCheck as { id: number; product_name: string; inv_code: string; remaining_qty: number; unit: string }[]) {
-          if (parseFloat(b.remaining_qty.toFixed(2)) <= 0) continue
+          const eff = parseFloat(b.remaining_qty.toFixed(2))
+          if (eff <= 0) continue
           const key = b.product_name.toLowerCase().trim()
-          if (!oldestBatch[key]) oldestBatch[key] = { inv_code: b.inv_code, remaining_qty: b.remaining_qty, unit: b.unit }
+          if (!totalAvail[key]) totalAvail[key] = { total: 0, unit: b.unit }
+          totalAvail[key]!.total += eff
         }
 
         const violations: string[] = []
-        for (const item of invItems) {
-          const batch = oldestBatch[item.name.toLowerCase().trim()]
-          if (!batch) {
-            // CHẶN: không có batch nào để xuất → tránh xuất "ảo" làm lệch tồn kho
+        for (let idx = 0; idx < invItems.length; idx++) {
+          const item = invItems[idx]!
+          const key = item.name.toLowerCase().trim()
+
+          // Kiểm tra manual alloc nếu user đã chọn lô thủ công
+          if (showAllocFor.has(idx)) {
+            const alloc = manualAlloc[idx] || {}
+            const totalAllocated = Object.values(alloc).reduce((s, v) => s + (parseFloat(v) || 0), 0)
+            if (totalAllocated > 0 && Math.abs(totalAllocated - item.amount) > 0.001) {
+              violations.push(
+                `"${item.name}": phân bổ thủ công ${fmtNum(totalAllocated)} nhưng số lượng xuất là ${fmtNum(item.amount)}. Vui lòng điều chỉnh cho khớp.`
+              )
+            }
+            // Kiểm tra từng lô không vượt tồn
+            const batches = itemBatchData[key] || []
+            for (const [bIdStr, qStr] of Object.entries(alloc)) {
+              const qty = parseFloat(qStr) || 0
+              if (qty <= 0) continue
+              const batch = batches.find(b => b.id === parseInt(bIdStr))
+              if (batch) {
+                const avail = parseFloat(batch.remaining_qty.toFixed(2))
+                if (qty > avail) {
+                  violations.push(`"${item.name}": lô ${batch.inv_code} chỉ còn ${fmtNum(avail)}, bạn phân bổ ${fmtNum(qty)}.`)
+                }
+              }
+            }
+            continue  // đã kiểm tra manual, skip FIFO check
+          }
+
+          // FIFO: kiểm tra tổng tồn kho
+          const avail = totalAvail[key]
+          if (!avail) {
             violations.push(
               `"${item.name}": KHÔNG CÓ lô tồn kho. Tạo hoá đơn nhập trước khi xuất, ` +
               `hoặc liên hệ admin chạy SQL khởi tạo lô (init_batches_for_existing_stock.sql).`
             )
             continue
           }
-          const batchEff = parseFloat(batch.remaining_qty.toFixed(2))
-          if (item.amount > batchEff) {
+          const totalEff = parseFloat(avail.total.toFixed(2))
+          if (item.amount > totalEff) {
             violations.push(
-              `"${item.name}": lô ${batch.inv_code} chỉ còn ${fmtNum(batchEff)} ${batch.unit}. ` +
-              `Xuất tối đa ${fmtNum(batchEff)} để hết lô này, rồi tạo hoá đơn mới cho ${fmtNum(item.amount - batchEff)} còn lại.`
+              `"${item.name}": tổng tồn kho chỉ còn ${fmtNum(totalEff)} ${avail.unit}, bạn muốn xuất ${fmtNum(item.amount)} ${avail.unit}.`
             )
           }
         }
 
         if (violations.length > 0) {
-          toast('Không thể xuất vượt lô hiện tại:\n' + violations.join('\n'), 'error')
+          toast('Kiểm tra lại số lượng:\n' + violations.join('\n'), 'error')
           return
         }
       }
@@ -652,8 +743,30 @@ export default function InvoicesPage() {
             toast('Đã lưu hoá đơn & tạo lô hàng')
           }
         } else {
-          await deductBatchesFifo(invItems as { name: string; amount: number; unit: string }[], data.id)
-          toast('Đã lưu hoá đơn & phân bổ lô FIFO')
+          // Tách items có phân bổ thủ công và items dùng FIFO
+          const castInv = invItems as { name: string; amount: number; unit: string }[]
+          const fifoItems: typeof castInv = []
+          const hasManualAlloc = castInv.some((_, idx) =>
+            showAllocFor.has(idx) && Object.values(manualAlloc[idx] || {}).some(v => parseFloat(v) > 0)
+          )
+
+          if (hasManualAlloc) {
+            for (let idx = 0; idx < castInv.length; idx++) {
+              const alloc = manualAlloc[idx] || {}
+              const manualTotal = Object.values(alloc).reduce((s, v) => s + (parseFloat(v) || 0), 0)
+              if (!showAllocFor.has(idx) || manualTotal <= 0) {
+                fifoItems.push(castInv[idx]!)
+              }
+            }
+            await Promise.all([
+              fifoItems.length > 0 ? deductBatchesFifo(fifoItems, data.id) : Promise.resolve(),
+              deductBatchesManual(castInv, manualAlloc, data.id),
+            ])
+            toast('Đã lưu hoá đơn & phân bổ lô (thủ công + FIFO)')
+          } else {
+            await deductBatchesFifo(castInv, data.id)
+            toast('Đã lưu hoá đơn & phân bổ lô FIFO')
+          }
         }
         setInvoices(prev => [data as Invoice, ...prev])
         setCode(genCode())
@@ -662,6 +775,8 @@ export default function InvoicesPage() {
         setImageUrl('')
         setItems([{ name: '', amount: 0, unit: allUnits[0] || UNITS[0], price: 0, mfg_date: '', exp_date: '', recipeId: 0, qty: 0 }])
         setBatchPreviews({})
+        setManualAlloc({})
+        setShowAllocFor(new Set())
       } else if (error) {
         toast('Lỗi lưu: ' + error.message, 'error')
       }
@@ -915,36 +1030,105 @@ export default function InvoicesPage() {
               </table>
             </div>
 
-            {/* FIFO batch preview (chỉ hiện khi xuất) */}
+            {/* Phân bổ lô hàng (chỉ hiện khi xuất và có dữ liệu) */}
             {hasBatchPreview && (
-              <div className="mb-3 p-3 bg-amber-50 border border-amber-200 rounded-xl">
-                <p className="text-[11px] font-semibold text-amber-800 mb-2">📦 Phân bổ lô hàng theo FIFO</p>
+              <div className="mb-3 space-y-2">
                 {items.map((item, idx) => {
                   const allocs = batchPreviews[idx]
                   if (!allocs || !item.name.trim()) return null
+                  const batches = itemBatchData[item.name.trim().toLowerCase()] || []
+                  const isManual = showAllocFor.has(idx)
+                  const alloc = manualAlloc[idx] || {}
+                  const totalAllocated = Object.values(alloc).reduce((s, v) => s + (parseFloat(v) || 0), 0)
+                  const qty = item.amount || item.qty
+                  const matched = Math.abs(totalAllocated - qty) < 0.001
+
                   return (
-                    <div key={idx} className="mb-2 last:mb-0">
-                      <p className="text-[11px] font-medium text-amber-700 mb-0.5">{item.name}:</p>
-                      <div className="ml-2 space-y-0.5">
-                        {allocs.map((a, ai) => (
-                          a.insufficient
-                            ? <p key={ai} className="text-[11px] text-red-600">⚠ Không có lô tồn kho cho sản phẩm này</p>
-                          : a.exceedsBatch
-                            ? <div key={ai} className="rounded-lg bg-red-50 border border-red-200 px-2 py-1.5">
-                                <p className="text-[11px] font-semibold text-red-700">🚫 Vượt quá lô {a.inv_code} ({fmtDate(a.inv_date)})</p>
-                                <p className="text-[11px] text-red-600 mt-0.5">
-                                  Lô này chỉ còn <strong>{fmtNum(a.maxQty!)} {a.unit}</strong>, bạn muốn xuất <strong>{fmtNum(a.qty)} {a.unit}</strong>.
-                                </p>
-                                <p className="text-[11px] text-red-600">
-                                  ① Xuất HĐ này với tối đa <strong>{fmtNum(a.maxQty!)} {a.unit}</strong> để hết lô {a.inv_code}.<br/>
-                                  ② Tạo HĐ mới cho <strong>{fmtNum(a.qty - a.maxQty!)} {a.unit}</strong> còn lại từ lô tiếp theo.
-                                </p>
-                              </div>
-                            : <p key={ai} className="text-[11px] text-amber-700">
-                                ✓ Lô <span className="font-medium">{a.inv_code}</span> ({fmtDate(a.inv_date)}): {fmtNum(a.qty)} {a.unit} × {fmtPrice(a.price)} = <span className="font-semibold">{fmtPrice(a.qty * a.price)}</span>
-                              </p>
-                        ))}
+                    <div key={idx} className="p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                      {/* Header row */}
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-[11px] font-semibold text-amber-800">📦 {item.name}</p>
+                        {batches.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => setShowAllocFor(prev => {
+                              const n = new Set(prev)
+                              if (n.has(idx)) {
+                                n.delete(idx)
+                                // xoá alloc khi tắt manual
+                                setManualAlloc(p => { const np = { ...p }; delete np[idx]; return np })
+                              } else {
+                                n.add(idx)
+                              }
+                              return n
+                            })}
+                            className={`text-[10px] px-2 py-0.5 rounded-full border cursor-pointer transition-all ${
+                              isManual
+                                ? 'bg-amber-600 text-white border-amber-600'
+                                : 'bg-white text-amber-700 border-amber-400 hover:bg-amber-100'
+                            }`}
+                          >
+                            {isManual ? '✓ Thủ công' : '⚙ Chọn lô thủ công'}
+                          </button>
+                        )}
                       </div>
+
+                      {isManual ? (
+                        /* Manual allocation rows */
+                        <div>
+                          <div className="space-y-1.5 mb-2">
+                            {batches.map(b => {
+                              const avail = parseFloat(b.remaining_qty.toFixed(2))
+                              const val = alloc[b.id] ?? ''
+                              const enteredQty = parseFloat(val) || 0
+                              const overLimit = enteredQty > avail
+                              return (
+                                <div key={b.id} className="flex items-center gap-2">
+                                  <div className="flex-1 text-[11px] text-amber-700 min-w-0">
+                                    <span className="font-medium">{b.inv_code}</span>
+                                    <span className="text-[10px] text-amber-600 ml-1">({fmtDate(b.inv_date)})</span>
+                                    <span className="ml-1">còn <strong>{fmtNum(avail)}</strong> {b.unit}</span>
+                                    {b.price > 0 && <span className="ml-1 text-amber-500">@ {fmtPrice(b.price)}</span>}
+                                  </div>
+                                  <input
+                                    type="number"
+                                    min={0}
+                                    max={avail}
+                                    step="any"
+                                    value={val}
+                                    onChange={e => setManualAlloc(prev => ({
+                                      ...prev,
+                                      [idx]: { ...(prev[idx] || {}), [b.id]: e.target.value }
+                                    }))}
+                                    placeholder="0"
+                                    className={`w-20 px-2 py-1 text-xs border rounded bg-white text-[#3d1f0a] outline-none transition-colors ${
+                                      overLimit ? 'border-red-400 focus:border-red-500' : 'border-amber-300 focus:border-[#c8773a]'
+                                    }`}
+                                  />
+                                  <span className="text-[10px] text-amber-600 w-6 flex-shrink-0">{b.unit}</span>
+                                </div>
+                              )
+                            })}
+                          </div>
+                          {/* Summary */}
+                          <div className={`text-[11px] font-semibold ${matched ? 'text-green-700' : 'text-orange-700'}`}>
+                            Tổng phân bổ: {fmtNum(totalAllocated)} / {fmtNum(qty)} {item.unit}
+                            {matched ? ' ✓' : ` (còn thiếu ${fmtNum(qty - totalAllocated)})`}
+                          </div>
+                        </div>
+                      ) : (
+                        /* FIFO preview */
+                        <div className="space-y-0.5">
+                          {allocs.map((a, ai) => (
+                            a.insufficient
+                              ? <p key={ai} className="text-[11px] text-red-600">⚠ Không đủ tồn kho ({fmtNum(a.qty)} {a.unit} còn thiếu)</p>
+                              : <p key={ai} className="text-[11px] text-amber-700">
+                                  ✓ Lô <span className="font-medium">{a.inv_code}</span> ({fmtDate(a.inv_date)}): {fmtNum(a.qty)} {a.unit}
+                                  {a.price > 0 && <> × {fmtPrice(a.price)} = <span className="font-semibold">{fmtPrice(a.qty * a.price)}</span></>}
+                                </p>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )
                 })}
