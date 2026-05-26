@@ -261,6 +261,7 @@ export default function InvoicesPage() {
   const [openInvs, setOpenInvs] = useState<Set<number>>(new Set())
   const [imageUrl, setImageUrl] = useState('')
   const [search, setSearch] = useState('')
+  const [loadingInvList, setLoadingInvList] = useState(false)
 
   // batch state
   const [tab, setTab] = useState<'invoices' | 'batches'>('invoices')
@@ -278,21 +279,29 @@ export default function InvoicesPage() {
   useEffect(() => { loadInvoices() }, [])
 
   const loadInvoices = async () => {
-    const PAGE = 1000
-    const all: Invoice[] = []
-    let from = 0
-    while (true) {
-      const { data, error } = await sb
-        .from('invoices').select('*')
-        .order('inv_date', { ascending: false })
-        .order('id',       { ascending: false })
-        .range(from, from + PAGE - 1)
-      if (error || !data || data.length === 0) break
-      all.push(...(data as Invoice[]))
-      if (data.length < PAGE) break   // trang cuối → dừng
-      from += PAGE
+    setLoadingInvList(true)
+    try {
+      const PAGE = 1000
+      const all: Invoice[] = []
+      let from = 0
+      while (true) {
+        const { data, error } = await sb
+          .from('invoices').select('*')
+          .order('inv_date', { ascending: false })
+          .order('id',       { ascending: false })
+          .range(from, from + PAGE - 1)
+        if (error) { toast('Lỗi tải danh sách hoá đơn: ' + error.message, 'error'); break }
+        if (!data || data.length === 0) break
+        all.push(...(data as Invoice[]))
+        if (data.length < PAGE) break   // trang cuối → dừng
+        from += PAGE
+      }
+      setInvoices(all)
+    } catch (e) {
+      toast('Lỗi tải hoá đơn: ' + (e as Error).message, 'error')
+    } finally {
+      setLoadingInvList(false)
     }
-    setInvoices(all)
   }
 
   // ─── FIFO batch preview (chỉ cho xuất) ───────────────────
@@ -1159,21 +1168,34 @@ export default function InvoicesPage() {
           <div className="bg-[#fffaf4] rounded-2xl p-5 border border-[#f5e6cc] shadow-[0_4px_20px_rgba(200,119,58,0.06)]">
             {/* Header */}
             <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-              <h3 className="text-sm font-semibold text-[#3d1f0a]">
+              <h3 className="text-sm font-semibold text-[#3d1f0a] flex items-center gap-2">
                 Danh sách hoá đơn
-                {invoices.length > 0 && (
-                  <span className="ml-2 text-xs font-normal text-[#8b5e3c]">
-                    {filteredInvoices.length !== invoices.length
-                      ? `(${filteredInvoices.length}/${invoices.length})`
-                      : `(${invoices.length})`}
-                  </span>
-                )}
+                {loadingInvList
+                  ? <span className="text-xs font-normal text-[#8b5e3c]/60 animate-pulse">⏳ Đang tải...</span>
+                  : invoices.length > 0 && (
+                    <span className="text-xs font-normal text-[#8b5e3c]">
+                      {filteredInvoices.length !== invoices.length
+                        ? `(${filteredInvoices.length}/${invoices.length})`
+                        : `(${invoices.length})`}
+                    </span>
+                  )
+                }
               </h3>
-              {hasActiveFilter && (
-                <button onClick={clearFilters} className="text-xs text-[#c8773a] hover:underline cursor-pointer">
-                  ✕ Xoá bộ lọc
+              <div className="flex items-center gap-2">
+                {hasActiveFilter && (
+                  <button onClick={clearFilters} className="text-xs text-[#c8773a] hover:underline cursor-pointer">
+                    ✕ Xoá bộ lọc
+                  </button>
+                )}
+                <button
+                  onClick={loadInvoices}
+                  disabled={loadingInvList}
+                  title="Tải lại danh sách"
+                  className="text-xs text-[#8b5e3c]/50 hover:text-[#c8773a] disabled:opacity-40 cursor-pointer transition-colors"
+                >
+                  🔄
                 </button>
-              )}
+              </div>
             </div>
 
             {/* Filter bar */}
@@ -1250,7 +1272,20 @@ export default function InvoicesPage() {
               </div>
             </div>
             {invoices.length === 0 ? (
-              <div className="text-sm text-[#8b5e3c] text-center py-4">Chưa có hoá đơn nào</div>
+              <div className="text-center py-6">
+                {loadingInvList
+                  ? <p className="text-sm text-[#8b5e3c]/60 animate-pulse">⏳ Đang tải danh sách...</p>
+                  : <>
+                      <p className="text-sm text-[#8b5e3c] mb-2">Chưa có hoá đơn nào</p>
+                      <button
+                        onClick={loadInvoices}
+                        className="text-xs text-[#c8773a] hover:underline cursor-pointer"
+                      >
+                        🔄 Tải lại
+                      </button>
+                    </>
+                }
+              </div>
             ) : filteredInvoices.length === 0 ? (
               <div className="text-sm text-[#8b5e3c] text-center py-4">Không tìm thấy hoá đơn phù hợp</div>
             ) : (
