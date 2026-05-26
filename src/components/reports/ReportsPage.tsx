@@ -518,8 +518,9 @@ export default function ReportsPage() {
       const fifoXuatTien: Record<string, number> = {}
       const periodOutIds = periodInvs.filter(inv => inv.type === 'out').map(inv => inv.id)
       if (periodOutIds.length > 0) {
-        // Chunk IDs to avoid URL length limit, then paginate each chunk
-        const CHUNK = 200; const PAGE = 1000
+        // Chunk IDs to avoid URL length limit (PostgREST GET URL ~2KB max)
+        // CHUNK=50: 50 IDs × ~5 chars = ~250 chars, tổng URL ~500 chars — an toàn
+        const CHUNK = 50; const PAGE = 1000
         for (let ci = 0; ci < periodOutIds.length; ci += CHUNK) {
           const chunk = periodOutIds.slice(ci, ci + CHUNK)
           let from = 0
