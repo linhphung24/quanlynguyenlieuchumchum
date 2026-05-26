@@ -49,7 +49,8 @@ interface NXTRow {
   code: string; name: string; unit: string; donGia: number
   tonDau: number; nhapSL: number; nhapTien: number
   xuatSL: number; xuatTien: number; tonCuoi: number; tonCuoiTien: number
-  hasAdj: boolean  // true = tonDau lấy từ khai báo thủ công
+  hasAdj: boolean       // true = tonDau lấy từ khai báo thủ công
+  formulaTonDau: number // tonDau theo công thức (trước khi adj override)
 }
 interface Batch {
   id: number; inv_id: number; inv_code: string; inv_date: string
@@ -586,6 +587,7 @@ export default function ReportsPage() {
           tonCuoi,
           tonCuoiTien: Math.max(0, tonCuoi) * (p.cost_price || 0),
           hasAdj: false,
+          formulaTonDau: tonDau,  // lưu trước khi adj override
         })
       }
 
@@ -1013,11 +1015,8 @@ export default function ReportsPage() {
                           <th className="border border-amber-200 px-2 py-1.5 text-center w-8">STT</th>
                           <th className="border border-amber-200 px-2 py-1.5 text-left">Tên sản phẩm</th>
                           <th className="border border-amber-200 px-2 py-1.5 text-center w-16">ĐVT</th>
-                          <th className="border border-amber-200 px-2 py-1.5 text-right w-32">
+                          <th className="border border-amber-200 px-2 py-1.5 text-right w-40">
                             Tồn đầu khai báo
-                          </th>
-                          <th className="border border-amber-200 px-2 py-1.5 text-right w-28 text-amber-700/70">
-                            Công thức (gốc)
                           </th>
                         </tr>
                       </thead>
@@ -1032,14 +1031,7 @@ export default function ReportsPage() {
                           .map((p, i) => {
                             const key = p.name.toLowerCase().trim()
                             const nxtRow = nxtRows.find(r => r.name.toLowerCase().trim() === key)
-                            // Công thức gốc (tonDau trước khi adj)
-                            const formulaTonDau = nxtRow
-                              ? (nxtRow.hasAdj
-                                  ? nxtOpeningAdj[key] !== undefined
-                                    ? nxtRow.tonDau  // adj applied
-                                    : nxtRow.tonDau
-                                  : nxtRow.tonDau)
-                              : null
+                            const formulaTonDau = nxtRow ? nxtRow.formulaTonDau : null
                             return (
                               <tr key={p.id} className={i % 2 === 0 ? 'bg-white' : 'bg-amber-50/30'}>
                                 <td className="border border-amber-100 px-2 py-1 text-center text-[#8b5e3c]/50">{i + 1}</td>
@@ -1052,17 +1044,10 @@ export default function ReportsPage() {
                                   <input
                                     type="number" min={0} step="0.01"
                                     value={nxtOpeningLocal[key] ?? ''}
-                                    placeholder="0"
+                                    placeholder={formulaTonDau !== null ? String(formulaTonDau) : '0'}
                                     onChange={e => setNxtOpeningLocal(prev => ({ ...prev, [key]: e.target.value }))}
                                     className="w-full text-right px-2 py-1 rounded border border-amber-200 focus:outline-none focus:border-amber-400 text-xs bg-white"
                                   />
-                                </td>
-                                <td className="border border-amber-100 px-2 py-1 text-right text-[#8b5e3c]/50 italic">
-                                  {formulaTonDau !== null ? (
-                                    <span className={formulaTonDau < 0 ? 'text-red-400' : ''}>
-                                      {formulaTonDau.toFixed(2)}
-                                    </span>
-                                  ) : '—'}
                                 </td>
                               </tr>
                             )
