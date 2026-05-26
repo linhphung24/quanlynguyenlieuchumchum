@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useRef } from 'react'
 import { useApp } from '@/contexts/AppContext'
 import { Invoice } from '@/types'
 import { fmtNum, fmtPrice, fmtDate, todayStr } from '@/lib/utils'
@@ -457,6 +457,7 @@ export default function ReportsPage() {
   const [showKhaiBao,     setShowKhaiBao]     = useState(false)
   const [kbSearch,        setKbSearch]        = useState('')
   const [savingAdj,       setSavingAdj]       = useState(false)
+  const kbImportRef = useRef<HTMLInputElement>(null)
 
   // ── Chi tiết state ───────────────────────────────────────────
   const [cdProductId,   setCdProductId]   = useState<number | null>(null)
@@ -658,6 +659,85 @@ export default function ReportsPage() {
     } finally {
       setNxtLoading(false)
     }
+  }
+
+  // ── Tải file mẫu khai báo tồn đầu ───────────────────────────
+  const downloadKbTemplate = () => {
+    if (!adjRefDate) return
+    const header = ['STT', 'Tên sản phẩm', 'Mã SP', 'ĐVT', 'Tồn đầu khai báo']
+    const rows = allProducts
+      .filter(p => p.is_active)
+      .sort((a, b) => a.name.localeCompare(b.name, 'vi'))
+      .map((p, i) => {
+        const key = p.name.toLowerCase().trim()
+        const val = nxtOpeningLocal[key]
+        return [
+          i + 1,
+          p.name,
+          p.code || '',
+          p.unit,
+          val !== undefined && val !== '' ? parseFloat(val) : '',  // giá trị hiện tại hoặc trống
+        ]
+      })
+    const ws = XLSX.utils.aoa_to_sheet([header, ...rows])
+    // Khoá cột A-D (chỉ cho sửa cột E)
+    ws['!cols'] = [{ wch: 6 }, { wch: 40 }, { wch: 16 }, { wch: 10 }, { wch: 18 }]
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'TonDauKy')
+    XLSX.writeFile(wb, `MauKhaiBaoTonDau_T${adjRefDate.m}_${adjRefDate.y}.xlsx`)
+  }
+
+  // ── Import Excel khai báo tồn đầu ────────────────────────────
+  const importKbExcel = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const reader = new FileReader()
+    reader.onload = (ev) => {
+      try {
+        const data = new Uint8Array(ev.target?.result as ArrayBuffer)
+        const wb = XLSX.read(data, { type: 'array' })
+        const ws = wb.Sheets[wb.SheetNames[0]!]
+        if (!ws) { toast('File không hợp lệ', 'error'); return }
+        const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' }) as unknown[][]
+
+        // Tìm header row (chứa "Tên sản phẩm")
+        let headerIdx = -1
+        for (let i = 0; i < Math.min(rows.length, 5); i++) {
+          const row = rows[i] as string[]
+          if (row.some(c => String(c).toLowerCase().includes('tên sản phẩm'))) { headerIdx = i; break }
+        }
+        if (headerIdx === -1) { toast('Không tìm thấy cột "Tên sản phẩm" trong file', 'error'); return }
+
+        const header = (rows[headerIdx] as string[]).map(c => String(c).toLowerCase().trim())
+        const nameCol  = header.findIndex(h => h.includes('tên sản phẩm'))
+        const valCol   = header.findIndex(h => h.includes('tồn đầu'))
+        if (nameCol === -1 || valCol === -1) { toast('File thiếu cột "Tên sản phẩm" hoặc "Tồn đầu khai báo"', 'error'); return }
+
+        let matched = 0, skipped = 0
+        const updates: Record<string, string> = {}
+        for (let i = headerIdx + 1; i < rows.length; i++) {
+          const row = rows[i] as unknown[]
+          const name = String(row[nameCol] ?? '').trim()
+          const raw  = row[valCol]
+          if (!name) continue
+          const key = name.toLowerCase().trim()
+          const product = allProducts.find(p => p.name.toLowerCase().trim() === key)
+          if (!product) { skipped++; continue }
+          const qty = raw === '' || raw === null || raw === undefined ? '' : String(parseFloat(String(raw)) || 0)
+          updates[key] = qty
+          matched++
+        }
+
+        setNxtOpeningLocal(prev => ({ ...prev, ...updates }))
+        toast(`✅ Đã import ${matched} sản phẩm${skipped > 0 ? ` (bỏ qua ${skipped} không tìm thấy)` : ''}. Nhấn Lưu khai báo để lưu.`)
+      } catch {
+        toast('Lỗi đọc file Excel', 'error')
+      } finally {
+        // Reset input để có thể chọn lại cùng file
+        if (kbImportRef.current) kbImportRef.current.value = ''
+      }
+    }
+    reader.readAsArrayBuffer(file)
   }
 
   // ── Lưu khai báo tồn đầu kỳ ─────────────────────────────────
@@ -990,6 +1070,27 @@ export default function ReportsPage() {
                         type="text" placeholder="🔍 Tìm sản phẩm..." value={kbSearch}
                         onChange={e => setKbSearch(e.target.value)}
                         className="border border-amber-300 rounded-lg px-3 py-1.5 text-xs bg-white focus:outline-none focus:border-amber-500 w-44" />
+                      {/* Tải file mẫu */}
+                      <button
+                        onClick={downloadKbTemplate}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white border border-amber-400 text-amber-700 text-xs font-medium hover:bg-amber-50 cursor-pointer"
+                      >
+                        📥 Tải file mẫu
+                      </button>
+                      {/* Import Excel */}
+                      <input
+                        ref={kbImportRef}
+                        type="file"
+                        accept=".xlsx,.xls"
+                        className="hidden"
+                        onChange={importKbExcel}
+                      />
+                      <button
+                        onClick={() => kbImportRef.current?.click()}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg bg-white border border-amber-400 text-amber-700 text-xs font-medium hover:bg-amber-50 cursor-pointer"
+                      >
+                        📤 Import Excel
+                      </button>
                       <button
                         onClick={() => saveOpeningAdj(true)}
                         disabled={savingAdj}
