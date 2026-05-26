@@ -700,36 +700,56 @@ export default function ReportsPage() {
         if (!ws) { toast('File không hợp lệ', 'error'); return }
         const rows = XLSX.utils.sheet_to_json(ws, { header: 1, defval: '' }) as unknown[][]
 
-        // Tìm header row (chứa "Tên sản phẩm")
+        // Tìm header row (chứa "Tên sản phẩm"), dò tối đa 10 dòng đầu
         let headerIdx = -1
-        for (let i = 0; i < Math.min(rows.length, 5); i++) {
-          const row = rows[i] as string[]
+        for (let i = 0; i < Math.min(rows.length, 10); i++) {
+          const row = rows[i] as unknown[]
           if (row.some(c => String(c).toLowerCase().includes('tên sản phẩm'))) { headerIdx = i; break }
         }
         if (headerIdx === -1) { toast('Không tìm thấy cột "Tên sản phẩm" trong file', 'error'); return }
 
-        const header = (rows[headerIdx] as string[]).map(c => String(c).toLowerCase().trim())
-        const nameCol  = header.findIndex(h => h.includes('tên sản phẩm'))
-        const valCol   = header.findIndex(h => h.includes('tồn đầu'))
-        if (nameCol === -1 || valCol === -1) { toast('File thiếu cột "Tên sản phẩm" hoặc "Tồn đầu khai báo"', 'error'); return }
+        const header = (rows[headerIdx] as unknown[]).map(c => String(c).toLowerCase().trim())
+        const nameCol = header.findIndex(h => h.includes('tên sản phẩm'))
+
+        // Ưu tiên cột giá trị: "tồn đầu khai báo" → "tồn cuối" → "tồn đầu"
+        let valCol = header.findIndex(h => h.includes('tồn đầu khai báo'))
+        let usedColLabel = 'Tồn đầu khai báo'
+        if (valCol === -1) {
+          valCol = header.findIndex(h => h.includes('tồn cuối'))
+          usedColLabel = 'Tồn cuối'
+        }
+        if (valCol === -1) {
+          valCol = header.findIndex(h => h.includes('tồn đầu'))
+          usedColLabel = 'Tồn đầu'
+        }
+
+        if (nameCol === -1 || valCol === -1) {
+          toast('File thiếu cột "Tên sản phẩm" hoặc cột tồn kho', 'error'); return
+        }
+
+        // Helper: parse số kiểu VN (dấu phẩy = thập phân), âm → 0
+        const parseQty = (raw: unknown): string => {
+          if (raw === '' || raw === null || raw === undefined) return ''
+          const n = parseFloat(String(raw).replace(',', '.').trim())
+          if (isNaN(n)) return '0'
+          return String(Math.max(0, n))
+        }
 
         let matched = 0, skipped = 0
         const updates: Record<string, string> = {}
         for (let i = headerIdx + 1; i < rows.length; i++) {
           const row = rows[i] as unknown[]
           const name = String(row[nameCol] ?? '').trim()
-          const raw  = row[valCol]
           if (!name) continue
           const key = name.toLowerCase().trim()
           const product = allProducts.find(p => p.name.toLowerCase().trim() === key)
           if (!product) { skipped++; continue }
-          const qty = raw === '' || raw === null || raw === undefined ? '' : String(parseFloat(String(raw)) || 0)
-          updates[key] = qty
+          updates[key] = parseQty(row[valCol])
           matched++
         }
 
         setNxtOpeningLocal(prev => ({ ...prev, ...updates }))
-        toast(`✅ Đã import ${matched} sản phẩm${skipped > 0 ? ` (bỏ qua ${skipped} không tìm thấy)` : ''}. Nhấn Lưu khai báo để lưu.`)
+        toast(`✅ Đã import ${matched} sản phẩm (cột: ${usedColLabel})${skipped > 0 ? ` — bỏ qua ${skipped} không khớp tên` : ''}. Nhấn Lưu khai báo để lưu.`)
       } catch {
         toast('Lỗi đọc file Excel', 'error')
       } finally {
@@ -751,8 +771,15 @@ export default function ReportsPage() {
         ? Object.fromEntries(allProducts.filter(p => p.is_active).map(p => [p.name.toLowerCase().trim(), '0']))
         : nxtOpeningLocal
 
+      // Dedup theo tên (case-insensitive) để tránh lỗi ON CONFLICT duplicate
+      const seen = new Set<string>()
       const upsertData = allProducts
         .filter(p => p.is_active)
+        .filter(p => {
+          const k = p.name.toLowerCase().trim()
+          if (seen.has(k)) return false
+          seen.add(k); return true
+        })
         .map(p => ({
           product_name: p.name,
           year:         adjRefDate.y,
