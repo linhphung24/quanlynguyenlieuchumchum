@@ -1299,17 +1299,15 @@ export default function ReportsPage() {
                                 </td>
                                 {/* Tồn đầu → empty */}
                                 <td className="border border-[#e8ddd0] px-2 py-1"></td>
-                                {/* Nhập SL → chỉ hiện nếu lô nhập TRONG kỳ */}
+                                {/* Nhập SL → số lượng nhập của lô */}
                                 <td className="border border-[#e8ddd0] px-2 py-1 text-right text-[11px] text-green-700 bg-green-50/30">
-                                  {b.inv_date >= nxtFrom && b.inv_date <= nxtTo
-                                    ? fmtNum(b.quantity) : ''}
+                                  {fmtNum(b.quantity)}
                                 </td>
-                                {/* Nhập tiền → chỉ hiện nếu lô nhập TRONG kỳ */}
+                                {/* Nhập tiền → qty × giá lô */}
                                 <td className="border border-[#e8ddd0] px-2 py-1 text-right text-[11px] text-green-700 bg-green-50/30">
-                                  {b.inv_date >= nxtFrom && b.inv_date <= nxtTo && b.price > 0
-                                    ? Number(b.quantity * b.price).toLocaleString('vi-VN') : ''}
+                                  {b.price > 0 ? Number(b.quantity * b.price).toLocaleString('vi-VN') : ''}
                                 </td>
-                                {/* Xuất SL → tổng đã dùng từ lô này (có thể nhiều kỳ) */}
+                                {/* Xuất SL → tổng đã dùng từ lô này */}
                                 <td className="border border-[#e8ddd0] px-2 py-1 text-right text-[11px] text-orange-700 bg-orange-50/30">
                                   {qtyUsed > 0.001 ? fmtNum(qtyUsed) : ''}
                                 </td>
