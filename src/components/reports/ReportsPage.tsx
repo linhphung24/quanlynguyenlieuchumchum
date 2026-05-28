@@ -514,35 +514,52 @@ export default function ReportsPage() {
         qFrom += PAGE
       }
 
-      // ── FIFO xuất tiền: paginated batch_deductions ────────────
+      // ── FIFO xuất tiền: 2-step (tránh PostgREST join cần FK) ──
+      // Bước 1: Thu thập batch_deductions cho tất cả hoá đơn xuất trong kỳ
       const fifoXuatTien: Record<string, number> = {}
       const periodOutIds = periodInvs.filter(inv => inv.type === 'out').map(inv => inv.id)
       if (periodOutIds.length > 0) {
-        // Chunk IDs to avoid URL length limit (PostgREST GET URL ~2KB max)
-        // CHUNK=50: 50 IDs × ~5 chars = ~250 chars, tổng URL ~500 chars — an toàn
+        type DeductRow = { batch_id: number; qty_used: number; batch_price: number }
+        const allDeductions: DeductRow[] = []
         const CHUNK = 50; const PAGE = 1000
         for (let ci = 0; ci < periodOutIds.length; ci += CHUNK) {
           const chunk = periodOutIds.slice(ci, ci + CHUNK)
           let from = 0
           while (true) {
-            const { data: deductData } = await sb
+            const { data } = await sb
               .from('batch_deductions')
-              .select('qty_used, batch_price, batches!batch_id(product_name)')
+              .select('batch_id, qty_used, batch_price')
               .in('inv_id', chunk)
               .range(from, from + PAGE - 1)
-            const rows = (deductData || []) as unknown as {
-              qty_used: number; batch_price: number
-              batches: { product_name: string } | null
-            }[]
-            for (const d of rows) {
-              const pName = d.batches?.product_name
-              if (!pName) continue
-              const key = pName.toLowerCase().trim()
-              fifoXuatTien[key] = (fifoXuatTien[key] || 0) + d.qty_used * d.batch_price
-            }
-            if (rows.length < PAGE) break
+            if (!data || data.length === 0) break
+            allDeductions.push(...(data as DeductRow[]))
+            if (data.length < PAGE) break
             from += PAGE
           }
+        }
+
+        // Bước 2: Lấy product_name cho các batch_id duy nhất
+        const uniqueBatchIds = [...new Set(allDeductions.map(d => d.batch_id))]
+        const batchProductMap: Record<number, string> = {}
+        if (uniqueBatchIds.length > 0) {
+          const BCHUNK = 200
+          for (let ci = 0; ci < uniqueBatchIds.length; ci += BCHUNK) {
+            const { data: bData } = await sb
+              .from('batches')
+              .select('id, product_name')
+              .in('id', uniqueBatchIds.slice(ci, ci + BCHUNK))
+            for (const b of (bData || []) as { id: number; product_name: string }[]) {
+              batchProductMap[b.id] = b.product_name
+            }
+          }
+        }
+
+        // Bước 3: Tính tổng xuất tiền theo sản phẩm
+        for (const d of allDeductions) {
+          const pName = batchProductMap[d.batch_id]
+          if (!pName) continue
+          const key = pName.toLowerCase().trim()
+          fifoXuatTien[key] = (fifoXuatTien[key] || 0) + d.qty_used * d.batch_price
         }
       }
 
@@ -1282,19 +1299,21 @@ export default function ReportsPage() {
                                 </td>
                                 {/* Tồn đầu → empty */}
                                 <td className="border border-[#e8ddd0] px-2 py-1"></td>
-                                {/* Nhập SL → batch initial qty */}
+                                {/* Nhập SL → chỉ hiện nếu lô nhập TRONG kỳ */}
                                 <td className="border border-[#e8ddd0] px-2 py-1 text-right text-[11px] text-green-700 bg-green-50/30">
-                                  {fmtNum(b.quantity)}
+                                  {b.inv_date >= nxtFrom && b.inv_date <= nxtTo
+                                    ? fmtNum(b.quantity) : ''}
                                 </td>
-                                {/* Nhập tiền → qty × cost_price */}
+                                {/* Nhập tiền → chỉ hiện nếu lô nhập TRONG kỳ */}
                                 <td className="border border-[#e8ddd0] px-2 py-1 text-right text-[11px] text-green-700 bg-green-50/30">
-                                  {b.price > 0 ? Number(b.quantity * b.price).toLocaleString('vi-VN') : ''}
+                                  {b.inv_date >= nxtFrom && b.inv_date <= nxtTo && b.price > 0
+                                    ? Number(b.quantity * b.price).toLocaleString('vi-VN') : ''}
                                 </td>
-                                {/* Xuất SL → qty used */}
+                                {/* Xuất SL → tổng đã dùng từ lô này (có thể nhiều kỳ) */}
                                 <td className="border border-[#e8ddd0] px-2 py-1 text-right text-[11px] text-orange-700 bg-orange-50/30">
                                   {qtyUsed > 0.001 ? fmtNum(qtyUsed) : ''}
                                 </td>
-                                {/* Xuất tiền → qty_used × cost */}
+                                {/* Xuất tiền → tổng đã dùng × giá */}
                                 <td className="border border-[#e8ddd0] px-2 py-1 text-right text-[11px] text-orange-700 bg-orange-50/30">
                                   {qtyUsed > 0.001 && b.price > 0
                                     ? Number(qtyUsed * b.price).toLocaleString('vi-VN') : ''}
