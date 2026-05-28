@@ -649,10 +649,12 @@ export default function ReportsPage() {
 
       setNxtRows(rows)
 
-      // ── Fetch all batches (paginated) for batch breakdown view ──
+      // ── Fetch batches TRONG KỲ (paginated) for batch breakdown view ──
       const allBatches: Batch[] = []; let bFrom = 0; const BPAGE = 1000
       while (true) {
         const { data: bd, error: be } = await sb.from('batches').select('*')
+          .gte('inv_date', nxtFrom)
+          .lte('inv_date', nxtTo)
           .order('product_name', { ascending: true })
           .order('inv_date',     { ascending: true })
           .order('id',           { ascending: true })
