@@ -14,7 +14,13 @@
       "Bash(git rebase *)",
       "Bash(git fetch *)",
       "Bash(git reset *)",
-      "Bash(git revert *)"
+      "Bash(git revert *)",
+      "Bash(git config *)",
+      "Bash(git commit -m 'feat: tinh remaining_qty tu batch_deductions thay vi gia tri luu san *)",
+      "Bash(ls -la .git/index)",
+      "Bash(df -h .)",
+      "Bash(echo \"exit: $?\")",
+      "Bash(chmod 644 .git/index)"
     ]
   }
 }

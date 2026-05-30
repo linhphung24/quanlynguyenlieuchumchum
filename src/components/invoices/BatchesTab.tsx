@@ -51,9 +51,11 @@ export default function BatchesTab() {
     setDbError(null)
     try {
       const PAGE = 1000
-      const all: Batch[] = []
-      let from = 0
+
+      // 1. Fetch tất cả batches (paginated)
+      const allBatches: Batch[] = []
       let fetchError: string | null = null
+      let from = 0
       while (true) {
         const { data, error } = await sb
           .from('batches')
@@ -64,12 +66,38 @@ export default function BatchesTab() {
           .range(from, from + PAGE - 1)
         if (error) { fetchError = error.message; break }
         if (!data || data.length === 0) break
-        all.push(...(data as Batch[]))
-        if (data.length < PAGE) break   // trang cuối → dừng
+        allBatches.push(...(data as Batch[]))
+        if (data.length < PAGE) break
         from += PAGE
       }
-      if (fetchError) setDbError(fetchError)
-      else setBatches(all)
+      if (fetchError) { setDbError(fetchError); return }
+
+      // 2. Fetch batch_deductions → tính Σ qty_used theo batch_id
+      const deductMap: Record<number, number> = {}
+      let dFrom = 0
+      while (true) {
+        const { data: dData } = await sb
+          .from('batch_deductions')
+          .select('batch_id, qty_used')
+          .range(dFrom, dFrom + PAGE - 1)
+        if (!dData || dData.length === 0) break
+        for (const d of dData as { batch_id: number; qty_used: number }[]) {
+          deductMap[d.batch_id] = (deductMap[d.batch_id] || 0) + d.qty_used
+        }
+        if (dData.length < PAGE) break
+        dFrom += PAGE
+      }
+
+      // 3. Ghi đè remaining_qty = quantity − Σ qty_used (tính từ HĐ, không dùng giá trị lưu sẵn)
+      const computed = allBatches.map(b => ({
+        ...b,
+        remaining_qty: parseFloat(
+          Math.max(0, b.quantity - (deductMap[b.id] || 0)).toFixed(2)
+        ),
+      }))
+      setBatches(computed)
+    } catch (e) {
+      setDbError((e as Error).message)
     } finally {
       setLoading(false)
     }
