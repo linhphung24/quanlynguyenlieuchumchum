@@ -41,6 +41,7 @@ export default function PersonnelPage() {
   const [search, setSearch] = useState('')
   const [filterDept, setFilterDept] = useState('')
   const [filterActive, setFilterActive] = useState<'all' | 'active' | 'inactive'>('active')
+  const [filterBirthMonth, setFilterBirthMonth] = useState(0) // 0 = tất cả tháng
 
   const [showForm, setShowForm] = useState(false)
   const [editing, setEditing] = useState<Partial<Personnel> | null>(null)
@@ -87,6 +88,7 @@ export default function PersonnelPage() {
     if (filterActive === 'active' && !p.is_active) return false
     if (filterActive === 'inactive' && p.is_active) return false
     if (filterDept && p.department !== filterDept) return false
+    if (filterBirthMonth > 0 && !isBirthdayThisMonth(p.dob, filterBirthMonth)) return false
     if (search) {
       const q = search.toLowerCase()
       if (
@@ -252,6 +254,18 @@ export default function PersonnelPage() {
           >
             <option value="">Tất cả bộ phận</option>
             {departments.map(d => <option key={d} value={d}>{d}</option>)}
+          </select>
+          <select
+            value={filterBirthMonth}
+            onChange={e => setFilterBirthMonth(Number(e.target.value))}
+            className={`px-3 py-2 border-[1.5px] rounded-lg text-xs bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors ${filterBirthMonth > 0 ? 'border-[#e8a030] text-[#8b5e3c] font-medium' : 'border-[#f5e6cc]'}`}
+          >
+            <option value={0}>🎂 Tất cả tháng</option>
+            {Array.from({ length: 12 }, (_, i) => i + 1).map(m => (
+              <option key={m} value={m}>
+                Tháng {m}{m === thisMonth ? ' (tháng này)' : ''}
+              </option>
+            ))}
           </select>
           <select
             value={filterActive}
