@@ -276,25 +276,47 @@ export default function InvoicesPage() {
   const [manualAlloc, setManualAlloc] = useState<Record<number, Record<number, string>>>({})  // itemIdx → {batchId: qty string}
   const [showAllocFor, setShowAllocFor] = useState<Set<number>>(new Set())
 
-  useEffect(() => { loadInvoices() }, [])
+  // ─── filter state (khai báo trước loadInvoices vì dùng làm default params) ──
+  const [filterType,     setFilterType]     = useState<'all' | 'in' | 'out'>('all')
+  const [filterDateFrom, setFilterDateFrom] = useState('')
+  const [filterDateTo,   setFilterDateTo]   = useState('')
 
-  const loadInvoices = async () => {
+  // ─── load invoices (server-side filter: type + date) ────────
+  // filterType / filterDateFrom / filterDateTo được push xuống DB
+  // search + filterProduct vẫn client-side (dataset đã nhỏ hơn nhiều)
+  const loadInvoices = useCallback(async (
+    type: 'all' | 'in' | 'out' = filterType,
+    from_date: string = filterDateFrom,
+    to_date:   string = filterDateTo,
+  ) => {
     setLoadingInvList(true)
     try {
-      const PAGE = 1000
-      const all: Invoice[] = []
-      let from = 0
+      let q = sb.from('invoices').select('*')
+        .order('inv_date', { ascending: false })
+        .order('id',       { ascending: false })
+
+      // Server-side filter type
+      if (type !== 'all') q = q.eq('type', type)
+
+      // Server-side filter date
+      if (from_date) q = q.gte('inv_date', from_date)
+      if (to_date)   q = q.lte('inv_date', to_date)
+
+      // Mặc định không có date filter → chỉ lấy 3 tháng gần nhất
+      if (!from_date && !to_date) {
+        const d = new Date()
+        d.setMonth(d.getMonth() - 3)
+        q = q.gte('inv_date', d.toISOString().slice(0, 10))
+      }
+
+      const PAGE = 500; const all: Invoice[] = []; let offset = 0
       while (true) {
-        const { data, error } = await sb
-          .from('invoices').select('*')
-          .order('inv_date', { ascending: false })
-          .order('id',       { ascending: false })
-          .range(from, from + PAGE - 1)
+        const { data, error } = await q.range(offset, offset + PAGE - 1)
         if (error) { toast('Lỗi tải danh sách hoá đơn: ' + error.message, 'error'); break }
         if (!data || data.length === 0) break
         all.push(...(data as Invoice[]))
-        if (data.length < PAGE) break   // trang cuối → dừng
-        from += PAGE
+        if (data.length < PAGE) break
+        offset += PAGE
       }
       setInvoices(all)
     } catch (e) {
@@ -302,7 +324,17 @@ export default function InvoicesPage() {
     } finally {
       setLoadingInvList(false)
     }
-  }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filterType, filterDateFrom, filterDateTo])
+
+  // Load lần đầu
+  useEffect(() => { loadInvoices() }, [])  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Debounce reload khi type/date filter thay đổi
+  useEffect(() => {
+    const t = setTimeout(() => loadInvoices(filterType, filterDateFrom, filterDateTo), 400)
+    return () => clearTimeout(t)
+  }, [filterType, filterDateFrom, filterDateTo]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ─── FIFO batch preview (chỉ cho xuất) ───────────────────
   useEffect(() => {
@@ -862,35 +894,34 @@ export default function InvoicesPage() {
   // ─── list filters + pagination ────────────────────────────
   const PAGE_SIZE = 20
   const [page, setPage] = useState(1)
-  const [filterType,    setFilterType]    = useState<'all' | 'in' | 'out'>('all')
-  const [filterDateFrom, setFilterDateFrom] = useState('')
-  const [filterDateTo,   setFilterDateTo]   = useState('')
   const [filterProduct,  setFilterProduct]  = useState('')
 
   const filteredInvoices = useMemo(() => {
-    const q    = search.trim().toLowerCase()
+    const q     = search.trim().toLowerCase()
     const qProd = filterProduct.trim().toLowerCase()
+    // type + date đã filter server-side khi load → chỉ cần filter search + product ở client
     return invoices.filter(inv => {
-      if (filterType !== 'all' && inv.type !== filterType) return false
-      if (filterDateFrom && inv.inv_date < filterDateFrom) return false
-      if (filterDateTo   && inv.inv_date > filterDateTo)   return false
       if (q && !inv.code.toLowerCase().includes(q) && !(inv.partner ?? '').toLowerCase().includes(q)) return false
       if (qProd) {
-        const items = inv.items as CastItem[]
-        if (!items.some(it => it.name.toLowerCase().includes(qProd))) return false
+        const its = inv.items as CastItem[]
+        if (!its.some(it => it.name.toLowerCase().includes(qProd))) return false
       }
       return true
     })
-  }, [invoices, search, filterType, filterDateFrom, filterDateTo, filterProduct])
+  }, [invoices, search, filterProduct])
 
   const hasActiveFilter = search || filterType !== 'all' || filterDateFrom || filterDateTo || filterProduct
   const clearFilters = () => {
     setSearch(''); setFilterType('all')
     setFilterDateFrom(''); setFilterDateTo(''); setFilterProduct('')
+    // Không gọi loadInvoices ở đây — useEffect debounce sẽ tự gọi sau 400ms
   }
 
   // Reset về trang 1 khi filter thay đổi
   useEffect(() => { setPage(1) }, [search, invType, filterType, filterDateFrom, filterDateTo, filterProduct])
+
+  // Thông báo range đang hiển thị (khi không có date filter = đang dùng default 3 tháng)
+  const isDefaultRange = !filterDateFrom && !filterDateTo
 
   const totalPages = Math.max(1, Math.ceil(filteredInvoices.length / PAGE_SIZE))
   const pagedInvoices = filteredInvoices.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
@@ -1168,7 +1199,7 @@ export default function InvoicesPage() {
           <div className="bg-[#fffaf4] rounded-2xl p-5 border border-[#f5e6cc] shadow-[0_4px_20px_rgba(200,119,58,0.06)]">
             {/* Header */}
             <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-              <h3 className="text-sm font-semibold text-[#3d1f0a] flex items-center gap-2">
+              <h3 className="text-sm font-semibold text-[#3d1f0a] flex items-center gap-2 flex-wrap">
                 Danh sách hoá đơn
                 {loadingInvList
                   ? <span className="text-xs font-normal text-[#8b5e3c]/60 animate-pulse">⏳ Đang tải...</span>
@@ -1180,6 +1211,11 @@ export default function InvoicesPage() {
                     </span>
                   )
                 }
+                {!loadingInvList && isDefaultRange && (
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#f5e6cc] text-[#8b5e3c]">
+                    3 tháng gần nhất
+                  </span>
+                )}
               </h3>
               <div className="flex items-center gap-2">
                 {hasActiveFilter && (
@@ -1188,7 +1224,7 @@ export default function InvoicesPage() {
                   </button>
                 )}
                 <button
-                  onClick={loadInvoices}
+                  onClick={() => loadInvoices()}
                   disabled={loadingInvList}
                   title="Tải lại danh sách"
                   className="text-xs text-[#8b5e3c]/50 hover:text-[#c8773a] disabled:opacity-40 cursor-pointer transition-colors"
@@ -1278,7 +1314,7 @@ export default function InvoicesPage() {
                   : <>
                       <p className="text-sm text-[#8b5e3c] mb-2">Chưa có hoá đơn nào</p>
                       <button
-                        onClick={loadInvoices}
+                        onClick={() => loadInvoices()}
                         className="text-xs text-[#c8773a] hover:underline cursor-pointer"
                       >
                         🔄 Tải lại
