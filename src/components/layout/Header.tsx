@@ -15,6 +15,7 @@ const PAGE_META: Record<PageName, { title: string; subtitle: string }> = {
   admin:     { title: 'Quản trị hệ thống',     subtitle: 'Nhật ký thao tác & phân quyền' },
   reports:   { title: 'Báo cáo kho',           subtitle: 'Nhập-Xuất-Tồn, Sổ chi tiết & Biên bản kiểm kê' },
   channels:  { title: 'Inbox kênh',            subtitle: 'Tin nhắn Facebook & Zalo OA tập trung' },
+  groups:    { title: 'Phân nhóm & quyền',     subtitle: 'Tạo nhóm người dùng & gán quyền truy cập tab' },
 }
 
 interface HeaderProps {

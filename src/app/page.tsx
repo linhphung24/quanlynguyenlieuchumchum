@@ -19,14 +19,27 @@ import PersonnelPage from '@/components/personnel/PersonnelPage'
 import UnitsPage from '@/components/units/UnitsPage'
 import ReportsPage from '@/components/reports/ReportsPage'
 import ChannelsPage from '@/components/channels/ChannelsPage'
+import GroupsPage from '@/components/groups/GroupsPage'
 import { PageName } from '@/types'
 
 export default function Home() {
-  const { user, initialized } = useApp()
+  const { user, initialized, canAccess, allowedPages } = useApp()
   const [currentPage, setCurrentPage] = useState<PageName>('products')
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
-  const VALID_PAGES: PageName[] = ['products', 'invoices', /*'summary',*/ 'recipes', 'calc', 'log', 'personnel', 'units', 'users', 'admin', 'reports', 'channels']
+  const VALID_PAGES: PageName[] = ['products', 'invoices', /*'summary',*/ 'recipes', 'calc', 'log', 'personnel', 'units', 'users', 'admin', 'reports', 'channels', 'groups']
+
+  // Nếu user không có quyền vào trang hiện tại → chuyển về trang đầu tiên được phép
+  useEffect(() => {
+    if (!user) return
+    if (allowedPages.length === 0) return // chờ profile/quyền load xong
+    if (!canAccess(currentPage)) {
+      const fallback = allowedPages[0] ?? 'products'
+      setCurrentPage(fallback)
+      try { localStorage.setItem('cc_current_page', fallback) } catch {}
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, currentPage, allowedPages])
 
   // Khôi phục tab đã lưu khi load lại trang
   useEffect(() => {
@@ -94,6 +107,7 @@ export default function Home() {
               {currentPage === 'admin'     && <AdminPage />}
               {currentPage === 'reports'   && <ReportsPage />}
               {currentPage === 'channels'  && <ChannelsPage />}
+              {currentPage === 'groups'    && <GroupsPage />}
             </main>
           </div>
 

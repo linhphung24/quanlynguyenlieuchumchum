@@ -3,8 +3,8 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react'
 import { SupabaseClient, User } from '@supabase/supabase-js'
 import { createClient } from '@/lib/supabase'
-import { Profile, Recipe, Product, Toast } from '@/types'
-import { UNITS } from '@/lib/constants'
+import { Profile, Recipe, Product, Toast, UserGroup, PageName } from '@/types'
+import { UNITS, defaultPagesForRole } from '@/lib/constants'
 
 interface AppContextValue {
   sb: SupabaseClient
@@ -20,6 +20,9 @@ interface AppContextValue {
   setAllProducts: React.Dispatch<React.SetStateAction<Product[]>>
   allUnits: string[]
   setAllUnits: React.Dispatch<React.SetStateAction<string[]>>
+  userGroup: UserGroup | null
+  canAccess: (page: PageName) => boolean
+  allowedPages: PageName[]
   toasts: Toast[]
   toast: (message: string, type?: 'success' | 'error' | 'info') => void
   loading: boolean
@@ -43,6 +46,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [currentRecipeId, setCurrentRecipeId] = useState<number | null>(null)
   const [allProducts, setAllProducts] = useState<Product[]>([])
   const [allUnits, setAllUnits]       = useState<string[]>(UNITS)
+  const [userGroup, setUserGroup]     = useState<UserGroup | null>(null)
   const [toasts, setToasts] = useState<Toast[]>([])
   const [loadingCount, setLoadingCount] = useState(0)
   const loading = loadingCount > 0
@@ -62,7 +66,19 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const loadAppData = useCallback(async (userId: string) => {
     try {
       const { data: profileData } = await sb.from('profiles').select('*').eq('id', userId).single()
-      if (profileData) setProfile(profileData as unknown as Profile)
+      if (profileData) {
+        const prof = profileData as unknown as Profile
+        setProfile(prof)
+        // Tải nhóm của user (nếu có) để tính quyền truy cập tab
+        if (prof.group_id) {
+          try {
+            const { data: groupData } = await sb.from('user_groups').select('*').eq('id', prof.group_id).single()
+            setUserGroup((groupData as unknown as UserGroup) ?? null)
+          } catch { setUserGroup(null) }
+        } else {
+          setUserGroup(null)
+        }
+      }
     } catch {}
 
     try {
@@ -99,6 +115,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setCurrentRecipeId(null)
     setAllProducts([])
     setAllUnits(UNITS)
+    setUserGroup(null)
   }, [])
 
   const writeAudit = useCallback(async (
@@ -183,11 +200,34 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // ── Phân quyền truy cập tab ─────────────────────────────────
+  // 'admin' & 'groups' luôn chỉ dành cho role admin (chống leo thang quyền).
+  // Có nhóm → dùng allowed_pages của nhóm. Chưa có nhóm → quyền mặc định theo role.
+  const ADMIN_ONLY: PageName[] = ['admin', 'groups']
+  const canAccess = useCallback((page: PageName): boolean => {
+    if (!profile) return false
+    if (profile.role === 'admin') return true
+    if (ADMIN_ONLY.includes(page)) return false
+    if (userGroup) return userGroup.allowed_pages.includes(page)
+    return defaultPagesForRole(profile.role).includes(page)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile, userGroup])
+
+  const allowedPages: PageName[] = (() => {
+    if (!profile) return []
+    if (profile.role === 'admin') {
+      return ['products','invoices','reports','recipes','calc','log','channels','personnel','units','users','admin','groups']
+    }
+    const pages = userGroup ? (userGroup.allowed_pages as PageName[]) : defaultPagesForRole(profile.role)
+    return pages.filter(p => !ADMIN_ONLY.includes(p))
+  })()
+
   const value: AppContextValue = {
     sb, user, profile, allProfiles, setAllProfiles,
     recipes, setRecipes, currentRecipeId, setCurrentRecipeId,
     allProducts, setAllProducts,
     allUnits, setAllUnits,
+    userGroup, canAccess, allowedPages,
     toasts, toast, loading, startLoading, stopLoading,
     writeAudit, logout, initialized,
   }

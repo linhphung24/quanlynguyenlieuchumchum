@@ -2,7 +2,18 @@ export interface Profile {
   id: string
   full_name: string
   role: 'admin' | 'manager' | 'staff'
+  group_id?: number | null
   created_at: string
+}
+
+export interface UserGroup {
+  id: number
+  name: string
+  description: string | null
+  allowed_pages: string[]
+  created_by: string | null
+  created_at: string
+  updated_at: string | null
 }
 
 export interface RecipeIngredient {
@@ -102,7 +113,7 @@ export interface Toast {
   type: 'success' | 'error' | 'info'
 }
 
-export type PageName = 'recipes' | 'calc' | 'log' | 'invoices' | 'summary' | 'products' | 'admin' | 'users' | 'personnel' | 'units' | 'reports' | 'channels'
+export type PageName = 'recipes' | 'calc' | 'log' | 'invoices' | 'summary' | 'products' | 'admin' | 'users' | 'personnel' | 'units' | 'reports' | 'channels' | 'groups'
 
 export interface Personnel {
   id: number

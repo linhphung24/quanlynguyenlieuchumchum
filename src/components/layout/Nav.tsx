@@ -46,21 +46,15 @@ const NAV_GROUPS: NavGroup[] = [
       { id: 'personnel' as PageName, label: 'Nhân sự',        icon: '👩‍💼', minRole: 'manager' as const },
       { id: 'units'     as PageName, label: 'Đơn vị tính',   icon: '📐', minRole: 'manager' as const },
       { id: 'users'     as PageName, label: 'Người dùng',     icon: '◉',  minRole: 'manager' as const },
+      { id: 'groups'    as PageName, label: 'Phân nhóm',      icon: '🔑', minRole: 'admin'   as const },
       { id: 'admin'     as PageName, label: 'Quản trị',       icon: '⚙',  minRole: 'admin'   as const },
     ],
   },
 ]
 
 export default function Nav({ current, onChange }: NavProps) {
-  const { profile, logout } = useApp()
+  const { profile, logout, canAccess } = useApp()
   const [showProfile, setShowProfile] = useState(false)
-
-  const canSee = (minRole?: 'manager' | 'admin') => {
-    if (!minRole) return true
-    if (minRole === 'admin')   return profile?.role === 'admin'
-    if (minRole === 'manager') return profile?.role === 'admin' || profile?.role === 'manager'
-    return true
-  }
 
   return (
     <>
@@ -82,7 +76,7 @@ export default function Nav({ current, onChange }: NavProps) {
         {/* Navigation */}
         <nav className="flex-1 px-2.5 py-3 space-y-4">
           {NAV_GROUPS.map(group => {
-            const visibleItems = group.items.filter(it => canSee(it.minRole))
+            const visibleItems = group.items.filter(it => canAccess(it.id))
             if (visibleItems.length === 0) return null
             return (
               <div key={group.label}>
