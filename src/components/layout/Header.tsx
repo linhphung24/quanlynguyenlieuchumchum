@@ -14,6 +14,7 @@ const PAGE_META: Record<PageName, { title: string; subtitle: string }> = {
   users:     { title: 'Người dùng',            subtitle: 'Quản lý tài khoản nhân viên' },
   admin:     { title: 'Quản trị hệ thống',     subtitle: 'Nhật ký thao tác & phân quyền' },
   reports:   { title: 'Báo cáo kho',           subtitle: 'Nhập-Xuất-Tồn, Sổ chi tiết & Biên bản kiểm kê' },
+  channels:  { title: 'Inbox kênh',            subtitle: 'Tin nhắn Facebook & Zalo OA tập trung' },
 }
 
 interface HeaderProps {

@@ -34,6 +34,12 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
+    label: 'Khách hàng',
+    items: [
+      { id: 'channels' as PageName,  label: 'Inbox kênh',     icon: '💬' },
+    ],
+  },
+  {
     label: 'Hệ thống',
     minRole: 'manager' as const,
     items: [

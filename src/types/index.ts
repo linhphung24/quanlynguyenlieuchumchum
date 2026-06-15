@@ -102,7 +102,7 @@ export interface Toast {
   type: 'success' | 'error' | 'info'
 }
 
-export type PageName = 'recipes' | 'calc' | 'log' | 'invoices' | 'summary' | 'products' | 'admin' | 'users' | 'personnel' | 'units' | 'reports'
+export type PageName = 'recipes' | 'calc' | 'log' | 'invoices' | 'summary' | 'products' | 'admin' | 'users' | 'personnel' | 'units' | 'reports' | 'channels'
 
 export interface Personnel {
   id: number
