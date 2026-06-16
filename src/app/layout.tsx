@@ -18,6 +18,10 @@ const dmSans = DM_Sans({
 export const metadata: Metadata = {
   title: 'Quản lý kho - Quản lý tiệm bánh',
   description: 'Ứng dụng quản lý tiệm bánh Việt Nam',
+  // Xác thực quyền sở hữu domain với Zalo (cách thẻ meta)
+  other: {
+    'zalo-platform-site-verification': 'UlYFSx_f6r9aueDnvFSbAI3XiJNCbsHYDZGu',
+  },
 }
 
 export default function RootLayout({

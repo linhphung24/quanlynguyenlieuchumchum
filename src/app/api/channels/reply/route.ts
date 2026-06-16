@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { getZaloAccessToken } from '@/lib/zalo'
 
 const sb = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -81,10 +82,10 @@ async function sendFacebook(recipientPsid: string, text: string) {
 }
 
 async function sendZalo(userId: string, text: string) {
-  const token = process.env.ZALO_OA_ACCESS_TOKEN
-  if (!token) throw new Error('ZALO_OA_ACCESS_TOKEN chưa được cấu hình')
+  // Lấy access_token (tự refresh nếu hết hạn) từ DB — không dùng token tĩnh
+  const token = await getZaloAccessToken()
 
-  const res = await fetch('https://openapi.zalo.me/v2.0/oa/message/cs', {
+  const res = await fetch('https://openapi.zalo.me/v3.0/oa/message/cs', {
     method:  'POST',
     headers: {
       'Content-Type': 'application/json',
