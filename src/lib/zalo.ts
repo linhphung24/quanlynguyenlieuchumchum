@@ -88,6 +88,27 @@ async function refreshAccessToken(refreshToken: string): Promise<string> {
   return saveTokens(data)
 }
 
+// Lấy thông tin user (tên + avatar) — webhook Zalo không kèm sẵn, phải gọi API
+export async function fetchZaloUserProfile(
+  userId: string
+): Promise<{ display_name?: string; avatar?: string } | null> {
+  try {
+    const token = await getZaloAccessToken()
+    const data = encodeURIComponent(JSON.stringify({ user_id: userId }))
+    const res = await fetch(`https://openapi.zalo.me/v3.0/oa/user/detail?data=${data}`, {
+      headers: { access_token: token },
+    })
+    const json = (await res.json()) as {
+      data?: { display_name?: string; avatar?: string }
+      error?: number
+    }
+    if (json.error && json.error !== 0) return null
+    return json.data ?? null
+  } catch {
+    return null
+  }
+}
+
 // Lấy access_token hợp lệ — tự refresh nếu sắp/đã hết hạn
 export async function getZaloAccessToken(): Promise<string> {
   const sb = admin()

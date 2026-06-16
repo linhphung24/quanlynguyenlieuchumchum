@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { fetchZaloUserProfile } from '@/lib/zalo'
 
 const sb = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -82,10 +83,19 @@ async function processZaloEvent(body: Record<string, unknown>) {
 
   const msgAt = ts ? new Date(parseInt(ts)).toISOString() : new Date().toISOString()
 
+  // Nếu chưa có tên khách → gọi API Zalo lấy tên + avatar (webhook không kèm sẵn)
+  let name   = displayName ?? thread.display_name
+  let avatar = avatarUrl   ?? thread.avatar_url
+  if (!name) {
+    const profile = await fetchZaloUserProfile(userId)
+    if (profile?.display_name) name   = profile.display_name
+    if (profile?.avatar)       avatar = profile.avatar
+  }
+
   // Update thread
   await sb.from('channel_threads').update({
-    display_name:    displayName ?? thread.display_name,
-    avatar_url:      avatarUrl   ?? thread.avatar_url,
+    display_name:    name,
+    avatar_url:      avatar,
     last_message:    msgPreview,
     last_message_at: msgAt,
     unread_count:    thread.unread_count + 1,

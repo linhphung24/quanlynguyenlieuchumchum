@@ -21,7 +21,8 @@
       "Bash(df -h .)",
       "Bash(echo \"exit: $?\")",
       "Bash(chmod 644 .git/index)",
-      "Bash(node -e \"const c=require\\('crypto'\\);const v=c.randomBytes\\(48\\).toString\\('base64url'\\);const ch=c.createHash\\('sha256'\\).update\\(v\\).digest\\('base64url'\\);console.log\\('CODE_VERIFIER='+v\\);console.log\\('CODE_CHALLENGE='+ch\\);\")"
+      "Bash(node -e \"const c=require\\('crypto'\\);const v=c.randomBytes\\(48\\).toString\\('base64url'\\);const ch=c.createHash\\('sha256'\\).update\\(v\\).digest\\('base64url'\\);console.log\\('CODE_VERIFIER='+v\\);console.log\\('CODE_CHALLENGE='+ch\\);\")",
+      "WebFetch(domain:zalo.solutions)"
     ]
   }
 }
