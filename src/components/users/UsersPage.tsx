@@ -58,14 +58,19 @@ export default function UsersPage() {
       const data = await res.json()
       if (!res.ok || !data.ok) throw new Error(data.error ?? 'Lỗi không xác định')
 
-      setAllProfiles(prev => prev.map(p => p.id === editing.id ? { ...p, full_name: editFullName.trim() } : p))
+      const newName = editFullName.trim()
       const changes: string[] = []
-      if (editFullName.trim() !== editing.full_name) changes.push('tên')
+      if (newName !== editing.full_name) changes.push('tên')
       if (payload.email)    changes.push('email')
       if (payload.password) changes.push('mật khẩu')
-      await writeAudit('update', 'user', editing.id, `Sửa ${changes.join(', ') || 'thông tin'}: ${editFullName.trim()}`)
-      toast(`Đã cập nhật "${editFullName.trim()}"`)
+
+      // Cập nhật UI & đóng popup NGAY khi server trả 200 (không chờ audit log)
+      setAllProfiles(prev => prev.map(p => p.id === editing.id ? { ...p, full_name: newName } : p))
+      toast(`Đã cập nhật "${newName}"`)
       setEditing(null)
+
+      // Ghi audit log dạng fire-and-forget — không chặn UI dù sb.auth.getUser() chậm/treo
+      void writeAudit('update', 'user', editing.id, `Sửa ${changes.join(', ') || 'thông tin'}: ${newName}`)
     } catch (e) {
       toast('Lỗi cập nhật: ' + (e as Error).message, 'error')
     } finally {

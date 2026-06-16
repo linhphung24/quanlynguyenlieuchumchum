@@ -41,6 +41,12 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
 
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
+  // Ref luôn giữ giá trị user/profile mới nhất — để writeAudit (gọi trong closure cũ
+  // của onAuthStateChange) đọc đúng, không bị stale và không cần sb.auth.getUser() qua mạng
+  const userRef = useRef<User | null>(null)
+  const profileRef = useRef<Profile | null>(null)
+  useEffect(() => { userRef.current = user }, [user])
+  useEffect(() => { profileRef.current = profile }, [profile])
   const [allProfiles, setAllProfiles] = useState<Profile[]>([])
   const [recipes, setRecipes] = useState<Recipe[]>([])
   const [currentRecipeId, setCurrentRecipeId] = useState<number | null>(null)
@@ -125,12 +131,13 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     detail?: string | null
   ) => {
     try {
-      const { data: { user: u } } = await sb.auth.getUser()
+      // Đọc từ ref — KHÔNG gọi sb.auth.getUser() qua mạng
+      // (getUser có thể treo do auth-lock khi mở nhiều tab → kẹt mọi handler có await writeAudit)
+      const u = userRef.current
       if (!u) return
-      const { data: prof } = await (sb as any).from('profiles').select('full_name').eq('id', u.id).single()
       await (sb as any).from('audit_log').insert({
         user_id: u.id,
-        user_name: prof?.full_name ?? '',
+        user_name: profileRef.current?.full_name ?? '',
         action, entity,
         entity_id: entityId ?? null,
         detail: detail ?? null,
@@ -183,6 +190,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       if (event === 'SIGNED_IN' && session?.user) {
         // Bỏ qua SIGNED_IN đầu tiên nếu init() chưa xong (tránh double-load)
         if (!initCompleted) return
+        userRef.current = session.user   // set ngay để writeAudit('login') có user
         setUser(session.user)
         await loadAppData(session.user.id)
         try { await writeAudit('login', 'auth', null, 'Đăng nhập thành công') } catch {}
