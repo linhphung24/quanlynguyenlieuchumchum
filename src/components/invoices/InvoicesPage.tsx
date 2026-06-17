@@ -678,6 +678,15 @@ export default function InvoicesPage() {
 
     if (invItems.length === 0) { toast('Thêm ít nhất một mặt hàng hợp lệ', 'error'); return }
 
+    // ── Validate: chỉ cho nhập/xuất sản phẩm CÓ trong Kho hàng ──
+    const productNameSet = new Set(allProducts.map(p => p.name.trim().toLowerCase()))
+    const unknownItems = invItems.filter(it => !productNameSet.has(it.name.trim().toLowerCase()))
+    if (unknownItems.length > 0) {
+      const names = [...new Set(unknownItems.map(it => it.name))].join(', ')
+      toast(`Sản phẩm không có trong Kho hàng: ${names}. Hãy thêm vào Kho hàng trước (hoặc chọn đúng tên sản phẩm từ gợi ý).`, 'error')
+      return
+    }
+
     setSaving(true)
     startLoading()
     try {
