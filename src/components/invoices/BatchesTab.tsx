@@ -21,7 +21,8 @@ export default function BatchesTab() {
   const [batches, setBatches] = useState<Batch[]>([])
   const [loading, setLoading] = useState(true)
   const [dbError, setDbError] = useState<string | null>(null)
-  const [search, setSearch] = useState('')
+  const [search, setSearch] = useState('')        // giá trị lọc đã áp dụng
+  const [searchInput, setSearchInput] = useState('') // ô nhập (gõ không lọc ngay → đỡ lag)
   const [showEmpty, setShowEmpty] = useState(false)
   const [alertSending, setAlertSending] = useState(false)
 
@@ -309,12 +310,24 @@ export default function BatchesTab() {
       {/* ── Bảng lô hàng ── */}
       <div className="bg-[#fffaf4] rounded-2xl p-4 border border-[#f5e6cc] shadow-[0_4px_20px_rgba(200,119,58,0.06)]">
         <div className="flex gap-3 items-center mb-3 flex-wrap">
-          <input
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            placeholder="🔍 Tìm sản phẩm / mã lô..."
-            className="flex-1 min-w-[160px] px-3 py-2 border-[1.5px] border-[#f5e6cc] rounded-lg text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors"
-          />
+          <div className="relative flex-1 min-w-[160px]">
+            <input
+              value={searchInput}
+              onChange={e => setSearchInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter') setSearch(searchInput.trim()) }}
+              placeholder="🔍 Tìm sản phẩm / mã lô..."
+              className="w-full px-3 pr-7 py-2 border-[1.5px] border-[#f5e6cc] rounded-lg text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors"
+            />
+            {searchInput && (
+              <button onClick={() => { setSearchInput(''); setSearch('') }} className="absolute right-2 top-1/2 -translate-y-1/2 text-[#c8a87a] hover:text-[#c8773a] text-xs cursor-pointer">✕</button>
+            )}
+          </div>
+          <button
+            onClick={() => setSearch(searchInput.trim())}
+            className="px-4 py-2 text-sm font-medium rounded-lg bg-[#c8773a] text-white hover:bg-[#b06830] transition-colors cursor-pointer"
+          >
+            🔍 Tìm kiếm
+          </button>
           <label className="flex items-center gap-1.5 text-xs text-[#8b5e3c] cursor-pointer select-none">
             <input type="checkbox" checked={showEmpty} onChange={e => setShowEmpty(e.target.checked)} className="rounded" />
             Hiện lô đã hết
