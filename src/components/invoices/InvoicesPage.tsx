@@ -895,6 +895,13 @@ export default function InvoicesPage() {
   const PAGE_SIZE = 20
   const [page, setPage] = useState(1)
   const [filterProduct,  setFilterProduct]  = useState('')
+  // Ô nhập tìm kiếm: gõ KHÔNG lọc ngay (đỡ lag) — bấm "Tìm" hoặc Enter mới áp dụng
+  const [searchInput,  setSearchInput]  = useState('')
+  const [productInput, setProductInput] = useState('')
+  const applySearch = () => {
+    setSearch(searchInput.trim())
+    setFilterProduct(productInput.trim())
+  }
 
   const filteredInvoices = useMemo(() => {
     const q     = search.trim().toLowerCase()
@@ -914,6 +921,7 @@ export default function InvoicesPage() {
   const clearFilters = () => {
     setSearch(''); setFilterType('all')
     setFilterDateFrom(''); setFilterDateTo(''); setFilterProduct('')
+    setSearchInput(''); setProductInput('')
     // Không gọi loadInvoices ở đây — useEffect debounce sẽ tự gọi sau 400ms
   }
 
@@ -1235,19 +1243,20 @@ export default function InvoicesPage() {
             </div>
 
             {/* Filter bar */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2 mb-4">
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-4">
               {/* Mã HĐ / đối tác */}
               <div className="relative lg:col-span-1">
                 <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#c8a87a] text-xs pointer-events-none">🔍</span>
                 <input
                   type="text"
-                  value={search}
-                  onChange={e => setSearch(e.target.value)}
+                  value={searchInput}
+                  onChange={e => setSearchInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') applySearch() }}
                   placeholder="Mã HĐ / đối tác..."
                   className="w-full pl-7 pr-6 py-1.5 text-xs border-[1.5px] border-[#f5e6cc] rounded-lg bg-white text-[#3d1f0a] placeholder-[#c8a87a] outline-none focus:border-[#c8773a] transition-colors"
                 />
-                {search && (
-                  <button onClick={() => setSearch('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-[#c8a87a] hover:text-[#c8773a] text-xs cursor-pointer">✕</button>
+                {searchInput && (
+                  <button onClick={() => { setSearchInput(''); setSearch('') }} className="absolute right-2 top-1/2 -translate-y-1/2 text-[#c8a87a] hover:text-[#c8773a] text-xs cursor-pointer">✕</button>
                 )}
               </div>
 
@@ -1297,15 +1306,24 @@ export default function InvoicesPage() {
                 <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#c8a87a] text-xs pointer-events-none">📦</span>
                 <input
                   type="text"
-                  value={filterProduct}
-                  onChange={e => setFilterProduct(e.target.value)}
+                  value={productInput}
+                  onChange={e => setProductInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') applySearch() }}
                   placeholder="Tên nguyên liệu..."
                   className="w-full pl-7 pr-6 py-1.5 text-xs border-[1.5px] border-[#f5e6cc] rounded-lg bg-white text-[#3d1f0a] placeholder-[#c8a87a] outline-none focus:border-[#c8773a] transition-colors"
                 />
-                {filterProduct && (
-                  <button onClick={() => setFilterProduct('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-[#c8a87a] hover:text-[#c8773a] text-xs cursor-pointer">✕</button>
+                {productInput && (
+                  <button onClick={() => { setProductInput(''); setFilterProduct('') }} className="absolute right-2 top-1/2 -translate-y-1/2 text-[#c8a87a] hover:text-[#c8773a] text-xs cursor-pointer">✕</button>
                 )}
               </div>
+
+              {/* Nút tìm kiếm (áp dụng ô Mã HĐ + Nguyên liệu) */}
+              <button
+                onClick={applySearch}
+                className="py-1.5 px-3 text-xs font-medium rounded-lg bg-[#c8773a] text-white hover:bg-[#b06830] transition-colors cursor-pointer flex items-center justify-center gap-1"
+              >
+                🔍 Tìm kiếm
+              </button>
             </div>
             {invoices.length === 0 ? (
               <div className="text-center py-6">
