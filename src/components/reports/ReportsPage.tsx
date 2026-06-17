@@ -46,9 +46,8 @@ type TabKey = 'nxt' | 'chitiet' | 'kiekem'
 type PeriodPreset = 'day' | 'week' | 'month' | 'quarter' | 'year' | 'custom'
 
 interface NXTRow {
-  code: string; name: string; unit: string; donGia: number
-  tonDau: number; nhapSL: number; nhapTien: number
-  xuatSL: number; xuatTien: number; tonCuoi: number; tonCuoiTien: number
+  code: string; name: string; unit: string
+  tonDau: number; nhapSL: number; xuatSL: number; tonCuoi: number
   hasAdj: boolean       // true = tonDau lấy từ khai báo thủ công
   formulaTonDau: number // tonDau theo công thức (trước khi adj override)
 }
@@ -87,11 +86,10 @@ td { font-size: 11px; }
 
 // ─── Print: Báo cáo Nhập-Xuất-Tồn ────────────────────────────
 function printNXT(rows: NXTRow[], dateFrom: string, dateTo: string) {
-  const tNhapSL   = rows.reduce((s, r) => s + r.nhapSL,   0)
-  const tNhapTien = rows.reduce((s, r) => s + r.nhapTien, 0)
-  const tXuatSL   = rows.reduce((s, r) => s + r.xuatSL,   0)
-  const tXuatTien = rows.reduce((s, r) => s + r.xuatTien, 0)
-  const tCuoiTien = rows.reduce((s, r) => s + r.tonCuoiTien, 0)
+  const tNhapSL = rows.reduce((s, r) => s + r.nhapSL, 0)
+  const tXuatSL = rows.reduce((s, r) => s + r.xuatSL, 0)
+  const tDauSL  = rows.reduce((s, r) => s + r.tonDau, 0)
+  const tCuoiSL = rows.reduce((s, r) => s + r.tonCuoi, 0)
 
   const bodyRows = rows.map((r, i) => `<tr>
     <td class="ctr">${i + 1}</td>
@@ -100,11 +98,8 @@ function printNXT(rows: NXTRow[], dateFrom: string, dateTo: string) {
     <td class="ctr">${r.unit}</td>
     <td class="num">${fmtNum(r.tonDau)}</td>
     <td class="num">${r.nhapSL > 0.001 ? fmtNum(r.nhapSL) : ''}</td>
-    <td class="num">${r.nhapTien > 0.1 ? Number(r.nhapTien).toLocaleString('vi-VN') : ''}</td>
     <td class="num">${r.xuatSL > 0.001 ? fmtNum(r.xuatSL) : ''}</td>
-    <td class="num">${r.xuatTien > 0.1 ? Number(r.xuatTien).toLocaleString('vi-VN') : ''}</td>
     <td class="num" style="font-weight:bold">${fmtNum(r.tonCuoi)}</td>
-    <td class="num">${r.tonCuoiTien > 0.1 ? Number(r.tonCuoiTien).toLocaleString('vi-VN') : ''}</td>
   </tr>`).join('')
 
   const w = window.open('', '_blank')!
@@ -119,35 +114,26 @@ function printNXT(rows: NXTRow[], dateFrom: string, dateTo: string) {
   <table>
     <thead>
       <tr>
-        <th rowspan="2">STT</th><th rowspan="2">Mã SP</th>
-        <th rowspan="2">Tên vật tư, hàng hoá</th><th rowspan="2">ĐVT</th>
-        <th rowspan="2">Tồn đầu kỳ</th>
-        <th colspan="2">Nhập trong kỳ</th>
-        <th colspan="2">Xuất trong kỳ</th>
-        <th colspan="2">Tồn cuối kỳ</th>
-      </tr>
-      <tr>
-        <th>Số lượng</th><th>Thành tiền</th>
-        <th>Số lượng</th><th>Thành tiền</th>
-        <th>Số lượng</th><th>Thành tiền (₫)</th>
+        <th>STT</th><th>Mã SP</th>
+        <th>Tên vật tư, hàng hoá</th><th>ĐVT</th>
+        <th>Tồn đầu kỳ</th>
+        <th>Nhập trong kỳ</th>
+        <th>Xuất trong kỳ</th>
+        <th>Tồn cuối kỳ</th>
       </tr>
       <tr style="font-style:italic;font-size:10px">
         <td class="ctr">A</td><td class="ctr">B</td><td class="ctr">C</td><td class="ctr">D</td>
-        <td class="ctr">1</td><td class="ctr">2</td><td class="ctr">3</td>
-        <td class="ctr">4</td><td class="ctr">5</td><td class="ctr">6</td><td class="ctr">7</td>
+        <td class="ctr">1</td><td class="ctr">2</td><td class="ctr">3</td><td class="ctr">4=1+2-3</td>
       </tr>
     </thead>
     <tbody>
       ${bodyRows}
       <tr class="total-row">
         <td colspan="4" class="ctr">CỘNG</td>
-        <td></td>
+        <td class="num">${fmtNum(tDauSL)}</td>
         <td class="num">${fmtNum(tNhapSL)}</td>
-        <td class="num">${Number(tNhapTien).toLocaleString('vi-VN')}</td>
         <td class="num">${fmtNum(tXuatSL)}</td>
-        <td class="num">${Number(tXuatTien).toLocaleString('vi-VN')}</td>
-        <td></td>
-        <td class="num">${Number(tCuoiTien).toLocaleString('vi-VN')}</td>
+        <td class="num">${fmtNum(tCuoiSL)}</td>
       </tr>
     </tbody>
   </table>
@@ -489,124 +475,56 @@ export default function ReportsPage() {
     if (!nxtFrom || !nxtTo) { toast('Chọn khoảng thời gian hợp lệ', 'error'); return }
     setNxtLoading(true)
     try {
-      // ── Fetch period invoices (paginated) ────────────────────
+      // ── Lấy TẤT CẢ hoá đơn có inv_date ≤ nxtTo ───────────────
+      // Tồn đầu = Σ nhập − Σ xuất TRƯỚC kỳ (tính từ lịch sử hoá đơn, không suy từ stock_qty).
+      // Nhập/Xuất trong kỳ = tổng số lượng theo hoá đơn. CHỈ SỐ LƯỢNG — không tính tiền.
       const PAGE = 1000
-      const periodInvs: Invoice[] = []; let pFrom = 0
+      const allInvs: Invoice[] = []; let pFrom = 0
       while (true) {
-        const { data, error } = await sb.from('invoices').select('*')
-          .gte('inv_date', nxtFrom).lte('inv_date', nxtTo)
+        const { data, error } = await sb.from('invoices').select('id, type, inv_date, items')
+          .lte('inv_date', nxtTo)
           .range(pFrom, pFrom + PAGE - 1)
         if (error || !data || data.length === 0) break
-        periodInvs.push(...(data as Invoice[]))
+        allInvs.push(...(data as Invoice[]))
         if (data.length < PAGE) break
         pFrom += PAGE
       }
 
-      // ── Fetch post-period invoices (paginated) ────────────────
-      const postInvs: Invoice[] = []; let qFrom = 0
-      while (true) {
-        const { data, error } = await sb.from('invoices').select('*')
-          .gt('inv_date', nxtTo)
-          .range(qFrom, qFrom + PAGE - 1)
-        if (error || !data || data.length === 0) break
-        postInvs.push(...(data as Invoice[]))
-        if (data.length < PAGE) break
-        qFrom += PAGE
-      }
-
-      // ── FIFO xuất tiền: 2-step (tránh PostgREST join cần FK) ──
-      // Bước 1: Thu thập batch_deductions cho tất cả hoá đơn xuất trong kỳ
-      const fifoXuatTien: Record<string, number> = {}
-      const periodOutIds = periodInvs.filter(inv => inv.type === 'out').map(inv => inv.id)
-      if (periodOutIds.length > 0) {
-        type DeductRow = { batch_id: number; qty_used: number; batch_price: number }
-        const allDeductions: DeductRow[] = []
-        const CHUNK = 50; const PAGE = 1000
-        for (let ci = 0; ci < periodOutIds.length; ci += CHUNK) {
-          const chunk = periodOutIds.slice(ci, ci + CHUNK)
-          let from = 0
-          while (true) {
-            const { data } = await sb
-              .from('batch_deductions')
-              .select('batch_id, qty_used, batch_price')
-              .in('inv_id', chunk)
-              .range(from, from + PAGE - 1)
-            if (!data || data.length === 0) break
-            allDeductions.push(...(data as DeductRow[]))
-            if (data.length < PAGE) break
-            from += PAGE
-          }
-        }
-
-        // Bước 2: Lấy product_name cho các batch_id duy nhất
-        const uniqueBatchIds = [...new Set(allDeductions.map(d => d.batch_id))]
-        const batchProductMap: Record<number, string> = {}
-        if (uniqueBatchIds.length > 0) {
-          const BCHUNK = 200
-          for (let ci = 0; ci < uniqueBatchIds.length; ci += BCHUNK) {
-            const { data: bData } = await sb
-              .from('batches')
-              .select('id, product_name')
-              .in('id', uniqueBatchIds.slice(ci, ci + BCHUNK))
-            for (const b of (bData || []) as { id: number; product_name: string }[]) {
-              batchProductMap[b.id] = b.product_name
-            }
-          }
-        }
-
-        // Bước 3: Tính tổng xuất tiền theo sản phẩm
-        for (const d of allDeductions) {
-          const pName = batchProductMap[d.batch_id]
-          if (!pName) continue
-          const key = pName.toLowerCase().trim()
-          fifoXuatTien[key] = (fifoXuatTien[key] || 0) + d.qty_used * d.batch_price
-        }
-      }
-
-      // ── SL map (dùng cho tonDau/tonCuoi + nhapTien) ──────────
-      type PMap = Record<string, { nhapSL: number; nhapTien: number; xuatSL: number }>
-      const periodMap: PMap = {}
-      const postMap:   PMap = {}
-
-      const addInv = (map: PMap, invs: Invoice[]) => {
-        for (const inv of invs) {
-          for (const it of (inv.items as { name?: string; amount?: number; price?: number }[])) {
-            if (!it.name) continue
-            const key = it.name.toLowerCase().trim()
-            if (!map[key]) map[key] = { nhapSL: 0, nhapTien: 0, xuatSL: 0 }
-            const amt   = Number(it.amount) || 0
-            const price = Number(it.price)  || 0
-            if (inv.type === 'in') { map[key].nhapSL += amt; map[key].nhapTien += amt * price }
-            else                   { map[key].xuatSL += amt }
+      // Gộp theo sản phẩm: preNet (trước kỳ) + nhập/xuất trong kỳ
+      type PMap = Record<string, { preNet: number; nhapSL: number; xuatSL: number }>
+      const map: PMap = {}
+      for (const inv of allInvs) {
+        const isPre = inv.inv_date < nxtFrom
+        for (const it of (inv.items as { name?: string; amount?: number }[])) {
+          if (!it.name) continue
+          const key = it.name.toLowerCase().trim()
+          if (!map[key]) map[key] = { preNet: 0, nhapSL: 0, xuatSL: 0 }
+          const amt = Number(it.amount) || 0
+          if (isPre) {
+            map[key].preNet += inv.type === 'in' ? amt : -amt
+          } else if (inv.type === 'in') {
+            map[key].nhapSL += amt
+          } else {
+            map[key].xuatSL += amt
           }
         }
       }
-
-      addInv(periodMap, periodInvs)
-      addInv(postMap,   postInvs)
 
       const rows: NXTRow[] = []
       for (const p of allProducts.filter(p => p.is_active)) {
-        const key  = p.name.toLowerCase().trim()
-        const per  = periodMap[key] || { nhapSL: 0, nhapTien: 0, xuatSL: 0 }
-        const post = postMap[key]   || { nhapSL: 0, nhapTien: 0, xuatSL: 0 }
+        const key = p.name.toLowerCase().trim()
+        const m   = map[key] || { preNet: 0, nhapSL: 0, xuatSL: 0 }
+        const tonDau  = m.preNet                        // tồn đầu = Σ nhập − Σ xuất trước kỳ
+        const tonCuoi = tonDau + m.nhapSL - m.xuatSL    // luôn cân đối theo công thức
 
-        // tonCuoi of period = current stock_qty corrected by post-period movements
-        const tonCuoi = p.stock_qty - post.nhapSL + post.xuatSL
-        const tonDau  = tonCuoi - per.nhapSL + per.xuatSL
-
-        // Skip rows with no activity AND zero stock throughout
-        if (Math.abs(tonDau) < 0.001 && per.nhapSL === 0 && per.xuatSL === 0 && Math.abs(tonCuoi) < 0.001) continue
+        // Bỏ qua mặt hàng không phát sinh trong kỳ & tồn 0 suốt
+        if (Math.abs(tonDau) < 0.001 && m.nhapSL === 0 && m.xuatSL === 0 && Math.abs(tonCuoi) < 0.001) continue
 
         rows.push({
-          code: p.code || '', name: p.name, unit: p.unit, donGia: p.cost_price || 0,
-          tonDau, nhapSL: per.nhapSL, nhapTien: per.nhapTien,
-          xuatSL: per.xuatSL,
-          xuatTien: fifoXuatTien[key] || 0,
-          tonCuoi,
-          tonCuoiTien: Math.max(0, tonCuoi) * (p.cost_price || 0),
+          code: p.code || '', name: p.name, unit: p.unit,
+          tonDau, nhapSL: m.nhapSL, xuatSL: m.xuatSL, tonCuoi,
           hasAdj: false,
-          formulaTonDau: tonDau,  // lưu trước khi adj override
+          formulaTonDau: tonDau,
         })
       }
 
@@ -640,10 +558,9 @@ export default function ReportsPage() {
       for (const row of rows) {
         const key = row.name.toLowerCase().trim()
         if (adjMap[key] !== undefined) {
-          row.tonDau      = adjMap[key]
-          row.tonCuoi     = adjMap[key] + row.nhapSL - row.xuatSL
-          row.tonCuoiTien = Math.max(0, row.tonCuoi) * row.donGia
-          row.hasAdj      = true
+          row.tonDau  = adjMap[key]
+          row.tonCuoi = adjMap[key] + row.nhapSL - row.xuatSL
+          row.hasAdj  = true
         }
       }
 
@@ -912,19 +829,16 @@ export default function ReportsPage() {
   const pagedNXT      = filteredNXT.slice((safePage - 1) * NXT_PAGE_SIZE, safePage * NXT_PAGE_SIZE)
 
   const nxtTotals = useMemo(() => ({
-    nhapSL:      filteredNXT.reduce((s, r) => s + r.nhapSL,      0),
-    nhapTien:    filteredNXT.reduce((s, r) => s + r.nhapTien,    0),
-    xuatSL:      filteredNXT.reduce((s, r) => s + r.xuatSL,      0),
-    xuatTien:    filteredNXT.reduce((s, r) => s + r.xuatTien,    0),
-    tonCuoiTien: filteredNXT.reduce((s, r) => s + r.tonCuoiTien, 0),
+    nhapSL: filteredNXT.reduce((s, r) => s + r.nhapSL, 0),
+    xuatSL: filteredNXT.reduce((s, r) => s + r.xuatSL, 0),
   }), [filteredNXT])
 
   // ── Excel export NXT ─────────────────────────────────────────
   const exportNXTExcel = () => {
-    const header = ['STT','Mã SP','Tên vật tư','ĐVT','Tồn đầu kỳ','Nhập SL','Nhập tiền','Xuất SL','Xuất tiền','Tồn cuối kỳ','Giá trị tồn']
+    const header = ['STT','Mã SP','Tên vật tư','ĐVT','Tồn đầu kỳ','Nhập','Xuất','Tồn cuối kỳ']
     const data   = filteredNXT.map((r, i) => [
       i + 1, r.code, r.name, r.unit,
-      r.tonDau, r.nhapSL, r.nhapTien, r.xuatSL, r.xuatTien, r.tonCuoi, r.tonCuoiTien,
+      r.tonDau, r.nhapSL, r.xuatSL, r.tonCuoi,
     ])
     const ws = XLSX.utils.aoa_to_sheet([header, ...data])
     const wb = XLSX.utils.book_new()
@@ -1215,12 +1129,9 @@ export default function ReportsPage() {
                       <th className="border border-[#e8ddd0] px-2 py-2 text-left">Tên vật tư, hàng hoá</th>
                       <th className="border border-[#e8ddd0] px-2 py-2 text-center">ĐVT</th>
                       <th className="border border-[#e8ddd0] px-2 py-2 text-right">Tồn đầu kỳ</th>
-                      <th className="border border-[#e8ddd0] px-2 py-2 text-right bg-green-50">Nhập SL</th>
-                      <th className="border border-[#e8ddd0] px-2 py-2 text-right bg-green-50">Nhập tiền</th>
-                      <th className="border border-[#e8ddd0] px-2 py-2 text-right bg-orange-50">Xuất SL</th>
-                      <th className="border border-[#e8ddd0] px-2 py-2 text-right bg-orange-50">Xuất tiền</th>
+                      <th className="border border-[#e8ddd0] px-2 py-2 text-right bg-green-50">Nhập trong kỳ</th>
+                      <th className="border border-[#e8ddd0] px-2 py-2 text-right bg-orange-50">Xuất trong kỳ</th>
                       <th className="border border-[#e8ddd0] px-2 py-2 text-right font-bold">Tồn cuối kỳ</th>
-                      <th className="border border-[#e8ddd0] px-2 py-2 text-right">Giá trị tồn</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -1254,20 +1165,11 @@ export default function ReportsPage() {
                             <td className="border border-[#e8ddd0] px-2 py-1.5 text-right text-green-700 bg-green-50/50">
                               {r.nhapSL > 0.001 ? fmtNum(r.nhapSL) : <span className="text-[#8b5e3c]/30">—</span>}
                             </td>
-                            <td className="border border-[#e8ddd0] px-2 py-1.5 text-right text-green-700 bg-green-50/50">
-                              {r.nhapTien > 0.1 ? Number(r.nhapTien).toLocaleString('vi-VN') : <span className="text-[#8b5e3c]/30">—</span>}
-                            </td>
                             <td className="border border-[#e8ddd0] px-2 py-1.5 text-right text-orange-700 bg-orange-50/50">
                               {r.xuatSL > 0.001 ? fmtNum(r.xuatSL) : <span className="text-[#8b5e3c]/30">—</span>}
                             </td>
-                            <td className="border border-[#e8ddd0] px-2 py-1.5 text-right text-orange-700 bg-orange-50/50">
-                              {r.xuatTien > 0.1 ? Number(r.xuatTien).toLocaleString('vi-VN') : <span className="text-[#8b5e3c]/30">—</span>}
-                            </td>
                             <td className={`border border-[#e8ddd0] px-2 py-1.5 text-right font-bold ${r.tonCuoi < 0 ? 'text-red-600' : 'text-[#1a0f07]'}`}>
                               {fmtNum(r.tonCuoi)}
-                            </td>
-                            <td className="border border-[#e8ddd0] px-2 py-1.5 text-right text-[#8b5e3c]">
-                              {r.tonCuoiTien > 0.1 ? Number(r.tonCuoiTien).toLocaleString('vi-VN') : <span className="text-[#8b5e3c]/30">—</span>}
                             </td>
                           </tr>
 
@@ -1295,39 +1197,23 @@ export default function ReportsPage() {
                                     {isEmpty ? 'Hết' : isExpired ? 'Hết hạn' : 'Còn hàng'}
                                   </span>
                                 </td>
-                                {/* ĐVT col → show unit price */}
-                                <td className="border border-[#e8ddd0] px-2 py-1 text-center text-[10px] text-[#8b5e3c]/70">
-                                  {b.price > 0 ? Number(b.price).toLocaleString('vi-VN') + '₫' : '—'}
-                                </td>
+                                {/* ĐVT */}
+                                <td className="border border-[#e8ddd0] px-2 py-1 text-center text-[10px] text-[#8b5e3c]/60">{b.unit}</td>
                                 {/* Tồn đầu → empty */}
                                 <td className="border border-[#e8ddd0] px-2 py-1"></td>
-                                {/* Nhập SL → số lượng nhập của lô */}
+                                {/* Nhập → số lượng nhập của lô */}
                                 <td className="border border-[#e8ddd0] px-2 py-1 text-right text-[11px] text-green-700 bg-green-50/30">
                                   {fmtNum(b.quantity)}
                                 </td>
-                                {/* Nhập tiền → qty × giá lô */}
-                                <td className="border border-[#e8ddd0] px-2 py-1 text-right text-[11px] text-green-700 bg-green-50/30">
-                                  {b.price > 0 ? Number(b.quantity * b.price).toLocaleString('vi-VN') : ''}
-                                </td>
-                                {/* Xuất SL → tổng đã dùng từ lô này */}
+                                {/* Xuất → tổng đã dùng từ lô này */}
                                 <td className="border border-[#e8ddd0] px-2 py-1 text-right text-[11px] text-orange-700 bg-orange-50/30">
                                   {qtyUsed > 0.001 ? fmtNum(qtyUsed) : ''}
-                                </td>
-                                {/* Xuất tiền → tổng đã dùng × giá */}
-                                <td className="border border-[#e8ddd0] px-2 py-1 text-right text-[11px] text-orange-700 bg-orange-50/30">
-                                  {qtyUsed > 0.001 && b.price > 0
-                                    ? Number(qtyUsed * b.price).toLocaleString('vi-VN') : ''}
                                 </td>
                                 {/* Tồn cuối → remaining */}
                                 <td className={`border border-[#e8ddd0] px-2 py-1 text-right text-[11px] font-semibold ${
                                   isEmpty ? 'text-[#8b5e3c]/30' : isExpired ? 'text-red-600' : 'text-[#1a0f07]'
                                 }`}>
                                   {remaining > 0 ? fmtNum(remaining) : '—'}
-                                </td>
-                                {/* Giá trị tồn → remaining × cost */}
-                                <td className="border border-[#e8ddd0] px-2 py-1 text-right text-[11px] text-[#8b5e3c]/70">
-                                  {remaining > 0 && b.price > 0
-                                    ? Number(remaining * b.price).toLocaleString('vi-VN') : ''}
                                 </td>
                               </tr>
                             )
@@ -1340,11 +1226,8 @@ export default function ReportsPage() {
                       <td colSpan={3} className="border border-[#e8ddd0] px-2 py-2 text-center">TỔNG CỘNG</td>
                       <td className="border border-[#e8ddd0] px-2 py-2"></td>
                       <td className="border border-[#e8ddd0] px-2 py-2 text-right text-green-800">{fmtNum(nxtTotals.nhapSL)}</td>
-                      <td className="border border-[#e8ddd0] px-2 py-2 text-right text-green-800">{Number(nxtTotals.nhapTien).toLocaleString('vi-VN')}</td>
                       <td className="border border-[#e8ddd0] px-2 py-2 text-right text-orange-800">{fmtNum(nxtTotals.xuatSL)}</td>
-                      <td className="border border-[#e8ddd0] px-2 py-2 text-right text-orange-800">{Number(nxtTotals.xuatTien).toLocaleString('vi-VN')}</td>
                       <td className="border border-[#e8ddd0] px-2 py-2"></td>
-                      <td className="border border-[#e8ddd0] px-2 py-2 text-right">{Number(nxtTotals.tonCuoiTien).toLocaleString('vi-VN')}</td>
                     </tr>
                   </tbody>
                 </table>
