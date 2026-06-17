@@ -347,7 +347,7 @@ export default function InvoicesPage() {
     const timer = setTimeout(() => { computeBatchPreviews() }, 400)
     return () => clearTimeout(timer)
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [invType, items])
+  }, [invType, items, invDate])
 
   const computeBatchPreviews = useCallback(async () => {
     const relevant = items.filter(it => it.name.trim() && (it.amount || it.qty) > 0)
@@ -360,6 +360,7 @@ export default function InvoicesPage() {
         .select('id, product_name, inv_code, inv_date, remaining_qty, price, unit')
         .ilike('product_name', n)
         .gt('remaining_qty', 0)
+        .lte('inv_date', invDate)        // chỉ lô nhập ≤ ngày xuất (không ăn lô tương lai)
         .order('inv_date', { ascending: true })
         .order('id', { ascending: true })
     )
@@ -412,7 +413,7 @@ export default function InvoicesPage() {
       previews[idx] = allocs
     })
     setBatchPreviews(previews)
-  }, [sb, items])
+  }, [sb, items, invDate])
 
   // ─── load batch usage for a specific export invoice ───────
   const loadBatchUsageForInv = useCallback(async (invId: number) => {
@@ -456,7 +457,7 @@ export default function InvoicesPage() {
   }
 
   // ─── FIFO deduction when saving xuất invoice ─────────────
-  const deductBatchesFifo = async (invItems: { name: string; amount: number; unit: string }[], exportInvId: number) => {
+  const deductBatchesFifo = async (invItems: { name: string; amount: number; unit: string }[], exportInvId: number, exportDate: string) => {
     const names = [...new Set(invItems.filter(it => it.name && it.amount > 0).map(it => it.name.trim()))]
     if (names.length === 0) return
 
@@ -466,6 +467,7 @@ export default function InvoicesPage() {
         .select('*')
         .ilike('product_name', n)
         .gt('remaining_qty', 0)
+        .lte('inv_date', exportDate)     // chỉ lô nhập ≤ ngày xuất
         .order('inv_date', { ascending: true })
         .order('id', { ascending: true })
     )
@@ -688,6 +690,7 @@ export default function InvoicesPage() {
             .select('id, product_name, inv_code, remaining_qty, unit')
             .ilike('product_name', n)
             .gt('remaining_qty', 0)
+            .lte('inv_date', invDate)    // chỉ tính lô nhập ≤ ngày xuất
             .order('inv_date', { ascending: true })
             .order('id', { ascending: true })
         )
@@ -738,7 +741,8 @@ export default function InvoicesPage() {
           const avail = totalAvail[key]
           if (!avail) {
             violations.push(
-              `"${item.name}": KHÔNG CÓ lô tồn kho. Tạo hoá đơn nhập trước khi xuất, ` +
+              `"${item.name}": không có lô nào nhập trước/bằng ngày xuất ${fmtDate(invDate)}. ` +
+              `Kiểm tra lại NGÀY hoá đơn (không thể xuất hàng trước khi nhập), tạo hoá đơn nhập trước, ` +
               `hoặc liên hệ admin chạy SQL khởi tạo lô (init_batches_for_existing_stock.sql).`
             )
             continue
@@ -800,12 +804,12 @@ export default function InvoicesPage() {
               }
             }
             await Promise.all([
-              fifoItems.length > 0 ? deductBatchesFifo(fifoItems, data.id) : Promise.resolve(),
+              fifoItems.length > 0 ? deductBatchesFifo(fifoItems, data.id, invDate) : Promise.resolve(),
               deductBatchesManual(castInv, manualAlloc, data.id),
             ])
             toast('Đã lưu hoá đơn & phân bổ lô (thủ công + FIFO)')
           } else {
-            await deductBatchesFifo(castInv, data.id)
+            await deductBatchesFifo(castInv, data.id, invDate)
             toast('Đã lưu hoá đơn & phân bổ lô FIFO')
           }
         }
@@ -859,6 +863,43 @@ export default function InvoicesPage() {
     }
   }
 
+  // ─── sửa ngày hoá đơn ────────────────────────────────────
+  const handleSaveDate = async (inv: Invoice) => {
+    if (!editDateValue) { toast('Chọn ngày hợp lệ', 'error'); return }
+    if (editDateValue === inv.inv_date) { setEditDateFor(null); return }
+    setSavingDate(true)
+    startLoading()
+    try {
+      // HĐ xuất: ngày mới KHÔNG được trước ngày nhập của các lô đã trừ (tránh "xuất trước khi nhập")
+      if (inv.type === 'out') {
+        const { data: deds } = await sb.from('batch_deductions')
+          .select('batch_inv_code, batch_inv_date')
+          .eq('inv_id', inv.id)
+        const tooNew = (deds || []).filter(
+          (d: { batch_inv_date: string | null }) => d.batch_inv_date && d.batch_inv_date > editDateValue
+        ) as { batch_inv_code: string; batch_inv_date: string }[]
+        if (tooNew.length > 0) {
+          const codes = [...new Set(tooNew.map(d => d.batch_inv_code))].join(', ')
+          toast(`Không thể đặt ngày ${fmtDate(editDateValue)}: HĐ này đã trừ lô nhập SAU ngày đó (${codes}). Chọn ngày ≥ ngày nhập lô.`, 'error')
+          return
+        }
+      }
+      const { data: updated, error } = await sb.from('invoices')
+        .update({ inv_date: editDateValue }).eq('id', inv.id).select().single()
+      if (error) { toast('Lỗi cập nhật ngày: ' + error.message, 'error'); return }
+      if (!updated) { toast('Không thể cập nhật — kiểm tra quyền', 'error'); return }
+      setInvoices(prev => prev.map(i => i.id === inv.id ? { ...i, inv_date: editDateValue } : i))
+      await writeAudit('update', 'invoices', String(inv.id), `Sửa ngày HĐ ${inv.code}: ${fmtDate(inv.inv_date)} → ${fmtDate(editDateValue)}`)
+      toast('Đã cập nhật ngày hoá đơn')
+      setEditDateFor(null)
+    } catch (e) {
+      toast('Lỗi: ' + (e as Error).message, 'error')
+    } finally {
+      setSavingDate(false)
+      stopLoading()
+    }
+  }
+
   // ─── upload ảnh bổ sung cho hoá đơn đã lưu ───────────────
   const handleSaveImage = async (invId: number, url: string) => {
     const { error } = await sb.from('invoices').update({ image_url: url }).eq('id', invId)
@@ -902,6 +943,11 @@ export default function InvoicesPage() {
     setSearch(searchInput.trim())
     setFilterProduct(productInput.trim())
   }
+
+  // Sửa ngày hoá đơn (inline)
+  const [editDateFor, setEditDateFor]   = useState<number | null>(null)
+  const [editDateValue, setEditDateValue] = useState('')
+  const [savingDate, setSavingDate]     = useState(false)
 
   const filteredInvoices = useMemo(() => {
     const q     = search.trim().toLowerCase()
@@ -1463,14 +1509,37 @@ export default function InvoicesPage() {
                             )
                           })()}
 
-                          <div className="flex gap-2 mt-2">
-                            <button onClick={() => doPrint(inv, recipes)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border-[1.5px] border-[#f5e6cc] text-[#8b5e3c] text-xs font-medium cursor-pointer hover:border-[#c8773a] hover:text-[#c8773a] transition-all">
-                              🖨 In
-                            </button>
-                            <button onClick={() => handleDelete(inv)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border-[1.5px] border-[#e0a090] text-[#d94f3d] text-xs font-medium cursor-pointer hover:bg-[#fdecea] transition-all">
-                              🗑 Xoá
-                            </button>
-                          </div>
+                          {editDateFor === inv.id ? (
+                            <div className="flex items-center gap-2 mt-2 flex-wrap bg-[#fdf6ec] border border-[#f5e6cc] rounded-lg p-2">
+                              <span className="text-xs text-[#8b5e3c]">📅 Ngày mới:</span>
+                              <DateInput
+                                value={editDateValue}
+                                onChange={setEditDateValue}
+                                placeholder="dd/mm/yyyy"
+                                className="px-2.5 py-1.5 text-xs border-[1.5px] border-[#f5e6cc] rounded-lg bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a]"
+                              />
+                              <button onClick={() => handleSaveDate(inv)} disabled={savingDate}
+                                className="px-3 py-1.5 rounded-lg bg-[#c8773a] text-white text-xs font-medium hover:bg-[#b06830] transition-colors disabled:opacity-50">
+                                {savingDate ? 'Đang lưu...' : 'Lưu'}
+                              </button>
+                              <button onClick={() => setEditDateFor(null)} disabled={savingDate}
+                                className="px-3 py-1.5 rounded-lg border-[1.5px] border-[#f5e6cc] text-[#8b5e3c] text-xs hover:bg-white transition-colors">
+                                Huỷ
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="flex gap-2 mt-2">
+                              <button onClick={() => doPrint(inv, recipes)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border-[1.5px] border-[#f5e6cc] text-[#8b5e3c] text-xs font-medium cursor-pointer hover:border-[#c8773a] hover:text-[#c8773a] transition-all">
+                                🖨 In
+                              </button>
+                              <button onClick={() => { setEditDateFor(inv.id); setEditDateValue(inv.inv_date) }} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border-[1.5px] border-[#f5e6cc] text-[#8b5e3c] text-xs font-medium cursor-pointer hover:border-[#c8773a] hover:text-[#c8773a] transition-all">
+                                📅 Sửa ngày
+                              </button>
+                              <button onClick={() => handleDelete(inv)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border-[1.5px] border-[#e0a090] text-[#d94f3d] text-xs font-medium cursor-pointer hover:bg-[#fdecea] transition-all">
+                                🗑 Xoá
+                              </button>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
