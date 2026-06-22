@@ -510,15 +510,28 @@ export default function ReportsPage() {
         }
       }
 
+      // ── Fetch tồn thực tế theo lô (current batch stock) ─────────
+      const { data: batchData } = await sb
+        .from('batches')
+        .select('product_name, remaining_qty')
+        .gt('remaining_qty', 0.005)
+
+      const batchStockMap: Record<string, number> = {}
+      for (const b of (batchData || []) as { product_name: string; remaining_qty: number }[]) {
+        const key = b.product_name.toLowerCase().trim()
+        batchStockMap[key] = (batchStockMap[key] || 0) + b.remaining_qty
+      }
+
       const rows: NXTRow[] = []
       for (const p of allProducts.filter(p => p.is_active)) {
         const key = p.name.toLowerCase().trim()
         const m   = map[key] || { preNet: 0, nhapSL: 0, xuatSL: 0 }
-        const tonDau  = m.preNet                        // tồn đầu = Σ nhập − Σ xuất trước kỳ
-        const tonCuoi = tonDau + m.nhapSL - m.xuatSL    // luôn cân đối theo công thức
+        const tonDau  = m.preNet
+        // Tồn cuối = tồn thực tế theo lô, không dùng công thức tonDau + nhap - xuat
+        const tonCuoi = parseFloat((batchStockMap[key] || 0).toFixed(2))
 
         // Bỏ qua mặt hàng không phát sinh trong kỳ & tồn 0 suốt
-        if (Math.abs(tonDau) < 0.001 && m.nhapSL === 0 && m.xuatSL === 0 && Math.abs(tonCuoi) < 0.001) continue
+        if (Math.abs(tonDau) < 0.001 && m.nhapSL === 0 && m.xuatSL === 0 && tonCuoi < 0.001) continue
 
         rows.push({
           code: p.code || '', name: p.name, unit: p.unit,
@@ -554,13 +567,12 @@ export default function ReportsPage() {
       }
       setNxtOpeningLocal(initLocal)
 
-      // Áp dụng adj vào rows (override tonDau + recompute tonCuoi)
+      // Áp dụng adj vào rows (override tonDau; tonCuoi giữ nguyên từ batch stock)
       for (const row of rows) {
         const key = row.name.toLowerCase().trim()
         if (adjMap[key] !== undefined) {
-          row.tonDau  = adjMap[key]
-          row.tonCuoi = adjMap[key] + row.nhapSL - row.xuatSL
-          row.hasAdj  = true
+          row.tonDau = adjMap[key]
+          row.hasAdj = true
         }
       }
 
