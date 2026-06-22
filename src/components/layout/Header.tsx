@@ -16,6 +16,7 @@ const PAGE_META: Record<PageName, { title: string; subtitle: string }> = {
   reports:   { title: 'Báo cáo kho',           subtitle: 'Nhập-Xuất-Tồn, Sổ chi tiết & Biên bản kiểm kê' },
   channels:  { title: 'Inbox kênh',            subtitle: 'Tin nhắn Facebook & Zalo OA tập trung' },
   groups:    { title: 'Phân nhóm & quyền',     subtitle: 'Tạo nhóm người dùng & gán quyền truy cập tab' },
+  customers: { title: 'Khách hàng',            subtitle: 'Quản lý khách hàng, tích điểm & lịch sử mua' },
 }
 
 interface HeaderProps {
@@ -24,7 +25,7 @@ interface HeaderProps {
 }
 
 export default function Header({ currentPage, onMenuClick }: HeaderProps) {
-  const meta = PAGE_META[currentPage]
+  const meta = PAGE_META[currentPage] ?? { title: '', subtitle: '' }
 
   return (
     <header className="bg-white/70 backdrop-blur-sm border-b border-[#e8ddd0] px-5 py-3 flex items-center gap-4 sticky top-0 z-40">
