@@ -6,6 +6,7 @@ import { Invoice } from '@/types'
 import { fmtNum, fmtPrice, fmtDate, todayStr } from '@/lib/utils'
 import DateInput from '@/components/shared/DateInput'
 import ProductPicker from '@/components/shared/ProductPicker'
+import ImageUpload from '@/components/shared/ImageUpload'
 import * as XLSX from 'xlsx'
 
 // ─── Date helpers ─────────────────────────────────────────────
@@ -42,7 +43,7 @@ function getRangeForPreset(preset: string): [string, string] {
 }
 
 // ─── Types ────────────────────────────────────────────────────
-type TabKey = 'nxt' | 'chitiet' | 'kiekem'
+type TabKey = 'nxt' | 'chitiet' | 'kiekem' | 'congno'
 type PeriodPreset = 'day' | 'week' | 'month' | 'quarter' | 'year' | 'custom'
 
 interface NXTRow {
@@ -59,6 +60,17 @@ interface Batch {
 interface LedgerRow {
   id: number; ngay: string; code: string; type: 'in' | 'out'
   partner: string; nhap: number; xuat: number; ton: number; price: number
+}
+interface DebtInvoice {
+  id: number; code: string; inv_date: string; partner: string
+  total: number; note: string
+  paid: boolean; paid_at: string | null
+  payment_bill_url: string | null; paid_by: string | null
+}
+interface DebtSupplier {
+  partner: string; invoices: DebtInvoice[]
+  totalAmount: number; paidAmount: number; unpaidAmount: number
+  invoiceCount: number; unpaidCount: number
 }
 
 // ─── Print CSS ────────────────────────────────────────────────
@@ -420,7 +432,7 @@ const PRESETS: { key: PeriodPreset; label: string }[] = [
 
 // ─── MAIN COMPONENT ───────────────────────────────────────────
 export default function ReportsPage() {
-  const { sb, allProducts, toast, user, profile } = useApp()
+  const { sb, allProducts, toast, user, profile, writeAudit } = useApp()
 
   // ── tab ──────────────────────────────────────────────────────
   const [tab, setTab] = useState<TabKey>('nxt')
@@ -459,6 +471,23 @@ export default function ReportsPage() {
   const [kkDate,   setKkDate]   = useState(todayStr())
   const [kkActual, setKkActual] = useState<Map<number, number>>(new Map())
   const [kkSearch, setKkSearch] = useState('')
+
+  // ── Công nợ nhập state ───────────────────────────────────────
+  const [cnPreset,   setCnPreset]   = useState<PeriodPreset>('month')
+  const [cnFrom,     setCnFrom]     = useState(getRangeForPreset('month')[0])
+  const [cnTo,       setCnTo]       = useState(getRangeForPreset('month')[1])
+  const [cnSuppliers, setCnSuppliers] = useState<DebtSupplier[]>([])
+  const [cnLoading,  setCnLoading]  = useState(false)
+  const [cnLoaded,   setCnLoaded]   = useState(false)
+  const [cnSearch,   setCnSearch]   = useState('')
+  const [cnFilter,   setCnFilter]   = useState<'all' | 'unpaid' | 'paid'>('all')
+  const [cnExpanded, setCnExpanded] = useState<Set<string>>(new Set())
+  // Modal xác nhận thanh toán + đính kèm bill
+  const [payModalInv, setPayModalInv] = useState<DebtInvoice | null>(null)
+  const [payBillUrl,  setPayBillUrl]  = useState('')
+  const [savingPay,   setSavingPay]   = useState(false)
+  // Modal xem bill đã đính kèm
+  const [viewBillUrl, setViewBillUrl] = useState<string | null>(null)
 
   // ── Preset handler ───────────────────────────────────────────
   function applyNxtPreset(preset: PeriodPreset) {
@@ -883,6 +912,179 @@ export default function ReportsPage() {
     XLSX.writeFile(wb, `KiemKe_${kkDate}.xlsx`)
   }
 
+  // ── Công nợ: preset handler ──────────────────────────────────
+  function applyCnPreset(preset: PeriodPreset) {
+    setCnPreset(preset)
+    if (preset !== 'custom') {
+      const [f, t] = getRangeForPreset(preset)
+      setCnFrom(f); setCnTo(t)
+    }
+    setCnLoaded(false)
+  }
+
+  // ── Công nợ: tải dữ liệu, gộp theo NCC ───────────────────────
+  const loadCongNo = async () => {
+    if (!cnFrom || !cnTo) { toast('Chọn khoảng thời gian hợp lệ', 'error'); return }
+    setCnLoading(true)
+    try {
+      const PAGE = 1000
+      const invs: Invoice[] = []; let pFrom = 0
+      while (true) {
+        const { data, error } = await sb.from('invoices').select('*')
+          .eq('type', 'in')
+          .gte('inv_date', cnFrom).lte('inv_date', cnTo)
+          .order('inv_date', { ascending: false })
+          .range(pFrom, pFrom + PAGE - 1)
+        if (error) throw error
+        if (!data || data.length === 0) break
+        invs.push(...(data as Invoice[]))
+        if (data.length < PAGE) break
+        pFrom += PAGE
+      }
+
+      // Gộp theo nhà cung cấp (partner)
+      const map = new Map<string, DebtInvoice[]>()
+      for (const inv of invs) {
+        const total = (inv.items as { amount?: number; price?: number }[])
+          .reduce((s, it) => s + (Number(it.amount) || 0) * (Number(it.price) || 0), 0)
+        const partner = (inv.partner || '').trim() || '(Không ghi NCC)'
+        const raw = inv as Invoice & { paid?: boolean; paid_at?: string; payment_bill_url?: string; paid_by?: string }
+        const di: DebtInvoice = {
+          id: inv.id, code: inv.code, inv_date: inv.inv_date, partner,
+          total, note: inv.note || '',
+          paid: !!raw.paid, paid_at: raw.paid_at || null,
+          payment_bill_url: raw.payment_bill_url || null, paid_by: raw.paid_by || null,
+        }
+        if (!map.has(partner)) map.set(partner, [])
+        map.get(partner)!.push(di)
+      }
+
+      const suppliers: DebtSupplier[] = []
+      for (const [partner, list] of map) {
+        const totalAmount = list.reduce((s, i) => s + i.total, 0)
+        const paidAmount  = list.filter(i => i.paid).reduce((s, i) => s + i.total, 0)
+        suppliers.push({
+          partner, invoices: list,
+          totalAmount, paidAmount, unpaidAmount: totalAmount - paidAmount,
+          invoiceCount: list.length, unpaidCount: list.filter(i => !i.paid).length,
+        })
+      }
+      // Sắp xếp: còn nợ nhiều nhất lên đầu
+      suppliers.sort((a, b) => b.unpaidAmount - a.unpaidAmount)
+
+      setCnSuppliers(suppliers)
+      setCnExpanded(new Set())
+      setCnLoaded(true)
+    } catch (e) {
+      toast('Lỗi tải công nợ: ' + (e as Error).message, 'error')
+    } finally {
+      setCnLoading(false)
+    }
+  }
+
+  // ── Cập nhật trạng thái thanh toán 1 hoá đơn ─────────────────
+  const updatePaidStatus = async (inv: DebtInvoice, paid: boolean, billUrl: string) => {
+    if (!user) { toast('Bạn chưa đăng nhập', 'error'); return false }
+    const payload = paid
+      ? { paid: true, paid_at: new Date().toISOString(), payment_bill_url: billUrl || null, paid_by: profile?.full_name || user.email || '' }
+      : { paid: false, paid_at: null, payment_bill_url: null, paid_by: null }
+    const { data, error } = await sb.from('invoices').update(payload).eq('id', inv.id).select().single()
+    if (error) { toast('Lỗi cập nhật: ' + error.message, 'error'); return false }
+    if (!data) { toast('Không thể cập nhật — kiểm tra quyền truy cập', 'error'); return false }
+
+    // Cập nhật state cục bộ
+    setCnSuppliers(prev => prev.map(sup => {
+      if (!sup.invoices.some(i => i.id === inv.id)) return sup
+      const invoices = sup.invoices.map(i => i.id === inv.id
+        ? { ...i, paid, paid_at: payload.paid_at, payment_bill_url: payload.payment_bill_url, paid_by: payload.paid_by }
+        : i)
+      const paidAmount = invoices.filter(i => i.paid).reduce((s, i) => s + i.total, 0)
+      return {
+        ...sup, invoices, paidAmount,
+        unpaidAmount: sup.totalAmount - paidAmount,
+        unpaidCount: invoices.filter(i => !i.paid).length,
+      }
+    }))
+    await writeAudit('update', 'invoice_payment', String(inv.id),
+      `${inv.code} — ${paid ? 'Đã thanh toán' : 'Bỏ thanh toán'}`)
+    return true
+  }
+
+  // ── Mở modal xác nhận thanh toán ─────────────────────────────
+  const openPayModal = (inv: DebtInvoice) => {
+    setPayModalInv(inv)
+    setPayBillUrl(inv.payment_bill_url || '')
+  }
+
+  const confirmPay = async () => {
+    if (!payModalInv) return
+    setSavingPay(true)
+    try {
+      const ok = await updatePaidStatus(payModalInv, true, payBillUrl)
+      if (ok) { toast('Đã đánh dấu thanh toán', 'success'); setPayModalInv(null) }
+    } finally {
+      setSavingPay(false)
+    }
+  }
+
+  const unmarkPaid = async (inv: DebtInvoice) => {
+    const ok = await updatePaidStatus(inv, false, '')
+    if (ok) toast('Đã chuyển về chưa thanh toán', 'success')
+  }
+
+  const toggleCnExpand = (partner: string) => {
+    setCnExpanded(prev => {
+      const next = new Set(prev)
+      if (next.has(partner)) next.delete(partner); else next.add(partner)
+      return next
+    })
+  }
+
+  // ── Công nợ: lọc + tổng ──────────────────────────────────────
+  const filteredCnSuppliers = useMemo(() => {
+    const q = cnSearch.trim().toLowerCase()
+    return cnSuppliers
+      .map(sup => {
+        // Lọc hoá đơn theo trạng thái thanh toán
+        const invoices = cnFilter === 'all'
+          ? sup.invoices
+          : sup.invoices.filter(i => cnFilter === 'paid' ? i.paid : !i.paid)
+        return { ...sup, _visibleInvoices: invoices }
+      })
+      .filter(sup => {
+        if (q && !sup.partner.toLowerCase().includes(q)) return false
+        if (cnFilter !== 'all' && sup._visibleInvoices.length === 0) return false
+        return true
+      })
+  }, [cnSuppliers, cnSearch, cnFilter])
+
+  const cnTotals = useMemo(() => ({
+    total:  cnSuppliers.reduce((s, x) => s + x.totalAmount, 0),
+    paid:   cnSuppliers.reduce((s, x) => s + x.paidAmount, 0),
+    unpaid: cnSuppliers.reduce((s, x) => s + x.unpaidAmount, 0),
+  }), [cnSuppliers])
+
+  // ── Excel export Công nợ ─────────────────────────────────────
+  const exportCnExcel = () => {
+    const header = ['Nhà cung cấp', 'Mã HĐ', 'Ngày nhập', 'Số tiền', 'Trạng thái', 'Ngày thanh toán', 'Người TT', 'Ghi chú']
+    const data: (string | number)[][] = []
+    for (const sup of cnSuppliers) {
+      for (const inv of sup.invoices) {
+        data.push([
+          sup.partner, inv.code, fmtDate(inv.inv_date), inv.total,
+          inv.paid ? 'Đã thanh toán' : 'Chưa thanh toán',
+          inv.paid_at ? fmtDate(inv.paid_at) : '', inv.paid_by || '', inv.note,
+        ])
+      }
+      data.push([`→ ${sup.partner}: Tổng ${sup.totalAmount} | Đã trả ${sup.paidAmount} | Còn nợ ${sup.unpaidAmount}`, '', '', '', '', '', '', ''])
+    }
+    const ws = XLSX.utils.aoa_to_sheet([header, ...data])
+    ws['!cols'] = [{ wch: 32 }, { wch: 12 }, { wch: 12 }, { wch: 14 }, { wch: 16 }, { wch: 14 }, { wch: 18 }, { wch: 24 }]
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'CongNoNhap')
+    XLSX.writeFile(wb, `CongNoNhap_${cnFrom}_${cnTo}.xlsx`)
+  }
+
   // ── Shared UI atoms ──────────────────────────────────────────
   const sectionBox = 'bg-[#fffaf4] rounded-2xl border border-[#f5e6cc] shadow-[0_4px_20px_rgba(200,119,58,0.06)]'
   const btnPrimary = 'inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-gradient-to-br from-[#c8773a] to-[#e8a44a] text-white text-xs font-medium hover:opacity-90 transition-all cursor-pointer'
@@ -893,6 +1095,7 @@ export default function ReportsPage() {
     { key: 'nxt'    as TabKey, label: '📊 Nhập-Xuất-Tồn' },
     { key: 'chitiet' as TabKey, label: '📋 Sổ chi tiết' },
     { key: 'kiekem'  as TabKey, label: '🔍 Kiểm kê định kỳ' },
+    { key: 'congno'  as TabKey, label: '💳 Công nợ nhập' },
   ]
 
   // ─── RENDER ──────────────────────────────────────────────────
@@ -1556,6 +1759,227 @@ export default function ReportsPage() {
                 </tbody>
               </table>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ═══ TAB: CÔNG NỢ NHẬP ══════════════════════════════════ */}
+      {tab === 'congno' && (
+        <div className="space-y-4">
+          {/* Filter bar */}
+          <div className={`${sectionBox} p-4`}>
+            <div className="flex flex-wrap items-end gap-3">
+              <div>
+                <div className="text-[11px] text-[#8b5e3c]/60 mb-1.5 font-medium">Kỳ báo cáo</div>
+                <div className="flex flex-wrap gap-1">
+                  {PRESETS.map(pr => (
+                    <button
+                      key={pr.key}
+                      onClick={() => applyCnPreset(pr.key)}
+                      className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                        cnPreset === pr.key
+                          ? 'bg-[#c8773a] text-white'
+                          : 'bg-[#f5e6cc] text-[#8b5e3c] hover:bg-[#e8d5b7]'
+                      }`}
+                    >
+                      {pr.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <div>
+                  <div className="text-[11px] text-[#8b5e3c]/60 mb-1">Từ ngày</div>
+                  <DateInput value={cnFrom} onChange={v => { setCnFrom(v); setCnPreset('custom'); setCnLoaded(false) }}
+                    className={inputCls + ' text-xs'} />
+                </div>
+                <div className="text-[#8b5e3c]/40 mt-5">–</div>
+                <div>
+                  <div className="text-[11px] text-[#8b5e3c]/60 mb-1">Đến ngày</div>
+                  <DateInput value={cnTo} onChange={v => { setCnTo(v); setCnPreset('custom'); setCnLoaded(false) }}
+                    className={inputCls + ' text-xs'} />
+                </div>
+              </div>
+              <button onClick={loadCongNo} disabled={cnLoading}
+                className={`${btnPrimary} disabled:opacity-60 disabled:cursor-not-allowed mt-auto`}>
+                {cnLoading ? '⏳ Đang tải...' : '🔄 Tải công nợ'}
+              </button>
+            </div>
+          </div>
+
+          {/* Results */}
+          {cnLoaded && (
+            <>
+              {/* Summary stats */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {[
+                  { label: 'Tổng tiền nhập',  value: cnTotals.total,  color: '#3d1f0a', icon: '🧾' },
+                  { label: 'Đã thanh toán',   value: cnTotals.paid,   color: '#1e7a4a', icon: '✅' },
+                  { label: 'Còn nợ',          value: cnTotals.unpaid, color: '#d94f3d', icon: '⏳' },
+                ].map(s => (
+                  <div key={s.label} className="bg-white rounded-xl p-4 border-[1.5px] border-[#f5e6cc] flex items-center gap-3">
+                    <div className="text-2xl">{s.icon}</div>
+                    <div>
+                      <div className="text-lg font-bold" style={{ color: s.color }}>{fmtPrice(s.value)}</div>
+                      <div className="text-[11px] text-[#8b5e3c]">{s.label}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className={`${sectionBox} p-4`}>
+                {/* Toolbar */}
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+                  <span className="text-sm font-semibold text-[#3d1f0a]">
+                    Công nợ theo NCC — <span className="text-[#c8773a]">{filteredCnSuppliers.length}</span> nhà cung cấp
+                  </span>
+                  <div className="flex flex-wrap gap-2 items-center">
+                    {/* Filter trạng thái */}
+                    <div className="flex gap-1 bg-[#f5e6cc]/50 p-0.5 rounded-lg">
+                      {([['all','Tất cả'],['unpaid','Còn nợ'],['paid','Đã trả']] as const).map(([k, lbl]) => (
+                        <button key={k} onClick={() => setCnFilter(k)}
+                          className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all cursor-pointer ${
+                            cnFilter === k ? 'bg-white text-[#c8773a] shadow-sm' : 'text-[#8b5e3c]/70 hover:text-[#3d1f0a]'
+                          }`}>{lbl}</button>
+                      ))}
+                    </div>
+                    <input
+                      type="text" placeholder="🔍 Tìm NCC..." value={cnSearch}
+                      onChange={e => setCnSearch(e.target.value)}
+                      className={inputCls + ' text-xs w-40'} />
+                    <button onClick={exportCnExcel} className={btnOutline}>📥 Excel</button>
+                  </div>
+                </div>
+
+                {filteredCnSuppliers.length === 0 ? (
+                  <div className="py-10 text-center text-[#8b5e3c]/60 text-sm">Không có công nợ phù hợp</div>
+                ) : (
+                  <div className="space-y-2">
+                    {filteredCnSuppliers.map(sup => {
+                      const expanded = cnExpanded.has(sup.partner)
+                      const visInvs = (sup as DebtSupplier & { _visibleInvoices: DebtInvoice[] })._visibleInvoices
+                      return (
+                        <div key={sup.partner} className="border border-[#f0e4d0] rounded-xl overflow-hidden">
+                          {/* Supplier header row */}
+                          <button
+                            onClick={() => toggleCnExpand(sup.partner)}
+                            className="w-full flex items-center gap-3 px-4 py-3 bg-[#fdf6ec] hover:bg-[#fbeedd] transition-colors text-left cursor-pointer"
+                          >
+                            <span className={`text-[#c8773a] text-xs transition-transform ${expanded ? 'rotate-90' : ''}`}>▶</span>
+                            <span className="font-semibold text-[#3d1f0a] flex-1 min-w-0 truncate">🏭 {sup.partner}</span>
+                            <span className="text-xs text-[#8b5e3c] hidden sm:inline">{sup.invoiceCount} HĐ</span>
+                            <span className="text-xs text-[#3d1f0a]">Tổng: <b>{fmtPrice(sup.totalAmount)}</b></span>
+                            <span className="text-xs text-[#1e7a4a]">Đã trả: <b>{fmtPrice(sup.paidAmount)}</b></span>
+                            <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                              sup.unpaidAmount > 0.5 ? 'bg-red-50 text-red-600' : 'bg-green-50 text-green-700'
+                            }`}>
+                              {sup.unpaidAmount > 0.5 ? `Còn nợ ${fmtPrice(sup.unpaidAmount)}` : '✓ Đã thanh toán đủ'}
+                            </span>
+                          </button>
+
+                          {/* Invoice detail rows */}
+                          {expanded && (
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-xs border-collapse">
+                                <thead>
+                                  <tr className="bg-[#f5e6cc]/40 text-[#8b5e3c]">
+                                    <th className="px-3 py-2 text-left font-medium">Mã HĐ</th>
+                                    <th className="px-3 py-2 text-center font-medium">Ngày nhập</th>
+                                    <th className="px-3 py-2 text-right font-medium">Số tiền</th>
+                                    <th className="px-3 py-2 text-left font-medium">Ghi chú</th>
+                                    <th className="px-3 py-2 text-center font-medium">Bill</th>
+                                    <th className="px-3 py-2 text-center font-medium w-44">Thanh toán</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {visInvs.map((inv, i) => (
+                                    <tr key={inv.id} className={i % 2 === 0 ? 'bg-white' : 'bg-[#fdfaf6]'}>
+                                      <td className="px-3 py-2 font-mono text-[#c8773a] border-t border-[#f0e8d8]">{inv.code}</td>
+                                      <td className="px-3 py-2 text-center text-[#8b5e3c] border-t border-[#f0e8d8]">{fmtDate(inv.inv_date)}</td>
+                                      <td className="px-3 py-2 text-right font-semibold text-[#3d1f0a] border-t border-[#f0e8d8]">{fmtPrice(inv.total)}</td>
+                                      <td className="px-3 py-2 text-[#8b5e3c] max-w-[160px] truncate border-t border-[#f0e8d8]">{inv.note || '—'}</td>
+                                      <td className="px-3 py-2 text-center border-t border-[#f0e8d8]">
+                                        {inv.payment_bill_url ? (
+                                          <button onClick={() => setViewBillUrl(inv.payment_bill_url)}
+                                            className="text-[#c8773a] hover:underline cursor-pointer">🧾 Xem</button>
+                                        ) : <span className="text-[#ddd]">—</span>}
+                                      </td>
+                                      <td className="px-3 py-2 text-center border-t border-[#f0e8d8]">
+                                        {inv.paid ? (
+                                          <div className="flex items-center justify-center gap-1.5">
+                                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-700 text-[11px] font-medium">
+                                              ✅ Đã TT
+                                            </span>
+                                            <button onClick={() => unmarkPaid(inv)}
+                                              title="Bỏ đánh dấu thanh toán"
+                                              className="text-[#aaa] hover:text-red-500 text-xs cursor-pointer">↩</button>
+                                          </div>
+                                        ) : (
+                                          <button onClick={() => openPayModal(inv)}
+                                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-[#1e7a4a] text-white text-[11px] font-medium hover:opacity-90 cursor-pointer">
+                                            ✓ Đánh dấu đã TT
+                                          </button>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
+          {!cnLoaded && !cnLoading && (
+            <div className={`${sectionBox} p-10 text-center text-[#8b5e3c]/60 text-sm`}>
+              Chọn kỳ báo cáo và nhấn <b>Tải công nợ</b> để xem dữ liệu
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ─── Modal xác nhận thanh toán + đính kèm bill ─── */}
+      {payModalInv && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm"
+          onClick={() => !savingPay && setPayModalInv(null)}>
+          <div className="bg-white rounded-2xl p-5 w-full max-w-md shadow-2xl" onClick={e => e.stopPropagation()}>
+            <h3 className="text-base font-bold text-[#3d1f0a] mb-1">💳 Xác nhận thanh toán</h3>
+            <p className="text-xs text-[#8b5e3c] mb-4">
+              Hoá đơn <b className="text-[#c8773a]">{payModalInv.code}</b> — {payModalInv.partner}
+              <br/>Số tiền: <b className="text-[#3d1f0a]">{fmtPrice(payModalInv.total)}</b>
+            </p>
+            <div className="mb-4">
+              <label className="block text-xs font-medium text-[#8b5e3c] mb-1.5">Đính kèm bill thanh toán (tuỳ chọn)</label>
+              <ImageUpload value={payBillUrl} onChange={setPayBillUrl} />
+            </div>
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setPayModalInv(null)} disabled={savingPay}
+                className="px-4 py-2 rounded-lg border border-[#f5e6cc] text-[#8b5e3c] text-sm hover:bg-[#fdf6ec] cursor-pointer disabled:opacity-50">
+                Huỷ
+              </button>
+              <button onClick={confirmPay} disabled={savingPay}
+                className="px-4 py-2 rounded-lg bg-[#1e7a4a] text-white text-sm font-semibold hover:opacity-90 cursor-pointer disabled:opacity-50">
+                {savingPay ? '⏳ Đang lưu...' : '✓ Xác nhận đã thanh toán'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── Modal xem bill ─── */}
+      {viewBillUrl && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+          onClick={() => setViewBillUrl(null)}>
+          <div className="relative max-w-2xl max-h-[85vh]" onClick={e => e.stopPropagation()}>
+            <img src={viewBillUrl} alt="Bill thanh toán" className="max-w-full max-h-[85vh] rounded-xl object-contain" />
+            <button onClick={() => setViewBillUrl(null)}
+              className="absolute -top-3 -right-3 w-8 h-8 rounded-full bg-white text-[#3d1f0a] font-bold shadow-lg hover:bg-[#fdf6ec] cursor-pointer">✕</button>
           </div>
         </div>
       )}
