@@ -17,6 +17,7 @@ const PAGE_META: Record<PageName, { title: string; subtitle: string }> = {
   channels:  { title: 'Inbox kênh',            subtitle: 'Tin nhắn Facebook & Zalo OA tập trung' },
   groups:    { title: 'Phân nhóm & quyền',     subtitle: 'Tạo nhóm người dùng & gán quyền truy cập tab' },
   customers: { title: 'Khách hàng',            subtitle: 'Quản lý khách hàng, tích điểm & lịch sử mua' },
+  integrations: { title: 'Cấu hình kênh',      subtitle: 'Khai báo App ID, Secret, Token cho Facebook & Zalo OA' },
 }
 
 interface HeaderProps {

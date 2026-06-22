@@ -211,7 +211,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   // ── Phân quyền truy cập tab ─────────────────────────────────
   // 'admin' & 'groups' luôn chỉ dành cho role admin (chống leo thang quyền).
   // Có nhóm → dùng allowed_pages của nhóm. Chưa có nhóm → quyền mặc định theo role.
-  const ADMIN_ONLY: PageName[] = ['admin', 'groups']
+  const ADMIN_ONLY: PageName[] = ['admin', 'groups', 'integrations']
   const canAccess = useCallback((page: PageName): boolean => {
     if (!profile) return false
     if (profile.role === 'admin') return true
@@ -224,7 +224,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const allowedPages: PageName[] = (() => {
     if (!profile) return []
     if (profile.role === 'admin') {
-      return ['products','invoices','reports','recipes','calc','log','channels','personnel','units','users','admin','groups']
+      return ['products','invoices','reports','recipes','calc','log','customers','channels','integrations','personnel','units','users','admin','groups']
     }
     const pages = userGroup ? (userGroup.allowed_pages as PageName[]) : defaultPagesForRole(profile.role)
     return pages.filter(p => !ADMIN_ONLY.includes(p))

@@ -113,7 +113,7 @@ export interface Toast {
   type: 'success' | 'error' | 'info'
 }
 
-export type PageName = 'recipes' | 'calc' | 'log' | 'invoices' | 'summary' | 'products' | 'admin' | 'users' | 'personnel' | 'units' | 'reports' | 'channels' | 'groups' | 'customers'
+export type PageName = 'recipes' | 'calc' | 'log' | 'invoices' | 'summary' | 'products' | 'admin' | 'users' | 'personnel' | 'units' | 'reports' | 'channels' | 'groups' | 'customers' | 'integrations'
 
 export interface Customer {
   id: number

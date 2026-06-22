@@ -21,6 +21,7 @@ import ReportsPage from '@/components/reports/ReportsPage'
 import ChannelsPage from '@/components/channels/ChannelsPage'
 import GroupsPage from '@/components/groups/GroupsPage'
 import CustomersPage from '@/components/customers/CustomersPage'
+import IntegrationsPage from '@/components/integrations/IntegrationsPage'
 import { PageName } from '@/types'
 
 export default function Home() {
@@ -28,7 +29,7 @@ export default function Home() {
   const [currentPage, setCurrentPage] = useState<PageName>('products')
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
-  const VALID_PAGES: PageName[] = ['products', 'invoices', /*'summary',*/ 'recipes', 'calc', 'log', 'personnel', 'units', 'users', 'admin', 'reports', 'channels', 'groups', 'customers']
+  const VALID_PAGES: PageName[] = ['products', 'invoices', /*'summary',*/ 'recipes', 'calc', 'log', 'personnel', 'units', 'users', 'admin', 'reports', 'channels', 'groups', 'customers', 'integrations']
 
   // Nếu user không có quyền vào trang hiện tại → chuyển về trang đầu tiên được phép
   useEffect(() => {
@@ -110,6 +111,7 @@ export default function Home() {
               {currentPage === 'channels'  && <ChannelsPage />}
               {currentPage === 'groups'    && <GroupsPage />}
               {currentPage === 'customers' && <CustomersPage />}
+              {currentPage === 'integrations' && <IntegrationsPage />}
             </main>
           </div>
 
