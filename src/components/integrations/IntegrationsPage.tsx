@@ -83,9 +83,14 @@ export default function IntegrationsPage() {
         updated_by: profile?.full_name || user.email || '',
         updated_at: new Date().toISOString(),
       }))
-      const { error } = await sb.from('integration_config').upsert(payload, { onConflict: 'key' })
+      // Timeout 15s để nút không kẹt mãi nếu supabase-js bị auth-lock (mở nhiều tab)
+      const upsert = sb.from('integration_config').upsert(payload, { onConflict: 'key' })
+      const timeout = new Promise<never>((_, rej) =>
+        setTimeout(() => rej(new Error('Quá thời gian chờ (15s) — thử đóng bớt tab khác rồi lưu lại')), 15000))
+      const { error } = await Promise.race([upsert, timeout]) as { error: { message: string } | null }
       if (error) throw error
-      await writeAudit('update', 'integration_config', label, `Cập nhật cấu hình ${label}`)
+      // Fire-and-forget: không await để không kẹt UI nếu audit_log chậm
+      void writeAudit('update', 'integration_config', label, `Cập nhật cấu hình ${label}`)
       toast(`Đã lưu cấu hình ${label}`, 'success')
     } catch (e) {
       toast('Lỗi lưu: ' + (e as Error).message, 'error')
