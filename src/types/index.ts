@@ -113,7 +113,39 @@ export interface Toast {
   type: 'success' | 'error' | 'info'
 }
 
-export type PageName = 'recipes' | 'calc' | 'log' | 'invoices' | 'summary' | 'products' | 'admin' | 'users' | 'personnel' | 'units' | 'reports' | 'channels' | 'groups'
+export type PageName = 'recipes' | 'calc' | 'log' | 'invoices' | 'summary' | 'products' | 'admin' | 'users' | 'personnel' | 'units' | 'reports' | 'channels' | 'groups' | 'customers'
+
+export interface Customer {
+  id: number
+  name: string
+  phone?: string
+  email?: string
+  address?: string
+  birthday?: string
+  tags?: string[]
+  notes?: string
+  rank: 'regular' | 'member' | 'vip'
+  points: number
+  total_spent: number
+  avatar_url?: string
+  source?: string
+  fb_id?: string
+  zalo_id?: string
+  created_by: string
+  updated_by?: string | null
+  created_at: string
+  updated_at?: string | null
+}
+
+export interface CustomerPointsLog {
+  id: number
+  customer_id: number
+  delta: number
+  reason?: string
+  inv_code?: string
+  created_by?: string
+  created_at: string
+}
 
 export interface Personnel {
   id: number
