@@ -31,6 +31,20 @@ const ZALO_FIELDS: Field[] = [
 
 const ALL_KEYS = [...FB_FIELDS, ...ZALO_FIELDS].map(f => f.key)
 
+// Đọc access token trực tiếp từ localStorage — KHÔNG qua supabase-js
+// (tránh auth-lock làm treo request khi refresh token / mở nhiều tab)
+function getAccessToken(): string | null {
+  try {
+    const url = process.env.NEXT_PUBLIC_SUPABASE_URL || ''
+    const ref = url.match(/https:\/\/([^.]+)\./)?.[1]
+    if (!ref) return null
+    const raw = localStorage.getItem(`sb-${ref}-auth-token`)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    return parsed?.access_token ?? null
+  } catch { return null }
+}
+
 export default function IntegrationsPage() {
   const { sb, profile, user, toast, startLoading, stopLoading, writeAudit } = useApp()
   const isAdmin = profile?.role === 'admin'
@@ -74,21 +88,19 @@ export default function IntegrationsPage() {
 
   const saveGroup = async (fields: Field[], label: string, setSaving: (b: boolean) => void) => {
     if (!user) { toast('Bạn chưa đăng nhập', 'error'); return }
+    const token = getAccessToken()
+    if (!token) { toast('Phiên đăng nhập hết hạn — hãy tải lại trang', 'error'); return }
     setSaving(true)
     startLoading()
     try {
-      const payload = fields.map(f => ({
-        key: f.key,
-        value: config[f.key] ?? '',
-        updated_by: profile?.full_name || user.email || '',
-        updated_at: new Date().toISOString(),
-      }))
-      // Timeout 15s để nút không kẹt mãi nếu supabase-js bị auth-lock (mở nhiều tab)
-      const upsert = sb.from('integration_config').upsert(payload, { onConflict: 'key' })
-      const timeout = new Promise<never>((_, rej) =>
-        setTimeout(() => rej(new Error('Quá thời gian chờ (15s) — thử đóng bớt tab khác rồi lưu lại')), 15000))
-      const { error } = await Promise.race([upsert, timeout]) as { error: { message: string } | null }
-      if (error) throw error
+      // Gọi API route server-side (service role) — fetch thường, không dính auth-lock
+      const res = await fetch('/api/integration-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ items: fields.map(f => ({ key: f.key, value: config[f.key] ?? '' })) }),
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(json.error || `Lỗi server (${res.status})`)
       // Fire-and-forget: không await để không kẹt UI nếu audit_log chậm
       void writeAudit('update', 'integration_config', label, `Cập nhật cấu hình ${label}`)
       toast(`Đã lưu cấu hình ${label}`, 'success')
