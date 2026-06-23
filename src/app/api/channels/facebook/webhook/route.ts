@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { getPageToken } from '@/lib/facebook'
 
 const sb = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -13,7 +14,14 @@ export async function GET(req: NextRequest) {
   const token     = searchParams.get('hub.verify_token')
   const challenge = searchParams.get('hub.challenge')
 
-  if (mode === 'subscribe' && token === process.env.FB_VERIFY_TOKEN) {
+  // Verify token lấy từ integration_config (admin nhập qua UI), fallback env
+  let expected = process.env.FB_VERIFY_TOKEN ?? ''
+  try {
+    const { data } = await sb.from('integration_config').select('value').eq('key', 'fb_verify_token').single()
+    if (data?.value) expected = data.value
+  } catch { /* dùng env */ }
+
+  if (mode === 'subscribe' && token && token === expected) {
     return new NextResponse(challenge, { status: 200 })
   }
   return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
@@ -29,6 +37,7 @@ export async function POST(req: NextRequest) {
     }
 
     for (const entry of body.entry ?? []) {
+      const pageId: string = entry.id   // ID Page nhận tin nhắn (multi-page)
       for (const event of entry.messaging ?? []) {
         // Chỉ xử lý tin nhắn text (bỏ qua delivery/read receipts)
         if (!event.message || event.message.is_echo) continue
@@ -38,12 +47,12 @@ export async function POST(req: NextRequest) {
         const text: string       = event.message.text ?? ''
         const ts: number         = event.timestamp
 
-        // Upsert thread
+        // Upsert thread (khoá theo channel + page_id + platform_id)
         const { data: thread } = await sb
           .from('channel_threads')
           .upsert(
-            { channel: 'facebook', platform_id: senderPsid },
-            { onConflict: 'channel,platform_id', ignoreDuplicates: false }
+            { channel: 'facebook', page_id: pageId, platform_id: senderPsid },
+            { onConflict: 'channel,page_id,platform_id', ignoreDuplicates: false }
           )
           .select()
           .single()
@@ -73,11 +82,12 @@ export async function POST(req: NextRequest) {
           unread_count:    thread.unread_count + 1,
         }).eq('id', thread.id)
 
-        // Fetch sender profile (display name + avatar) nếu chưa có
-        if (!thread.display_name && process.env.FB_PAGE_ACCESS_TOKEN) {
+        // Fetch sender profile (display name + avatar) nếu chưa có — dùng token của chính Page đó
+        const pageToken = !thread.display_name ? await getPageToken(pageId) : null
+        if (!thread.display_name && pageToken) {
           try {
             const profileRes = await fetch(
-              `https://graph.facebook.com/${senderPsid}?fields=name,profile_pic&access_token=${process.env.FB_PAGE_ACCESS_TOKEN}`
+              `https://graph.facebook.com/${senderPsid}?fields=name,profile_pic&access_token=${pageToken}`
             )
             if (profileRes.ok) {
               const p = await profileRes.json() as { name?: string; profile_pic?: string }

@@ -25,7 +25,7 @@ import IntegrationsPage from '@/components/integrations/IntegrationsPage'
 import { PageName } from '@/types'
 
 export default function Home() {
-  const { user, initialized, canAccess, allowedPages } = useApp()
+  const { user, initialized, canAccess, allowedPages, toast } = useApp()
   const [currentPage, setCurrentPage] = useState<PageName>('products')
   const [sidebarOpen, setSidebarOpen] = useState(false)
 
@@ -48,6 +48,35 @@ export default function Home() {
     try {
       const saved = localStorage.getItem('cc_current_page') as PageName | null
       if (saved && VALID_PAGES.includes(saved)) setCurrentPage(saved)
+    } catch {}
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // Xử lý redirect quay về từ OAuth Facebook (?tab=integrations&fb=...)
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search)
+      const tab = params.get('tab') as PageName | null
+      const fb  = params.get('fb')
+      if (tab && VALID_PAGES.includes(tab)) {
+        setCurrentPage(tab)
+        try { localStorage.setItem('cc_current_page', tab) } catch {}
+      }
+      if (fb) {
+        if (fb === 'connected') {
+          toast(`Đã kết nối ${params.get('count') ?? ''} Page Facebook 🎉`.trim(), 'success')
+        } else if (fb === 'denied') {
+          toast('Bạn đã huỷ kết nối Facebook', 'error')
+        } else if (fb === 'nopages') {
+          toast('Tài khoản này chưa quản lý Page nào', 'error')
+        } else if (fb === 'error') {
+          toast('Kết nối Facebook lỗi: ' + (params.get('msg') ?? ''), 'error')
+        }
+      }
+      if (tab || fb) {
+        // Dọn query khỏi URL cho gọn
+        window.history.replaceState({}, '', window.location.pathname)
+      }
     } catch {}
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getZaloAccessToken } from '@/lib/zalo'
+import { getPageToken } from '@/lib/facebook'
 
 const sb = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -33,7 +34,7 @@ export async function POST(req: NextRequest) {
 
     // Send message to platform
     if (thread.channel === 'facebook') {
-      await sendFacebook(thread.platform_id as string, content)
+      await sendFacebook(thread.page_id as string, thread.platform_id as string, content)
     } else if (thread.channel === 'zalo') {
       await sendZalo(thread.platform_id as string, content)
     }
@@ -60,12 +61,12 @@ export async function POST(req: NextRequest) {
   }
 }
 
-async function sendFacebook(recipientPsid: string, text: string) {
-  const token = process.env.FB_PAGE_ACCESS_TOKEN
-  if (!token) throw new Error('FB_PAGE_ACCESS_TOKEN chưa được cấu hình')
+async function sendFacebook(pageId: string, recipientPsid: string, text: string) {
+  const token = await getPageToken(pageId)
+  if (!token) throw new Error('Page chưa được kết nối hoặc đã ngắt — vào Cấu hình kênh để kết nối lại')
 
   const res = await fetch(
-    `https://graph.facebook.com/v18.0/me/messages?access_token=${token}`,
+    `https://graph.facebook.com/v21.0/me/messages?access_token=${token}`,
     {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
