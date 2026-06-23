@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { getZaloAccessToken } from '@/lib/zalo'
-import { getPageToken } from '@/lib/facebook'
+import { sendFacebookMessage, sendZaloMessage } from '@/lib/channel-send'
 
 const sb = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -34,9 +33,9 @@ export async function POST(req: NextRequest) {
 
     // Send message to platform
     if (thread.channel === 'facebook') {
-      await sendFacebook(thread.page_id as string, thread.platform_id as string, content)
+      await sendFacebookMessage(thread.page_id as string, thread.platform_id as string, content)
     } else if (thread.channel === 'zalo') {
-      await sendZalo(thread.platform_id as string, content)
+      await sendZaloMessage(thread.platform_id as string, content)
     }
 
     // Save outgoing message to DB
@@ -58,51 +57,5 @@ export async function POST(req: NextRequest) {
   } catch (e) {
     console.error('[channels/reply]', e)
     return NextResponse.json({ error: (e as Error).message }, { status: 500 })
-  }
-}
-
-async function sendFacebook(pageId: string, recipientPsid: string, text: string) {
-  const token = await getPageToken(pageId)
-  if (!token) throw new Error('Page chưa được kết nối hoặc đã ngắt — vào Cấu hình kênh để kết nối lại')
-
-  const res = await fetch(
-    `https://graph.facebook.com/v21.0/me/messages?access_token=${token}`,
-    {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({
-        recipient: { id: recipientPsid },
-        message:   { text },
-      }),
-    }
-  )
-  if (!res.ok) {
-    const err = await res.text()
-    throw new Error(`Facebook API error: ${err}`)
-  }
-}
-
-async function sendZalo(userId: string, text: string) {
-  // Lấy access_token (tự refresh nếu hết hạn) từ DB — không dùng token tĩnh
-  const token = await getZaloAccessToken()
-
-  const res = await fetch('https://openapi.zalo.me/v3.0/oa/message/cs', {
-    method:  'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'access_token': token,
-    },
-    body: JSON.stringify({
-      recipient: { user_id: userId },
-      message:   { text },
-    }),
-  })
-  if (!res.ok) {
-    const err = await res.text()
-    throw new Error(`Zalo API error: ${err}`)
-  }
-  const data = await res.json() as { error?: number; message?: string }
-  if (data.error && data.error !== 0) {
-    throw new Error(`Zalo error ${data.error}: ${data.message}`)
   }
 }

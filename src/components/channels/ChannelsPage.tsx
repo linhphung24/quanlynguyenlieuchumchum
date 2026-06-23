@@ -15,6 +15,7 @@ interface Thread {
   last_message: string | null
   last_message_at: string
   unread_count: number
+  ai_enabled: boolean
 }
 
 interface Message {
@@ -89,6 +90,7 @@ export default function ChannelsPage() {
   const [loadingList, setLoadingList]       = useState(false)
   const [loadingMsgs, setLoadingMsgs]       = useState(false)
   const [sending, setSending]               = useState(false)
+  const [suggesting, setSuggesting]         = useState(false)
   const [searchQ, setSearchQ]               = useState('')
   const [mobileView, setMobileView]         = useState<'list' | 'thread'>('list')
 
@@ -244,6 +246,45 @@ export default function ChannelsPage() {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSendReply()
+    }
+  }
+
+  // ── Gợi ý AI: điền vào ô trả lời để nhân viên xem/sửa rồi gửi ──
+  const handleSuggest = async () => {
+    if (!selectedThread || suggesting) return
+    setSuggesting(true)
+    try {
+      const res = await fetch('/api/channels/ai-suggest', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ threadId: selectedThread.id }),
+      })
+      const data = await res.json() as { suggestion?: string; error?: string }
+      if (!res.ok || !data.suggestion) {
+        alert('Không gợi ý được: ' + (data.error ?? 'Lỗi không xác định'))
+        return
+      }
+      setReplyText(data.suggestion)
+      textareaRef.current?.focus()
+    } catch (e) {
+      alert('Lỗi gợi ý AI: ' + (e as Error).message)
+    } finally {
+      setSuggesting(false)
+    }
+  }
+
+  // ── Bật/tắt AI tự động trả lời cho riêng cuộc trò chuyện này ──
+  const toggleThreadAi = async () => {
+    if (!selectedThread) return
+    const next = !selectedThread.ai_enabled
+    setSelectedThread({ ...selectedThread, ai_enabled: next })
+    setThreads(prev => prev.map(t => t.id === selectedThread.id ? { ...t, ai_enabled: next } : t))
+    const { error } = await sb.from('channel_threads').update({ ai_enabled: next }).eq('id', selectedThread.id)
+    if (error) {
+      // hoàn tác nếu lỗi
+      setSelectedThread({ ...selectedThread, ai_enabled: !next })
+      setThreads(prev => prev.map(t => t.id === selectedThread.id ? { ...t, ai_enabled: !next } : t))
+      alert('Không đổi được trạng thái AI: ' + error.message)
     }
   }
 
@@ -471,6 +512,19 @@ export default function ChannelsPage() {
                   <span>{CHANNEL_META[selectedThread.channel].label}</span>
                 </div>
               </div>
+              {/* Công tắc AI cho riêng cuộc trò chuyện này */}
+              <button
+                onClick={toggleThreadAi}
+                title={selectedThread.ai_enabled ? 'AI đang BẬT cho khách này — bấm để tắt (nhân viên tự trả lời)' : 'AI đang TẮT cho khách này — bấm để bật'}
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                  selectedThread.ai_enabled
+                    ? 'bg-[#e7f6ec] text-[#1a7f37] hover:bg-[#d6f0df]'
+                    : 'bg-[#f0e8d8] text-[#8b5e3c]/70 hover:bg-[#e8dcc4]'
+                }`}
+              >
+                <span>{selectedThread.ai_enabled ? '🤖' : '🙅'}</span>
+                <span className="hidden sm:inline">AI {selectedThread.ai_enabled ? 'Bật' : 'Tắt'}</span>
+              </button>
               <button
                 onClick={() => loadMessages(selectedThread)}
                 disabled={loadingMsgs}
@@ -549,6 +603,14 @@ export default function ChannelsPage() {
             {/* Reply box */}
             <div className="flex-shrink-0 bg-white border-t border-[#e8d5b7] p-3">
               <div className="flex items-end gap-2 bg-[#fdf6ec] rounded-2xl border border-[#e8d5b7] focus-within:border-[#c8773a] transition-colors px-3 py-2">
+                <button
+                  onClick={handleSuggest}
+                  disabled={suggesting || sending}
+                  title="Gợi ý trả lời bằng AI (xem & sửa rồi mới gửi)"
+                  className="flex-shrink-0 w-8 h-8 rounded-full bg-[#f3e8ff] text-[#7c3aed] flex items-center justify-center hover:bg-[#e9d5ff] disabled:opacity-40 disabled:cursor-not-allowed transition-all"
+                >
+                  {suggesting ? <span className="text-xs animate-spin">↻</span> : <span className="text-sm">✨</span>}
+                </button>
                 <textarea
                   ref={textareaRef}
                   rows={1}

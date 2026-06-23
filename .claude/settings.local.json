@@ -25,7 +25,9 @@
       "WebFetch(domain:zalo.solutions)",
       "PowerShell($n = Get-Command node -ErrorAction SilentlyContinue; if \\($n\\) { $n.Source } else { Get-ChildItem \"C:\\\\Program Files\\\\nodejs\\\\node.exe\",\"$env:LOCALAPPDATA\\\\Programs\\\\nodejs\\\\node.exe\",\"$env:APPDATA\\\\npm\\\\node.exe\" -ErrorAction SilentlyContinue | Select-Object -First 1 -ExpandProperty FullName })",
       "Bash(\"/c/Program Files/nodejs/npx\" tsc --noEmit)",
-      "PowerShell(npm run build 2>&1)"
+      "PowerShell(npm run build 2>&1)",
+      "Skill(claude-api)",
+      "Skill(claude-api:*)"
     ]
   }
 }

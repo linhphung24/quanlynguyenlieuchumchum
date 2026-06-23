@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { getPageToken } from '@/lib/facebook'
+import { maybeAutoReply } from '@/lib/ai-reply'
 
 const sb = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -100,6 +101,12 @@ export async function POST(req: NextRequest) {
             // non-critical, ignore
           }
         }
+
+        // AI tự động trả lời (nếu bật) — chỉ với tin nhắn text
+        await maybeAutoReply(
+          { id: thread.id, channel: 'facebook', page_id: pageId, platform_id: senderPsid, ai_enabled: thread.ai_enabled },
+          text
+        )
       }
     }
 

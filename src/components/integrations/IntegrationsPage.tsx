@@ -63,6 +63,7 @@ export default function IntegrationsPage() {
   const [loading, setLoading] = useState(true)
   const [savingFb, setSavingFb]     = useState(false)
   const [savingZalo, setSavingZalo] = useState(false)
+  const [savingAi, setSavingAi]     = useState(false)
   const [reveal, setReveal]   = useState<Set<string>>(new Set())
   const [origin, setOrigin]   = useState('')
 
@@ -418,6 +419,106 @@ export default function IntegrationsPage() {
               </div>
             </div>
           </div>
+
+          {/* ── AI tự động trả lời ── */}
+          {(() => {
+            const provider = config.ai_provider || 'gemini'
+            const modelHint = provider === 'gemini' ? 'VD: gemini-2.0-flash (free tier)'
+              : provider === 'anthropic' ? 'VD: claude-haiku-4-5'
+              : 'VD: gpt-4o-mini'
+            const keyHint = provider === 'gemini' ? 'Lấy ở aistudio.google.com/apikey (miễn phí)'
+              : provider === 'anthropic' ? 'Lấy ở console.anthropic.com'
+              : 'Lấy ở platform.openai.com/api-keys'
+            const aiOn = config.ai_enabled === 'true'
+            const autoOn = config.ai_auto_reply === 'true'
+            const keyShown = reveal.has('ai_api_key')
+            return (
+              <div className="bg-[#fffaf4] rounded-2xl border border-[#f5e6cc] shadow-[0_4px_20px_rgba(200,119,58,0.06)] overflow-hidden">
+                <div className="flex items-center gap-2 px-5 py-3.5 bg-[#f3e8ff] border-b border-[#e3d3fb]">
+                  <span className="text-xl">🤖</span>
+                  <span className="font-semibold text-[#7c3aed]">AI tự động trả lời</span>
+                </div>
+                <div className="p-5 space-y-4">
+                  {/* Bật/tắt tổng + auto */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <button onClick={() => setField('ai_enabled', aiOn ? 'false' : 'true')}
+                      className={`flex items-center justify-between px-4 py-3 rounded-lg border text-sm font-medium transition-colors ${aiOn ? 'bg-[#e7f6ec] border-[#bfe6cb] text-[#1a7f37]' : 'bg-white border-[#f0e8d8] text-[#8b5e3c]'}`}>
+                      <span>Bật tính năng AI</span>
+                      <span className={`w-10 h-5 rounded-full relative transition-colors ${aiOn ? 'bg-[#1a7f37]' : 'bg-[#d8c8a8]'}`}>
+                        <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${aiOn ? 'left-[22px]' : 'left-0.5'}`} />
+                      </span>
+                    </button>
+                    <button onClick={() => setField('ai_auto_reply', autoOn ? 'false' : 'true')}
+                      className={`flex items-center justify-between px-4 py-3 rounded-lg border text-sm font-medium transition-colors ${autoOn ? 'bg-[#e7f6ec] border-[#bfe6cb] text-[#1a7f37]' : 'bg-white border-[#f0e8d8] text-[#8b5e3c]'}`}>
+                      <span>Tự động gửi <span className="text-[10px] opacity-70">(tắt = chỉ gợi ý)</span></span>
+                      <span className={`w-10 h-5 rounded-full relative transition-colors ${autoOn ? 'bg-[#1a7f37]' : 'bg-[#d8c8a8]'}`}>
+                        <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${autoOn ? 'left-[22px]' : 'left-0.5'}`} />
+                      </span>
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    {/* Nhà cung cấp */}
+                    <div>
+                      <label className="block text-xs font-medium text-[#8b5e3c] mb-1">Nhà cung cấp</label>
+                      <select value={provider} onChange={e => setField('ai_provider', e.target.value)}
+                        className="w-full px-3 py-2.5 border-[1.5px] border-[#f5e6cc] rounded-lg text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a]">
+                        <option value="gemini">Google Gemini (rẻ nhất, có free)</option>
+                        <option value="anthropic">Claude (Anthropic)</option>
+                        <option value="openai">OpenAI (GPT)</option>
+                      </select>
+                    </div>
+                    {/* Model */}
+                    <div>
+                      <label className="block text-xs font-medium text-[#8b5e3c] mb-1">Model</label>
+                      <input type="text" value={config.ai_model ?? ''} onChange={e => setField('ai_model', e.target.value)}
+                        placeholder={modelHint}
+                        className="w-full px-3 py-2.5 border-[1.5px] border-[#f5e6cc] rounded-lg text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] font-mono" />
+                    </div>
+                  </div>
+
+                  {/* API key */}
+                  <div>
+                    <label className="block text-xs font-medium text-[#8b5e3c] mb-1">
+                      API Key <span className="ml-1 text-[10px] text-[#c8a87a] font-normal">— {keyHint}</span>
+                    </label>
+                    <div className="relative">
+                      <input type={keyShown ? 'text' : 'password'} value={config.ai_api_key ?? ''} onChange={e => setField('ai_api_key', e.target.value)}
+                        placeholder="••••••••"
+                        className="w-full px-3 py-2.5 pr-10 border-[1.5px] border-[#f5e6cc] rounded-lg text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] font-mono" />
+                      <button type="button" onClick={() => toggleReveal('ai_api_key')}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-[#c8a87a] hover:text-[#c8773a] text-sm cursor-pointer">
+                        {keyShown ? '🙈' : '👁'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Thông tin tiệm */}
+                  <div>
+                    <label className="block text-xs font-medium text-[#8b5e3c] mb-1">
+                      Thông tin tiệm <span className="ml-1 text-[10px] text-[#c8a87a] font-normal">— giờ mở cửa, địa chỉ, giao hàng, giọng văn... AI dùng để trả lời</span>
+                    </label>
+                    <textarea value={config.ai_shop_info ?? ''} onChange={e => setField('ai_shop_info', e.target.value)} rows={4}
+                      placeholder={'VD: Tiệm mở cửa 7h-21h hàng ngày. Địa chỉ 12 Lê Lợi, Q1. Giao hàng nội thành 20k. Xưng "shop", gọi khách là "bạn".'}
+                      className="w-full px-3 py-2.5 border-[1.5px] border-[#f5e6cc] rounded-lg text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] resize-y leading-relaxed" />
+                  </div>
+
+                  <div className="text-[11px] text-[#8b5e3c]/70 bg-[#fdf6ec] rounded-lg p-2.5 border border-[#f0e8d8]">
+                    💡 AI tự lấy danh mục sản phẩm + giá từ kho khi trả lời. Có thể tắt AI cho từng khách trong tab <b>Inbox kênh</b>. Nút ✨ trong khung chat luôn gợi ý được (kể cả khi tắt tự động gửi).
+                  </div>
+
+                  <div className="flex justify-end">
+                    <button onClick={() => saveGroup(
+                      ['ai_enabled', 'ai_auto_reply', 'ai_provider', 'ai_api_key', 'ai_model', 'ai_shop_info'].map(k => ({ key: k, label: k, placeholder: '' })),
+                      'AI', setSavingAi)} disabled={savingAi}
+                      className="px-5 py-2.5 rounded-lg bg-[#7c3aed] text-white text-sm font-semibold hover:opacity-90 cursor-pointer disabled:opacity-50">
+                      {savingAi ? '⏳ Đang lưu...' : '💾 Lưu cấu hình AI'}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )
+          })()}
 
           <p className="text-[11px] text-[#8b5e3c]/60 text-center">
             🔐 Secrets chỉ admin xem được (RLS). Webhook server dùng service role key để đọc khi xử lý tin nhắn.

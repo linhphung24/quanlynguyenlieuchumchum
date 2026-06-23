@@ -305,3 +305,16 @@ try {
 - **UI IntegrationsPage**: Zalo tách 2 bước như Facebook — Bước 1 nhập App ID/Secret Key/OA ID + Lưu; Bước 2 nút "🔗 Kết nối / Cấp quyền Zalo OA". Bỏ ô nhập tay OA Access Token/Refresh Token (token auto-managed trong `channel_oauth`)
 - **Cấu hình Zalo Developers**: thêm Callback URL `{origin}/api/channels/zalo/oauth/callback` vào Official Account (app hiển thị sẵn URL để copy)
 - Không cần SQL mới (đã có `channel_oauth` + `integration_config`)
+
+### Trang callback Zalo: nút quay lại + tự redirect 5s
+- `zalo/oauth/callback/route.ts`: trang HTML thành công có nút "↩ Quay lại ứng dụng" + đếm ngược tự về `/` sau 5s (chỉ khi thành công). URL về lấy động từ header `host` + `x-forwarded-proto`
+
+### AI tự động trả lời tin nhắn (Facebook + Zalo)
+- **Provider-agnostic** (`src/lib/ai.ts`): 1 hàm `generateReply` gọi 1 trong 3 nhà cung cấp qua REST — **Gemini** (mặc định, rẻ nhất/free tier), **Anthropic Claude**, **OpenAI**. Đổi provider/model/key trong UI, không sửa code. KHÔNG chạy local được (Vercel serverless không host LLM)
+- **Tiết kiệm token**: `buildProductContext` chỉ truy vấn products khớp từ khoá trong tin của khách (ilike, cap 25 SP) — KHÔNG dump toàn bộ 430 SP mỗi request. System prompt gồm thông tin tiệm (`ai_shop_info`) + SP liên quan + giá/tồn
+- **Cấu hình** lưu trong `integration_config` (keys `ai_*`): `ai_enabled`, `ai_auto_reply` (false=chỉ gợi ý), `ai_provider`, `ai_api_key`, `ai_model`, `ai_shop_info`
+- **Auto-reply** (`src/lib/ai-reply.ts` → `maybeAutoReply`): gọi cuối webhook FB/Zalo sau khi lưu tin ĐẾN. Check `ai_enabled` + `ai_auto_reply` + `thread.ai_enabled` → sinh trả lời → gửi qua `lib/channel-send.ts` → lưu tin 'out' (`sent_by='AI'`). Bọc try-catch, KHÔNG throw (webhook luôn trả 200). Await (không fire-and-forget vì serverless freeze sau response)
+- **Công tắc từng thread**: cột `channel_threads.ai_enabled` (default true). UI ChannelsPage có nút 🤖/🙅 ở header thread để nhân viên tự tiếp quản
+- **Nút gợi ý ✨** (`/api/channels/ai-suggest`): sinh nháp KHÔNG gửi → điền vào ô trả lời cho nhân viên xem/sửa. Luôn dùng được kể cả khi tắt auto-reply
+- **Refactor**: tách `sendFacebook`/`sendZalo` từ `reply/route.ts` ra `lib/channel-send.ts` (dùng chung manual reply + auto-reply)
+- **SQL cần chạy**: `supabase/migration_ai_config.sql` — thêm cột `channel_threads.ai_enabled` + seed các hàng `ai_*` mặc định (AI tắt sẵn cho an toàn)

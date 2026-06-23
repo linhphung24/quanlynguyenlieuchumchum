@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
 import { fetchZaloUserProfile } from '@/lib/zalo'
+import { maybeAutoReply } from '@/lib/ai-reply'
 
 const sb = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -100,4 +101,10 @@ async function processZaloEvent(body: Record<string, unknown>) {
     last_message_at: msgAt,
     unread_count:    thread.unread_count + 1,
   }).eq('id', thread.id)
+
+  // AI tự động trả lời (nếu bật) — chỉ với tin nhắn text
+  await maybeAutoReply(
+    { id: thread.id, channel: 'zalo', platform_id: userId, ai_enabled: thread.ai_enabled },
+    text
+  )
 }
