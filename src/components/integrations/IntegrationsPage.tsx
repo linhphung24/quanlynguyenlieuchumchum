@@ -383,7 +383,7 @@ export default function IntegrationsPage() {
                   <span className="w-5 h-5 rounded-full bg-[#0068ff] text-white flex items-center justify-center text-[10px]">1</span>
                   Cấu hình App (chỉ làm 1 lần cho cả hệ thống)
                 </div>
-                <WebhookRow label="Webhook URL (dán vào Zalo Developers → Webhook)" url={`${origin}/api/webhooks/zalo`} />
+                <WebhookRow label="Webhook URL (dán vào Zalo Developers → Webhook)" url={`${origin}/api/channels/zalo/webhook`} />
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   {ZALO_FIELDS.map(renderField)}
                 </div>
