@@ -31,12 +31,12 @@ interface FbPageRow {
   created_at: string
 }
 
+// Chỉ còn App ID + Secret Key + OA ID — admin nhập 1 LẦN.
+// OA Access Token / Refresh Token KHÔNG nhập tay nữa → lấy & tự gia hạn qua nút "Kết nối Zalo OA".
 const ZALO_FIELDS: Field[] = [
-  { key: 'zalo_app_id',        label: 'App ID',          placeholder: 'VD: 1234567890',          hint: 'developers.zalo.me → Ứng dụng' },
-  { key: 'zalo_secret',        label: 'Secret Key',      placeholder: '••••••••',  secret: true },
-  { key: 'zalo_oa_id',         label: 'OA ID',           placeholder: 'ID Official Account' },
-  { key: 'zalo_oa_token',      label: 'OA Access Token', placeholder: 'Token truy cập OA',       secret: true },
-  { key: 'zalo_refresh_token', label: 'Refresh Token',   placeholder: 'Token làm mới',           secret: true },
+  { key: 'zalo_app_id', label: 'App ID',     placeholder: 'VD: 1234567890',     hint: 'developers.zalo.me → Ứng dụng' },
+  { key: 'zalo_secret', label: 'Secret Key', placeholder: '••••••••',  secret: true },
+  { key: 'zalo_oa_id',  label: 'OA ID',      placeholder: 'ID Official Account (tuỳ chọn)' },
 ]
 
 const ALL_KEYS = [...FB_FIELDS, ...ZALO_FIELDS].map(f => f.key)
@@ -69,6 +69,7 @@ export default function IntegrationsPage() {
   const [pages, setPages]         = useState<FbPageRow[]>([])
   const [loadingPages, setLoadingPages] = useState(false)
   const [connecting, setConnecting]     = useState(false)
+  const [connectingZalo, setConnectingZalo] = useState(false)
 
   useEffect(() => { setOrigin(window.location.origin) }, [])
 
@@ -105,6 +106,26 @@ export default function IntegrationsPage() {
     } catch (e) {
       toast('Lỗi: ' + (e as Error).message, 'error')
       setConnecting(false)
+    }
+  }
+
+  // Bấm "Kết nối Zalo OA" → xin URL cấp quyền rồi chuyển hướng sang Zalo
+  const connectZalo = async () => {
+    if (!user) { toast('Bạn chưa đăng nhập', 'error'); return }
+    const token = getAccessToken()
+    if (!token) { toast('Phiên đăng nhập hết hạn — tải lại trang', 'error'); return }
+    setConnectingZalo(true)
+    try {
+      const res = await fetch('/api/channels/zalo/oauth/start', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      const json = await res.json().catch(() => ({}))
+      if (!res.ok || !json.url) throw new Error(json.error || 'Không lấy được URL kết nối')
+      window.location.href = json.url   // chuyển sang trang cấp quyền Zalo OA
+    } catch (e) {
+      toast('Lỗi: ' + (e as Error).message, 'error')
+      setConnectingZalo(false)
     }
   }
 
@@ -354,16 +375,46 @@ export default function IntegrationsPage() {
               <span className="text-xl">🟦</span>
               <span className="font-semibold text-[#0068ff]">Zalo OA</span>
             </div>
-            <div className="p-5 space-y-4">
-              <WebhookRow label="Webhook URL (dán vào Zalo Developers → Webhook)" url={`${origin}/api/webhooks/zalo`} />
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {ZALO_FIELDS.map(renderField)}
+            <div className="p-5 space-y-5">
+              {/* ── Bước 1: cấu hình App (1 lần) ── */}
+              <div className="space-y-4">
+                <div className="text-xs font-semibold text-[#8b5e3c] flex items-center gap-1.5">
+                  <span className="w-5 h-5 rounded-full bg-[#0068ff] text-white flex items-center justify-center text-[10px]">1</span>
+                  Cấu hình App (chỉ làm 1 lần cho cả hệ thống)
+                </div>
+                <WebhookRow label="Webhook URL (dán vào Zalo Developers → Webhook)" url={`${origin}/api/webhooks/zalo`} />
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {ZALO_FIELDS.map(renderField)}
+                </div>
+                <div className="text-[11px] text-[#8b5e3c]/70 bg-[#fdf6ec] rounded-lg p-2.5 border border-[#f0e8d8]">
+                  ⚙️ Trong Zalo Developers → Official Account, thêm <b>Callback URL</b>:
+                  <code className="block mt-1 text-[#0068ff] break-all">{origin}/api/channels/zalo/oauth/callback</code>
+                </div>
+                <div className="flex justify-end">
+                  <button onClick={() => saveGroup(ZALO_FIELDS, 'Zalo', setSavingZalo)} disabled={savingZalo}
+                    className="px-5 py-2.5 rounded-lg bg-[#0068ff] text-white text-sm font-semibold hover:opacity-90 cursor-pointer disabled:opacity-50">
+                    {savingZalo ? '⏳ Đang lưu...' : '💾 Lưu cấu hình Zalo'}
+                  </button>
+                </div>
               </div>
-              <div className="flex justify-end">
-                <button onClick={() => saveGroup(ZALO_FIELDS, 'Zalo', setSavingZalo)} disabled={savingZalo}
-                  className="px-5 py-2.5 rounded-lg bg-[#0068ff] text-white text-sm font-semibold hover:opacity-90 cursor-pointer disabled:opacity-50">
-                  {savingZalo ? '⏳ Đang lưu...' : '💾 Lưu cấu hình Zalo'}
+
+              <div className="h-px bg-[#f0e8d8]" />
+
+              {/* ── Bước 2: kết nối OA bằng 1 nút ── */}
+              <div className="space-y-3">
+                <div className="text-xs font-semibold text-[#8b5e3c] flex items-center gap-1.5">
+                  <span className="w-5 h-5 rounded-full bg-[#0068ff] text-white flex items-center justify-center text-[10px]">2</span>
+                  Kết nối OA (cấp quyền — token tự lấy & tự gia hạn, không nhập tay)
+                </div>
+                <button
+                  onClick={connectZalo}
+                  disabled={connectingZalo}
+                  className="w-full px-5 py-3 rounded-lg bg-[#0068ff] text-white text-sm font-semibold hover:opacity-90 cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2">
+                  {connectingZalo ? '⏳ Đang chuyển hướng...' : '🔗 Kết nối / Cấp quyền Zalo OA'}
                 </button>
+                <div className="text-[11px] text-[#8b5e3c]/70 text-center">
+                  Bấm nút → đăng nhập Zalo → chọn OA → cấp quyền. Token được lấy &amp; lưu tự động.
+                </div>
               </div>
             </div>
           </div>

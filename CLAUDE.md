@@ -296,3 +296,12 @@ try {
 - **Logic**: nếu có override thì `tonDau = adj_qty`, `tonCuoi = adj_qty + nhap - xuat`; không có override → tính bình thường theo lịch sử
 - Cell override hiển thị nền vàng nhạt + icon ✏; click lại icon ✏ để xoá override (hoàn về tính toán)
 - RLS: chỉ role admin/manager được upsert/delete; tất cả authenticated user đọc được
+
+### Kết nối nhanh Zalo OA (OAuth 1 chạm, giống Facebook)
+- **Lý do**: Zalo OA Access Token chỉ sống ~1h → nhập tay token sẽ chết sau 1 giờ. OAuth tự lấy + tự refresh (refresh_token ~3 tháng).
+- **Route mới** `src/app/api/channels/zalo/oauth/start/route.ts`: xác thực admin → sinh PKCE `code_verifier` (lưu cookie httpOnly `zalo_cv`, path `/api/channels/zalo/oauth`, 10') → trả URL trang cấp quyền Zalo
+- **Callback** `zalo/oauth/callback/route.ts`: đọc `code` + `state` + cookie `zalo_cv` → `verifyState` (HMAC, tái dùng `signState/verifyState` của `lib/facebook.ts`) → `exchangeZaloCode(code, verifier)` → lưu token vào bảng `channel_oauth`
+- **lib/zalo.ts**: thêm `getZaloAppCreds()` (đọc `zalo_app_id`/`zalo_secret` từ `integration_config`), `genCodeVerifier`/`codeChallengeS256` (PKCE S256), `buildZaloOAuthUrl`. `exchangeZaloCode`/`refreshAccessToken` giờ đọc creds từ DB thay vì env (`ZALO_APP_ID`/`ZALO_APP_SECRET_KEY`/`ZALO_CODE_VERIFIER` KHÔNG còn cần)
+- **UI IntegrationsPage**: Zalo tách 2 bước như Facebook — Bước 1 nhập App ID/Secret Key/OA ID + Lưu; Bước 2 nút "🔗 Kết nối / Cấp quyền Zalo OA". Bỏ ô nhập tay OA Access Token/Refresh Token (token auto-managed trong `channel_oauth`)
+- **Cấu hình Zalo Developers**: thêm Callback URL `{origin}/api/channels/zalo/oauth/callback` vào Official Account (app hiển thị sẵn URL để copy)
+- Không cần SQL mới (đã có `channel_oauth` + `integration_config`)

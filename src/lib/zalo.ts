@@ -1,12 +1,52 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
+import crypto from 'crypto'
 
 const ZALO_OAUTH_URL = 'https://oauth.zaloapp.com/v4/oa/access_token'
+const ZALO_PERMISSION_URL = 'https://oauth.zaloapp.com/v4/oa/permission'
 
 function admin(): SupabaseClient {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
   if (!url || !key) throw new Error('Server chưa cấu hình Supabase service role')
   return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
+}
+
+// Đọc App ID + Secret Key của Zalo từ integration_config (admin nhập 1 lần)
+export async function getZaloAppCreds(): Promise<{ appId: string; secret: string }> {
+  const sb = admin()
+  const { data } = await sb
+    .from('integration_config')
+    .select('key, value')
+    .in('key', ['zalo_app_id', 'zalo_secret'])
+  const map: Record<string, string> = {}
+  for (const r of (data ?? []) as { key: string; value: string }[]) map[r.key] = r.value ?? ''
+  const appId = map.zalo_app_id?.trim()
+  const secret = map.zalo_secret?.trim()
+  if (!appId || !secret) {
+    throw new Error('Chưa cấu hình App ID / Secret Key của Zalo trong Cấu hình kênh')
+  }
+  return { appId, secret }
+}
+
+// ── PKCE (Zalo OA v4 bắt buộc) ──
+export function genCodeVerifier(): string {
+  return crypto.randomBytes(32).toString('base64url')        // 43 ký tự
+}
+export function codeChallengeS256(verifier: string): string {
+  return crypto.createHash('sha256').update(verifier).digest('base64url')
+}
+
+// Tạo URL trang cấp quyền OA của Zalo
+export function buildZaloOAuthUrl(
+  appId: string, redirectUri: string, state: string, codeChallenge: string
+): string {
+  const params = new URLSearchParams({
+    app_id: appId,
+    redirect_uri: redirectUri,
+    code_challenge: codeChallenge,
+    state,
+  })
+  return `${ZALO_PERMISSION_URL}?${params.toString()}`
 }
 
 interface ZaloTokenResp {
@@ -20,19 +60,15 @@ interface ZaloTokenResp {
 }
 
 // Đổi authorization code (lần đầu) → access_token + refresh_token, lưu DB
-export async function exchangeZaloCode(code: string): Promise<void> {
-  const appId    = process.env.ZALO_APP_ID
-  const secret   = process.env.ZALO_APP_SECRET_KEY
-  const verifier = process.env.ZALO_CODE_VERIFIER
-  if (!appId || !secret || !verifier) {
-    throw new Error('Thiếu ZALO_APP_ID / ZALO_APP_SECRET_KEY / ZALO_CODE_VERIFIER')
-  }
+// codeVerifier: chuỗi PKCE sinh ở bước start, lưu tạm trong cookie cho tới callback
+export async function exchangeZaloCode(code: string, codeVerifier: string): Promise<void> {
+  const { appId, secret } = await getZaloAppCreds()
 
   const body = new URLSearchParams({
     code,
     app_id: appId,
     grant_type: 'authorization_code',
-    code_verifier: verifier,
+    code_verifier: codeVerifier,
   })
 
   const res = await fetch(ZALO_OAUTH_URL, {
@@ -67,9 +103,7 @@ async function saveTokens(data: ZaloTokenResp): Promise<string> {
 
 // Dùng refresh_token lấy access_token mới (refresh_token cũng xoay vòng → lưu lại)
 async function refreshAccessToken(refreshToken: string): Promise<string> {
-  const appId  = process.env.ZALO_APP_ID
-  const secret = process.env.ZALO_APP_SECRET_KEY
-  if (!appId || !secret) throw new Error('Thiếu ZALO_APP_ID / ZALO_APP_SECRET_KEY')
+  const { appId, secret } = await getZaloAppCreds()
 
   const body = new URLSearchParams({
     refresh_token: refreshToken,

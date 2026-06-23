@@ -1,11 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { exchangeZaloCode } from '@/lib/zalo'
+import { verifyState } from '@/lib/facebook'
 
-// Zalo redirect về đây kèm ?code=...&oa_id=... sau khi OA admin cấp quyền
+// Zalo redirect về đây kèm ?code=...&state=...&oa_id=... sau khi OA admin cấp quyền
 export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
-  const code  = searchParams.get('code')
-  const error = searchParams.get('error')
+  const code     = searchParams.get('code')
+  const state    = searchParams.get('state')
+  const error    = searchParams.get('error')
+  const verifier = req.cookies.get('zalo_cv')?.value
 
   const html = (ok: boolean, msg: string) => `<!doctype html><html lang="vi"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -18,21 +21,32 @@ export async function GET(req: NextRequest) {
 <div class="t">${ok ? 'Kết nối Zalo OA thành công!' : 'Kết nối thất bại'}</div>
 <div class="m">${msg}</div></div></body></html>`
 
+  // Trả HTML + xoá cookie code_verifier (dùng 1 lần)
+  const respond = (ok: boolean, msg: string, status: number) => {
+    const r = new NextResponse(html(ok, msg), {
+      status, headers: { 'Content-Type': 'text/html; charset=utf-8' },
+    })
+    r.cookies.set('zalo_cv', '', { path: '/api/channels/zalo/oauth', maxAge: 0 })
+    return r
+  }
+
   if (error) {
-    return new NextResponse(html(false, `Zalo trả về lỗi: ${error}. Vui lòng thử cấp quyền lại.`),
-      { status: 400, headers: { 'Content-Type': 'text/html; charset=utf-8' } })
+    return respond(false, `Zalo trả về lỗi: ${error}. Vui lòng thử cấp quyền lại.`, 400)
   }
   if (!code) {
-    return new NextResponse(html(false, 'Không nhận được mã uỷ quyền (code) từ Zalo.'),
-      { status: 400, headers: { 'Content-Type': 'text/html; charset=utf-8' } })
+    return respond(false, 'Không nhận được mã uỷ quyền (code) từ Zalo.', 400)
+  }
+  if (!state || !verifyState(state)) {
+    return respond(false, 'Phiên kết nối không hợp lệ hoặc đã hết hạn. Vui lòng bấm "Kết nối Zalo OA" lại.', 400)
+  }
+  if (!verifier) {
+    return respond(false, 'Thiếu code_verifier (cookie hết hạn). Vui lòng bấm "Kết nối Zalo OA" lại.', 400)
   }
 
   try {
-    await exchangeZaloCode(code)
-    return new NextResponse(html(true, 'Đã lưu token. Bạn có thể đóng tab này và quay lại app để trả lời tin nhắn Zalo.'),
-      { status: 200, headers: { 'Content-Type': 'text/html; charset=utf-8' } })
+    await exchangeZaloCode(code, verifier)
+    return respond(true, 'Đã lưu token. Bạn có thể đóng tab này và quay lại app để trả lời tin nhắn Zalo.', 200)
   } catch (e) {
-    return new NextResponse(html(false, (e as Error).message),
-      { status: 500, headers: { 'Content-Type': 'text/html; charset=utf-8' } })
+    return respond(false, (e as Error).message, 500)
   }
 }
