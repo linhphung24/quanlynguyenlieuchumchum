@@ -10,16 +10,26 @@ export async function GET(req: NextRequest) {
   const error    = searchParams.get('error')
   const verifier = req.cookies.get('zalo_cv')?.value
 
+  const host  = req.headers.get('host') || ''
+  const proto = req.headers.get('x-forwarded-proto') || 'https'
+  const appUrl = host ? `${proto}://${host}/` : '/'
+
   const html = (ok: boolean, msg: string) => `<!doctype html><html lang="vi"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Kết nối Zalo OA</title>
 <style>body{font-family:system-ui,sans-serif;background:#fdf6ec;display:flex;align-items:center;justify-content:center;height:100vh;margin:0}
 .card{background:#fff;border:1px solid #e8d5b7;border-radius:16px;padding:32px 40px;max-width:420px;text-align:center;box-shadow:0 8px 32px rgba(200,119,58,.12)}
 .ico{font-size:48px;margin-bottom:12px}.t{font-size:18px;font-weight:700;color:${ok ? '#1a7f37' : '#c0392b'};margin-bottom:8px}
-.m{font-size:13px;color:#8b5e3c;line-height:1.5}</style></head>
+.m{font-size:13px;color:#8b5e3c;line-height:1.5}
+.btn{display:inline-block;margin-top:18px;padding:11px 22px;border-radius:10px;background:#c8773a;color:#fff;font-size:14px;font-weight:600;text-decoration:none;cursor:pointer}
+.cd{font-size:12px;color:#b08968;margin-top:12px}</style></head>
 <body><div class="card"><div class="ico">${ok ? '✅' : '❌'}</div>
 <div class="t">${ok ? 'Kết nối Zalo OA thành công!' : 'Kết nối thất bại'}</div>
-<div class="m">${msg}</div></div></body></html>`
+<div class="m">${msg}</div>
+<a class="btn" href="${appUrl}">↩ Quay lại ứng dụng</a>
+${ok ? `<div class="cd">Tự động quay lại sau <b id="cd">5</b>s…</div>
+<script>(function(){var n=5,el=document.getElementById('cd');var t=setInterval(function(){n--;if(el)el.textContent=n;if(n<=0){clearInterval(t);location.href=${JSON.stringify(appUrl)};}},1000);})();</script>` : ''}
+</div></body></html>`
 
   // Trả HTML + xoá cookie code_verifier (dùng 1 lần)
   const respond = (ok: boolean, msg: string, status: number) => {
