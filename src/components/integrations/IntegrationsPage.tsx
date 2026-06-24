@@ -54,6 +54,28 @@ const ALL_KEYS = [...FB_FIELDS.map(f => f.key), ...ZALO_FIELDS.map(f => f.key), 
 
 interface TrelloBoard { id: string; name: string; lists: { id: string; name: string }[] }
 
+// Model gợi ý theo từng nhà cung cấp (chọn dropdown, khỏi nhớ tên)
+const MODEL_OPTIONS: Record<string, { value: string; label: string }[]> = {
+  gemini: [
+    { value: 'gemini-2.0-flash', label: 'gemini-2.0-flash (rẻ/nhanh, free tier)' },
+    { value: 'gemini-2.5-flash', label: 'gemini-2.5-flash' },
+    { value: 'gemini-1.5-flash', label: 'gemini-1.5-flash' },
+    { value: 'gemini-1.5-pro',   label: 'gemini-1.5-pro (chất lượng hơn)' },
+  ],
+  deepseek: [
+    { value: 'deepseek-chat',     label: 'deepseek-chat (khuyên dùng)' },
+    { value: 'deepseek-reasoner', label: 'deepseek-reasoner (suy luận, chậm/đắt hơn)' },
+  ],
+  anthropic: [
+    { value: 'claude-haiku-4-5',  label: 'claude-haiku-4-5 (rẻ/nhanh)' },
+    { value: 'claude-sonnet-4-6', label: 'claude-sonnet-4-6 (chất lượng cao)' },
+  ],
+  openai: [
+    { value: 'gpt-4o-mini', label: 'gpt-4o-mini (rẻ)' },
+    { value: 'gpt-4o',      label: 'gpt-4o (chất lượng cao)' },
+  ],
+}
+
 // Đọc access token trực tiếp từ localStorage — KHÔNG qua supabase-js
 // (tránh auth-lock làm treo request khi refresh token / mở nhiều tab)
 function getAccessToken(): string | null {
@@ -80,6 +102,7 @@ export default function IntegrationsPage() {
   const [savingTrello, setSavingTrello] = useState(false)
   const [trelloBoards, setTrelloBoards] = useState<TrelloBoard[]>([])
   const [loadingBoards, setLoadingBoards] = useState(false)
+  const [forceCustomModel, setForceCustomModel] = useState(false)
   const [reveal, setReveal]   = useState<Set<string>>(new Set())
   const [origin, setOrigin]   = useState('')
 
@@ -533,7 +556,8 @@ export default function IntegrationsPage() {
                     {/* Nhà cung cấp */}
                     <div>
                       <label className="block text-xs font-medium text-[#8b5e3c] mb-1">Nhà cung cấp</label>
-                      <select value={provider} onChange={e => setField('ai_provider', e.target.value)}
+                      <select value={provider}
+                        onChange={e => { setField('ai_provider', e.target.value); setField('ai_model', ''); setForceCustomModel(false) }}
                         className="w-full px-3 py-2.5 border-[1.5px] border-[#f5e6cc] rounded-lg text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a]">
                         <option value="gemini">Google Gemini (rẻ nhất, có free)</option>
                         <option value="deepseek">DeepSeek (rẻ, tương thích OpenAI)</option>
@@ -541,13 +565,33 @@ export default function IntegrationsPage() {
                         <option value="openai">OpenAI (GPT)</option>
                       </select>
                     </div>
-                    {/* Model */}
-                    <div>
-                      <label className="block text-xs font-medium text-[#8b5e3c] mb-1">Model</label>
-                      <input type="text" value={config.ai_model ?? ''} onChange={e => setField('ai_model', e.target.value)}
-                        placeholder={modelHint}
-                        className="w-full px-3 py-2.5 border-[1.5px] border-[#f5e6cc] rounded-lg text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] font-mono" />
-                    </div>
+                    {/* Model — dropdown theo provider + tuỳ chọn tự gõ */}
+                    {(() => {
+                      const opts = MODEL_OPTIONS[provider] ?? []
+                      const isCustomVal = !!config.ai_model && !opts.some(o => o.value === config.ai_model)
+                      const showCustom = forceCustomModel || isCustomVal
+                      return (
+                        <div>
+                          <label className="block text-xs font-medium text-[#8b5e3c] mb-1">Model</label>
+                          <select value={showCustom ? '__custom__' : (config.ai_model || '')}
+                            onChange={e => {
+                              const v = e.target.value
+                              if (v === '__custom__') setForceCustomModel(true)
+                              else { setForceCustomModel(false); setField('ai_model', v) }
+                            }}
+                            className="w-full px-3 py-2.5 border-[1.5px] border-[#f5e6cc] rounded-lg text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a]">
+                            <option value="">— Chọn model —</option>
+                            {opts.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                            <option value="__custom__">Khác (tự gõ)…</option>
+                          </select>
+                          {showCustom && (
+                            <input type="text" value={config.ai_model ?? ''} onChange={e => setField('ai_model', e.target.value)}
+                              placeholder={modelHint}
+                              className="mt-2 w-full px-3 py-2.5 border-[1.5px] border-[#f5e6cc] rounded-lg text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] font-mono" />
+                          )}
+                        </div>
+                      )
+                    })()}
                   </div>
 
                   {/* API key */}
