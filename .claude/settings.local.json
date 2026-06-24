@@ -29,7 +29,8 @@
       "Skill(claude-api)",
       "Skill(claude-api:*)",
       "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" https://quanlynguyenlieuchumchum.vercel.app/api/webhooks/zalo)",
-      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" https://quanlynguyenlieuchumchum.vercel.app/api/channels/zalo/webhook)"
+      "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" https://quanlynguyenlieuchumchum.vercel.app/api/channels/zalo/webhook)",
+      "Bash(curl -s -X POST https://quanlynguyenlieuchumchum.vercel.app/api/channels/zalo/webhook -H 'Content-Type: application/json' -d '{\"event_name\":\"oa_test\"}' -w '\\\\nHTTP %{http_code}\\\\n')"
     ]
   }
 }
