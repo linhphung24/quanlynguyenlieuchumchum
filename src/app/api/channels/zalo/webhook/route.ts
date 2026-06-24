@@ -51,16 +51,18 @@ async function processZaloEvent(body: Record<string, unknown>) {
 
   if (!userId) return
 
-  // Upsert thread
-  const { data: thread } = await sb
+  // Upsert thread — khoá theo (channel, page_id, platform_id) vì migration Facebook
+  // đã đổi unique constraint. Zalo không có Page nên page_id = '' (NOT NULL DEFAULT '').
+  const { data: thread, error: upErr } = await sb
     .from('channel_threads')
     .upsert(
-      { channel: 'zalo', platform_id: userId },
-      { onConflict: 'channel,platform_id', ignoreDuplicates: false }
+      { channel: 'zalo', page_id: '', platform_id: userId },
+      { onConflict: 'channel,page_id,platform_id', ignoreDuplicates: false }
     )
     .select()
     .single()
 
+  if (upErr) { console.error('[Zalo webhook] upsert thread error:', upErr.message); return }
   if (!thread) return
 
   // Insert message

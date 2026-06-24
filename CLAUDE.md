@@ -323,6 +323,12 @@ try {
 - UI Cấu hình kênh hiển thị `/api/webhooks/zalo` nhưng route thật là `/api/channels/zalo/webhook` → Zalo gửi tin vào 404 → không tin nào về
 - **Fix IntegrationsPage.tsx**: sửa `WebhookRow` Zalo về đúng `${origin}/api/channels/zalo/webhook`. Người dùng phải cập nhật lại URL trong Zalo Developers → Webhook
 
+### Fix QUAN TRỌNG: Zalo webhook upsert sai constraint → tin không vào inbox
+- **Triệu chứng**: tin về OA nhưng KHÔNG vào inbox; webhook trả 200 `{error:0}` nhưng không lưu DB
+- **Nguyên nhân**: `migration_facebook_connections.sql` đã DROP `UNIQUE(channel, platform_id)` cũ và thêm `UNIQUE(channel, page_id, platform_id)`. Webhook Zalo vẫn `onConflict: 'channel,platform_id'` (constraint đã bị xoá) → upsert lỗi 42P10 → `thread=null` → `return` → tin không lưu
+- **Fix `zalo/webhook/route.ts`**: upsert dùng `{ channel:'zalo', page_id:'', platform_id }` + `onConflict:'channel,page_id,platform_id'` (Zalo không có Page nên page_id=''). Thêm log `upErr` để lộ lỗi tương lai
+- Threads Zalo cũ đã có `page_id=''` (do migration set DEFAULT) nên upsert mới khớp đúng thread cũ
+
 ### Fix: ChannelsPage "Đang tải..." treo ở lần đầu vào (phải F5)
 - **Nguyên nhân**: `loadThreads`/`loadMessages` đọc qua supabase-js client → dính **auth-lock** (treo khi token đang refresh / nhiều tab) → spinner kẹt mãi, F5 mới hết
 - **Fix**: thêm `sbSelect()` + `getAccessToken()` trong `lib/supabase.ts` — SELECT trực tiếp qua PostgREST bằng fetch + token localStorage (có AbortController timeout 12s), KHÔNG dính auth-lock. ChannelsPage `loadThreads`/`loadMessages`/polling dùng `sbSelect`. Realtime/update/markRead vẫn dùng `sb` (chạy sau khi trang interactive nên lock đã ổn)
