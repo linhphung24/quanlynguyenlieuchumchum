@@ -329,6 +329,16 @@ try {
 - **Fix `zalo/webhook/route.ts`**: upsert dùng `{ channel:'zalo', page_id:'', platform_id }` + `onConflict:'channel,page_id,platform_id'` (Zalo không có Page nên page_id=''). Thêm log `upErr` để lộ lỗi tương lai
 - Threads Zalo cũ đã có `page_id=''` (do migration set DEFAULT) nên upsert mới khớp đúng thread cũ
 
+### AI chốt đơn → tạo card Trello (auto + thủ công)
+- **Mục tiêu**: AI tư vấn đặt bánh, khi chốt đủ thông tin → tạo card đơn trên Trello (tái dùng env `TRELLO_API_KEY/TOKEN/LIST_ID`)
+- **lib/trello.ts** (mới): `createTrelloCard(name,desc)`, `buildOrderCard(order)`, `orderSignature(order)` (chống trùng), interface `OrderInfo`
+- **Provider-agnostic, KHÔNG dùng function-calling** (mỗi provider mỗi khác). 2 cơ chế:
+  - **Auto**: system prompt yêu cầu AI thêm khối ẩn `[[ORDER]]{json}[[/ORDER]]` ở cuối tin CHỈ KHI khách chốt đủ. `parseOrderMarker()` tách khối này khỏi câu trả lời (khách KHÔNG thấy), parse JSON → `maybeCreateOrderCard` trong `ai-reply.ts` (chống trùng theo `signature` trong 24h). Piggyback trên lượt trả lời sẵn có → KHÔNG tốn thêm call AI
+  - **Thủ công**: nút "🧾 Tạo đơn" ở header thread → `/api/channels/ai-order` (gọi `extractOrder` → JSON) → modal form sửa được → `/api/channels/order-card` tạo card + ghi `channel_orders`
+- **ai-suggest** cũng strip `[[ORDER]]` khỏi nháp
+- **SQL cần chạy**: `supabase/migration_channel_orders.sql` (bảng `channel_orders` log đơn + chống trùng)
+- **Refactor ai.ts**: thêm `callProvider()` dispatch dùng chung cho `generateReply` + `extractOrder`
+
 ### Fix: ChannelsPage "Đang tải..." treo ở lần đầu vào (phải F5)
 - **Nguyên nhân**: `loadThreads`/`loadMessages` đọc qua supabase-js client → dính **auth-lock** (treo khi token đang refresh / nhiều tab) → spinner kẹt mãi, F5 mới hết
 - **Fix**: thêm `sbSelect()` + `getAccessToken()` trong `lib/supabase.ts` — SELECT trực tiếp qua PostgREST bằng fetch + token localStorage (có AbortController timeout 12s), KHÔNG dính auth-lock. ChannelsPage `loadThreads`/`loadMessages`/polling dùng `sbSelect`. Realtime/update/markRead vẫn dùng `sb` (chạy sau khi trang interactive nên lock đã ổn)

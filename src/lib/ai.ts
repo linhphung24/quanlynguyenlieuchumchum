@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
+import type { OrderInfo } from '@/lib/trello'
 
 // ── Provider-agnostic AI reply layer ────────────────────────────
 // Đọc cấu hình từ integration_config; gọi 1 trong 3 nhà cung cấp qua REST.
@@ -73,11 +74,19 @@ async function buildProductContext(message: string): Promise<string> {
   return `Sản phẩm liên quan trong cửa hàng:\n${lines.join('\n')}`
 }
 
+// Marker ẩn để AI báo "đã chốt đơn" — webhook đọc rồi XOÁ trước khi gửi cho khách.
+export const ORDER_MARKER_RE = /\[\[ORDER\]\]([\s\S]*?)\[\[\/ORDER\]\]/i
+
 function buildSystemPrompt(shopInfo: string, productCtx: string): string {
   const parts = [
     'Bạn là nhân viên chăm sóc khách hàng của tiệm bánh Chum Chum Bakery, trả lời tin nhắn trên Facebook/Zalo.',
     'Trả lời bằng tiếng Việt, thân thiện, ngắn gọn (1–3 câu), tự nhiên như người thật. Không bịa giá hay sản phẩm không có trong dữ liệu.',
-    'Nếu không chắc hoặc khách hỏi việc cần con người (đặt hàng số lượng lớn, khiếu nại), hãy lịch sự nói sẽ có nhân viên liên hệ lại.',
+    'Khi khách muốn đặt bánh, hãy hỏi cho đủ thông tin: tên khách, sản phẩm + số lượng, thời gian nhận, lấy tại tiệm hay giao tận nơi (kèm địa chỉ), số điện thoại.',
+    'Nếu khách hỏi việc cần con người (đơn lớn, khiếu nại), lịch sự nói sẽ có nhân viên liên hệ lại.',
+    // Khối đơn ẩn — chỉ thêm khi đã CHỐT đủ thông tin
+    'CHỈ KHI khách đã xác nhận chốt đơn VÀ bạn đã có đủ thông tin (ít nhất sản phẩm + số lượng + cách nhận hàng), hãy thêm vào CUỐI tin nhắn một khối ẩn đúng định dạng (khách KHÔNG nhìn thấy, hệ thống tự xử lý):',
+    '[[ORDER]]{"customer":"","phone":"","items":[{"name":"","qty":""}],"method":"ship|pickup","address":"","when":"","total":"","note":""}[[/ORDER]]',
+    'Tuyệt đối KHÔNG thêm khối này khi khách chưa chốt hoặc còn thiếu thông tin. Mỗi đơn chỉ thêm khối MỘT lần.',
   ]
   if (shopInfo.trim()) parts.push('Thông tin tiệm:\n' + shopInfo.trim())
   if (productCtx) parts.push(productCtx)
@@ -97,11 +106,50 @@ export async function generateReply(
   const system = buildSystemPrompt(cfg.shopInfo, productCtx)
   const turns: ChatTurn[] = [...history, { role: 'user', content: latestUserMessage }]
 
+  return callProvider(cfg, system, turns)
+}
+
+// Dispatch chung cho mọi nhà cung cấp
+async function callProvider(cfg: AIConfig, system: string, turns: ChatTurn[]): Promise<string> {
   if (cfg.provider === 'gemini')    return callGemini(cfg, system, turns)
   if (cfg.provider === 'anthropic') return callAnthropic(cfg, system, turns)
   if (cfg.provider === 'deepseek')
     return callOpenAICompatible(cfg, system, turns, 'https://api.deepseek.com/chat/completions', 'DeepSeek')
   return callOpenAICompatible(cfg, system, turns, 'https://api.openai.com/v1/chat/completions', 'OpenAI')
+}
+
+// Tách khối [[ORDER]]...[[/ORDER]] khỏi câu trả lời.
+// Trả về { reply: text đã bỏ marker (để gửi khách), order: đơn parse được hoặc null }.
+export function parseOrderMarker(text: string): { reply: string; order: OrderInfo | null } {
+  const m = text.match(ORDER_MARKER_RE)
+  let order: OrderInfo | null = null
+  if (m) {
+    try { order = JSON.parse(m[1].trim()) as OrderInfo } catch { order = null }
+  }
+  // Xoá khối marker (kể cả khi JSON lỗi) + dọn marker lẻ → khách không bao giờ thấy
+  const reply = text.replace(ORDER_MARKER_RE, '').replace(/\[\[\/?ORDER\]\]/gi, '').trim()
+  return { reply, order }
+}
+
+function parseJsonLoose(s: string): OrderInfo | null {
+  try {
+    const m = s.match(/\{[\s\S]*\}/)
+    if (!m) return null
+    return JSON.parse(m[0]) as OrderInfo
+  } catch { return null }
+}
+
+// Trích xuất đơn hàng từ hội thoại (cho nút "Tạo đơn" thủ công).
+export async function extractOrder(cfg: AIConfig, history: ChatTurn[]): Promise<OrderInfo | null> {
+  const system = [
+    'Bạn là trợ lý trích xuất đơn đặt bánh từ đoạn chat.',
+    'Trả về DUY NHẤT một JSON (không markdown, không giải thích) theo schema:',
+    '{"customer":"","phone":"","items":[{"name":"","qty":""}],"method":"ship"|"pickup"|"","address":"","when":"","total":"","note":""}',
+    'Lấy thông tin có trong hội thoại, thiếu thì để trống. KHÔNG bịa.',
+  ].join('\n')
+  const turns: ChatTurn[] = [...history, { role: 'user', content: 'Trích xuất đơn hàng từ hội thoại trên thành JSON.' }]
+  const raw = await callProvider(cfg, system, turns)
+  return parseJsonLoose(raw)
 }
 
 // ── Google Gemini ──

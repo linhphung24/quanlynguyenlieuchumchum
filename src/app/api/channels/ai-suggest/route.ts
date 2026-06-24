@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
-import { getAIConfig, generateReply, ChatTurn } from '@/lib/ai'
+import { getAIConfig, generateReply, parseOrderMarker, ChatTurn } from '@/lib/ai'
 
 // Sinh GỢI Ý trả lời (không gửi) cho nhân viên xem/sửa rồi mới gửi.
 const sb = createClient(
@@ -35,7 +35,8 @@ export async function POST(req: NextRequest) {
     if (!lastUser) return NextResponse.json({ error: 'Chưa có tin nhắn của khách để gợi ý' }, { status: 400 })
     const history = turns.slice(0, turns.lastIndexOf(lastUser))
 
-    const suggestion = await generateReply(cfg, history, lastUser.content)
+    const raw = await generateReply(cfg, history, lastUser.content)
+    const { reply: suggestion } = parseOrderMarker(raw)   // bỏ khối [[ORDER]] khỏi nháp
     return NextResponse.json({ ok: true, suggestion })
   } catch (e) {
     return NextResponse.json({ error: (e as Error).message }, { status: 500 })

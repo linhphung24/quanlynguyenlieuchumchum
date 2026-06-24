@@ -30,6 +30,17 @@ interface Message {
   created_at: string
 }
 
+interface OrderForm {
+  customer: string
+  phone: string
+  items: { name: string; qty: string }[]
+  method: string
+  address: string
+  when: string
+  total: string
+  note: string
+}
+
 const CHANNEL_META: Record<Channel, { label: string; icon: string; color: string; bg: string }> = {
   facebook: { label: 'Facebook',  icon: '📘', color: '#1877f2', bg: '#e7f0fd' },
   zalo:     { label: 'Zalo OA',   icon: '🟦', color: '#0068ff', bg: '#e5f0ff' },
@@ -94,6 +105,9 @@ export default function ChannelsPage() {
   const [suggesting, setSuggesting]         = useState(false)
   const [searchQ, setSearchQ]               = useState('')
   const [mobileView, setMobileView]         = useState<'list' | 'thread'>('list')
+  const [orderForm, setOrderForm]           = useState<OrderForm | null>(null)
+  const [extractingOrder, setExtractingOrder] = useState(false)
+  const [creatingOrder, setCreatingOrder]   = useState(false)
 
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef    = useRef<HTMLTextAreaElement>(null)
@@ -279,6 +293,64 @@ export default function ChannelsPage() {
       setSelectedThread({ ...selectedThread, ai_enabled: !next })
       setThreads(prev => prev.map(t => t.id === selectedThread.id ? { ...t, ai_enabled: !next } : t))
       alert('Không đổi được trạng thái AI: ' + error.message)
+    }
+  }
+
+  // ── Tạo đơn: AI trích xuất → mở form cho nhân viên xem/sửa ──
+  const handleExtractOrder = async () => {
+    if (!selectedThread || extractingOrder) return
+    setExtractingOrder(true)
+    try {
+      const res = await fetch('/api/channels/ai-order', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ threadId: selectedThread.id }),
+      })
+      const data = await res.json() as { order?: Partial<OrderForm> & { items?: { name?: string; qty?: string | number }[] }; error?: string }
+      if (!res.ok || !data.order) { alert('Không tạo được đơn: ' + (data.error ?? 'lỗi')); return }
+      const o = data.order
+      setOrderForm({
+        customer: o.customer ?? selectedThread.display_name ?? '',
+        phone:    o.phone ?? '',
+        items:    (Array.isArray(o.items) && o.items.length ? o.items : [{ name: '', qty: '' }])
+                    .map(it => ({ name: it.name ?? '', qty: String(it.qty ?? '') })),
+        method:   o.method ?? '',
+        address:  o.address ?? '',
+        when:     o.when ?? '',
+        total:    o.total ?? '',
+        note:     o.note ?? '',
+      })
+    } catch (e) {
+      alert('Lỗi trích xuất đơn: ' + (e as Error).message)
+    } finally {
+      setExtractingOrder(false)
+    }
+  }
+
+  const setOrderField = (k: keyof OrderForm, v: string) =>
+    setOrderForm(prev => prev ? { ...prev, [k]: v } : prev)
+  const setItem = (i: number, k: 'name' | 'qty', v: string) =>
+    setOrderForm(prev => prev ? { ...prev, items: prev.items.map((it, idx) => idx === i ? { ...it, [k]: v } : it) } : prev)
+  const addItem = () => setOrderForm(prev => prev ? { ...prev, items: [...prev.items, { name: '', qty: '' }] } : prev)
+  const removeItem = (i: number) => setOrderForm(prev => prev ? { ...prev, items: prev.items.filter((_, idx) => idx !== i) } : prev)
+
+  const handleCreateOrder = async () => {
+    if (!orderForm || !selectedThread || creatingOrder) return
+    setCreatingOrder(true)
+    try {
+      const res = await fetch('/api/channels/order-card', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ threadId: selectedThread.id, order: orderForm, createdBy: user?.email }),
+      })
+      const data = await res.json() as { ok?: boolean; cardUrl?: string; error?: string }
+      if (!res.ok || !data.ok) { alert('Tạo đơn thất bại: ' + (data.error ?? 'lỗi')); return }
+      setOrderForm(null)
+      if (data.cardUrl && confirm('Đã tạo đơn trên Trello ✅\nMở card để xem?')) window.open(data.cardUrl, '_blank')
+    } catch (e) {
+      alert('Lỗi tạo đơn: ' + (e as Error).message)
+    } finally {
+      setCreatingOrder(false)
     }
   }
 
@@ -519,6 +591,16 @@ export default function ChannelsPage() {
                 <span>{selectedThread.ai_enabled ? '🤖' : '🙅'}</span>
                 <span className="hidden sm:inline">AI {selectedThread.ai_enabled ? 'Bật' : 'Tắt'}</span>
               </button>
+              {/* Tạo đơn Trello từ hội thoại */}
+              <button
+                onClick={handleExtractOrder}
+                disabled={extractingOrder}
+                title="Tạo đơn trên Trello từ hội thoại này"
+                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-[#fff3e0] text-[#c8773a] hover:bg-[#ffe8cc] disabled:opacity-50 transition-colors"
+              >
+                <span className={extractingOrder ? 'animate-spin' : ''}>{extractingOrder ? '↻' : '🧾'}</span>
+                <span className="hidden sm:inline">Tạo đơn</span>
+              </button>
               <button
                 onClick={() => loadMessages(selectedThread)}
                 disabled={loadingMsgs}
@@ -642,6 +724,97 @@ export default function ChannelsPage() {
           </>
         )}
       </div>
+
+      {/* ── Modal xem/sửa đơn trước khi tạo Trello ── */}
+      {orderForm && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => !creatingOrder && setOrderForm(null)}>
+          <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto shadow-2xl" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-3.5 border-b border-[#e8d5b7] bg-[#fff3e0]">
+              <span className="font-semibold text-[#c8773a] flex items-center gap-2">🧾 Tạo đơn trên Trello</span>
+              <button onClick={() => setOrderForm(null)} className="text-[#8b5e3c]/60 hover:text-[#c8773a] text-lg">✕</button>
+            </div>
+            <div className="p-5 space-y-3">
+              <p className="text-[11px] text-[#8b5e3c]/70 bg-[#fdf6ec] rounded-lg p-2 border border-[#f0e8d8]">
+                AI đã rút thông tin từ hội thoại — kiểm tra/sửa lại rồi bấm tạo.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block">
+                  <span className="text-xs font-medium text-[#8b5e3c]">Khách</span>
+                  <input value={orderForm.customer} onChange={e => setOrderField('customer', e.target.value)}
+                    className="mt-1 w-full px-3 py-2 border border-[#e8d5b7] rounded-lg text-sm outline-none focus:border-[#c8773a] text-[#1a0f07]" />
+                </label>
+                <label className="block">
+                  <span className="text-xs font-medium text-[#8b5e3c]">SĐT</span>
+                  <input value={orderForm.phone} onChange={e => setOrderField('phone', e.target.value)}
+                    className="mt-1 w-full px-3 py-2 border border-[#e8d5b7] rounded-lg text-sm outline-none focus:border-[#c8773a] text-[#1a0f07]" />
+                </label>
+              </div>
+
+              <div>
+                <span className="text-xs font-medium text-[#8b5e3c]">Sản phẩm</span>
+                <div className="mt-1 space-y-2">
+                  {orderForm.items.map((it, i) => (
+                    <div key={i} className="flex gap-2">
+                      <input value={it.name} onChange={e => setItem(i, 'name', e.target.value)} placeholder="Tên bánh"
+                        className="flex-1 px-3 py-2 border border-[#e8d5b7] rounded-lg text-sm outline-none focus:border-[#c8773a] text-[#1a0f07]" />
+                      <input value={it.qty} onChange={e => setItem(i, 'qty', e.target.value)} placeholder="SL"
+                        className="w-16 px-2 py-2 border border-[#e8d5b7] rounded-lg text-sm outline-none focus:border-[#c8773a] text-[#1a0f07] text-center" />
+                      <button onClick={() => removeItem(i)} className="px-2 text-[#c0392b] hover:bg-red-50 rounded-lg">✕</button>
+                    </div>
+                  ))}
+                  <button onClick={addItem} className="text-xs text-[#c8773a] hover:underline">+ Thêm sản phẩm</button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block">
+                  <span className="text-xs font-medium text-[#8b5e3c]">Nhận hàng</span>
+                  <select value={orderForm.method} onChange={e => setOrderField('method', e.target.value)}
+                    className="mt-1 w-full px-3 py-2 border border-[#e8d5b7] rounded-lg text-sm outline-none focus:border-[#c8773a] bg-white text-[#1a0f07]">
+                    <option value="">—</option>
+                    <option value="pickup">Lấy tại tiệm</option>
+                    <option value="ship">Giao tận nơi</option>
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="text-xs font-medium text-[#8b5e3c]">Thời gian nhận</span>
+                  <input value={orderForm.when} onChange={e => setOrderField('when', e.target.value)} placeholder="VD: 15h 25/06"
+                    className="mt-1 w-full px-3 py-2 border border-[#e8d5b7] rounded-lg text-sm outline-none focus:border-[#c8773a] text-[#1a0f07]" />
+                </label>
+              </div>
+
+              {orderForm.method === 'ship' && (
+                <label className="block">
+                  <span className="text-xs font-medium text-[#8b5e3c]">Địa chỉ giao</span>
+                  <input value={orderForm.address} onChange={e => setOrderField('address', e.target.value)}
+                    className="mt-1 w-full px-3 py-2 border border-[#e8d5b7] rounded-lg text-sm outline-none focus:border-[#c8773a] text-[#1a0f07]" />
+                </label>
+              )}
+
+              <div className="grid grid-cols-2 gap-3">
+                <label className="block">
+                  <span className="text-xs font-medium text-[#8b5e3c]">Tạm tính</span>
+                  <input value={orderForm.total} onChange={e => setOrderField('total', e.target.value)}
+                    className="mt-1 w-full px-3 py-2 border border-[#e8d5b7] rounded-lg text-sm outline-none focus:border-[#c8773a] text-[#1a0f07]" />
+                </label>
+                <label className="block">
+                  <span className="text-xs font-medium text-[#8b5e3c]">Ghi chú</span>
+                  <input value={orderForm.note} onChange={e => setOrderField('note', e.target.value)}
+                    className="mt-1 w-full px-3 py-2 border border-[#e8d5b7] rounded-lg text-sm outline-none focus:border-[#c8773a] text-[#1a0f07]" />
+                </label>
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 px-5 py-3.5 border-t border-[#e8d5b7] bg-[#fdf6ec]">
+              <button onClick={() => setOrderForm(null)} disabled={creatingOrder}
+                className="px-4 py-2 rounded-lg text-sm text-[#8b5e3c] hover:bg-[#f0e8d8] disabled:opacity-50">Huỷ</button>
+              <button onClick={handleCreateOrder} disabled={creatingOrder}
+                className="px-5 py-2 rounded-lg bg-[#c8773a] text-white text-sm font-semibold hover:bg-[#b06830] disabled:opacity-50">
+                {creatingOrder ? '⏳ Đang tạo...' : '✅ Tạo đơn Trello'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
