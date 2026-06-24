@@ -338,6 +338,7 @@ try {
 - **ai-suggest** cũng strip `[[ORDER]]` khỏi nháp
 - **SQL cần chạy**: `supabase/migration_channel_orders.sql` (bảng `channel_orders` log đơn + chống trùng)
 - **Refactor ai.ts**: thêm `callProvider()` dispatch dùng chung cho `generateReply` + `extractOrder`
+- **Cấu hình Trello trên UI + 2 list riêng**: `getTrelloConfig()` đọc `trello_api_key`/`trello_token`/`trello_order_list_id`/`trello_birthday_list_id` từ `integration_config` (fallback env cũ `TRELLO_*`). `createTrelloCard(name, desc, 'order'|'birthday')` chọn list theo loại. UI IntegrationsPage có mục "📋 Trello" để admin nhập key/token + 2 List ID. `birthday-card/route.ts` refactor dùng `createTrelloCard(..., 'birthday')`. Không cần SQL mới (key tự tạo khi lưu)
 
 ### Fix: ChannelsPage "Đang tải..." treo ở lần đầu vào (phải F5)
 - **Nguyên nhân**: `loadThreads`/`loadMessages` đọc qua supabase-js client → dính **auth-lock** (treo khi token đang refresh / nhiều tab) → spinner kẹt mãi, F5 mới hết

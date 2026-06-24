@@ -39,7 +39,14 @@ const ZALO_FIELDS: Field[] = [
   { key: 'zalo_oa_id',  label: 'OA ID',      placeholder: 'ID Official Account (tuỳ chọn)' },
 ]
 
-const ALL_KEYS = [...FB_FIELDS, ...ZALO_FIELDS].map(f => f.key)
+const TRELLO_FIELDS: Field[] = [
+  { key: 'trello_api_key',           label: 'API Key',            placeholder: 'API Key',  hint: 'trello.com/app-key' },
+  { key: 'trello_token',             label: 'Token',              placeholder: '••••••••', secret: true, hint: 'trello.com/app-key → Token' },
+  { key: 'trello_order_list_id',     label: 'List ID — Đơn hàng', placeholder: 'ID list nhận đơn từ chat' },
+  { key: 'trello_birthday_list_id',  label: 'List ID — Sinh nhật', placeholder: 'ID list card sinh nhật' },
+]
+
+const ALL_KEYS = [...FB_FIELDS, ...ZALO_FIELDS, ...TRELLO_FIELDS].map(f => f.key)
 
 // Đọc access token trực tiếp từ localStorage — KHÔNG qua supabase-js
 // (tránh auth-lock làm treo request khi refresh token / mở nhiều tab)
@@ -64,6 +71,7 @@ export default function IntegrationsPage() {
   const [savingFb, setSavingFb]     = useState(false)
   const [savingZalo, setSavingZalo] = useState(false)
   const [savingAi, setSavingAi]     = useState(false)
+  const [savingTrello, setSavingTrello] = useState(false)
   const [reveal, setReveal]   = useState<Set<string>>(new Set())
   const [origin, setOrigin]   = useState('')
 
@@ -522,6 +530,29 @@ export default function IntegrationsPage() {
               </div>
             )
           })()}
+
+          {/* ── Trello ── */}
+          <div className="bg-[#fffaf4] rounded-2xl border border-[#f5e6cc] shadow-[0_4px_20px_rgba(200,119,58,0.06)] overflow-hidden">
+            <div className="flex items-center gap-2 px-5 py-3.5 bg-[#e7f0fd] border-b border-[#d3e3fb]">
+              <span className="text-xl">📋</span>
+              <span className="font-semibold text-[#0079bf]">Trello (đơn hàng &amp; sinh nhật)</span>
+            </div>
+            <div className="p-5 space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {TRELLO_FIELDS.map(renderField)}
+              </div>
+              <div className="text-[11px] text-[#8b5e3c]/70 bg-[#fdf6ec] rounded-lg p-2.5 border border-[#f0e8d8] space-y-1">
+                <div>🔑 Lấy <b>API Key</b> + <b>Token</b> tại <span className="text-[#0079bf]">trello.com/app-key</span>.</div>
+                <div>🗂 Lấy <b>List ID</b>: mở board Trello, thêm <code>.json</code> vào cuối URL → tìm <code>id</code> của list muốn dùng. Đơn từ chat vào <b>List Đơn hàng</b>, card sinh nhật vào <b>List Sinh nhật</b>.</div>
+              </div>
+              <div className="flex justify-end">
+                <button onClick={() => saveGroup(TRELLO_FIELDS, 'Trello', setSavingTrello)} disabled={savingTrello}
+                  className="px-5 py-2.5 rounded-lg bg-[#0079bf] text-white text-sm font-semibold hover:opacity-90 cursor-pointer disabled:opacity-50">
+                  {savingTrello ? '⏳ Đang lưu...' : '💾 Lưu cấu hình Trello'}
+                </button>
+              </div>
+            </div>
+          </div>
 
           <p className="text-[11px] text-[#8b5e3c]/60 text-center">
             🔐 Secrets chỉ admin xem được (RLS). Webhook server dùng service role key để đọc khi xử lý tin nhắn.

@@ -1,4 +1,13 @@
 // Tạo card Trello (dùng chung cho sinh nhật nhân sự + đơn hàng từ chat).
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
+
+function admin(): SupabaseClient {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!,
+    { auth: { autoRefreshToken: false, persistSession: false } }
+  )
+}
 
 export interface OrderInfo {
   customer?: string
@@ -11,23 +20,38 @@ export interface OrderInfo {
   note?: string
 }
 
-function getTrelloCreds() {
-  const key   = process.env.TRELLO_API_KEY
-  const token = process.env.TRELLO_TOKEN
-  const list  = process.env.TRELLO_LIST_ID
-  if (!key || !token || !list) {
-    throw new Error('Thiếu cấu hình Trello (TRELLO_API_KEY / TRELLO_TOKEN / TRELLO_LIST_ID)')
+// Đọc cấu hình Trello từ integration_config (admin sửa trên UI), fallback env.
+export async function getTrelloConfig(): Promise<{
+  apiKey: string; token: string; orderListId: string; birthdayListId: string
+}> {
+  const sb = admin()
+  const { data } = await sb
+    .from('integration_config')
+    .select('key, value')
+    .in('key', ['trello_api_key', 'trello_token', 'trello_order_list_id', 'trello_birthday_list_id'])
+  const m: Record<string, string> = {}
+  for (const r of (data ?? []) as { key: string; value: string }[]) m[r.key] = r.value ?? ''
+  return {
+    apiKey:         (m.trello_api_key      || process.env.TRELLO_API_KEY  || '').trim(),
+    token:          (m.trello_token        || process.env.TRELLO_TOKEN    || '').trim(),
+    orderListId:    (m.trello_order_list_id    || process.env.TRELLO_ORDER_LIST_ID || process.env.TRELLO_LIST_ID || '').trim(),
+    birthdayListId: (m.trello_birthday_list_id || process.env.TRELLO_LIST_ID || '').trim(),
   }
-  return { key, token, list }
 }
 
-// Tạo card thô — trả về { id, url }
-export async function createTrelloCard(name: string, desc: string): Promise<{ id: string; url: string }> {
-  const { key, token, list } = getTrelloCreds()
+// Tạo card thô vào list theo loại (đơn hàng / sinh nhật) — trả về { id, url }
+export async function createTrelloCard(
+  name: string, desc: string, listKind: 'order' | 'birthday' = 'order'
+): Promise<{ id: string; url: string }> {
+  const cfg = await getTrelloConfig()
+  const listId = listKind === 'birthday' ? cfg.birthdayListId : cfg.orderListId
+  if (!cfg.apiKey || !cfg.token) throw new Error('Chưa cấu hình Trello API Key / Token (vào Cấu hình kênh)')
+  if (!listId) throw new Error(`Chưa cấu hình List ID Trello cho ${listKind === 'birthday' ? 'sinh nhật' : 'đơn hàng'}`)
+
   const url = new URL('https://api.trello.com/1/cards')
-  url.searchParams.set('key', key)
-  url.searchParams.set('token', token)
-  url.searchParams.set('idList', list)
+  url.searchParams.set('key', cfg.apiKey)
+  url.searchParams.set('token', cfg.token)
+  url.searchParams.set('idList', listId)
   url.searchParams.set('name', name)
   url.searchParams.set('desc', desc)
   const res = await fetch(url.toString(), { method: 'POST' })
