@@ -65,9 +65,14 @@ async function processZaloEvent(body: Record<string, unknown>) {
   if (upErr) { console.error('[Zalo webhook] upsert thread error:', upErr.message); return }
   if (!thread) return
 
-  // Insert message
-  const attachments = eventName === 'user_send_image'
-    ? [{ type: 'image', url: (body.message as Record<string, Record<string, string>>)?.message?.thumbnail }]
+  // Insert message — ảnh/sticker/gif Zalo nằm ở message.attachments[].payload.url
+  const rawAtt = (body.message as {
+    attachments?: { type?: string; payload?: { url?: string; thumbnail?: string } }[]
+  })?.attachments ?? []
+  const attachments = rawAtt.length
+    ? rawAtt
+        .map(a => ({ type: 'image', url: a.payload?.url ?? a.payload?.thumbnail ?? '' }))
+        .filter(a => a.url)
     : null
 
   const { error: msgErr } = await sb.from('channel_messages').insert({
