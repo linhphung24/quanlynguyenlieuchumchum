@@ -135,10 +135,15 @@ export async function fetchZaloUserProfile(
     const json = (await res.json()) as {
       data?: { display_name?: string; avatar?: string }
       error?: number
+      message?: string
     }
-    if (json.error && json.error !== 0) return null
+    if (json.error && json.error !== 0) {
+      console.error('[Zalo user/detail] lỗi:', json.error, json.message)
+      return null
+    }
     return json.data ?? null
-  } catch {
+  } catch (e) {
+    console.error('[Zalo user/detail] exception:', (e as Error).message)
     return null
   }
 }
