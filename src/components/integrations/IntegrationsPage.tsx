@@ -425,9 +425,11 @@ export default function IntegrationsPage() {
             const provider = config.ai_provider || 'gemini'
             const modelHint = provider === 'gemini' ? 'VD: gemini-2.0-flash (free tier)'
               : provider === 'anthropic' ? 'VD: claude-haiku-4-5'
+              : provider === 'deepseek' ? 'VD: deepseek-chat'
               : 'VD: gpt-4o-mini'
             const keyHint = provider === 'gemini' ? 'Lấy ở aistudio.google.com/apikey (miễn phí)'
               : provider === 'anthropic' ? 'Lấy ở console.anthropic.com'
+              : provider === 'deepseek' ? 'Lấy ở platform.deepseek.com'
               : 'Lấy ở platform.openai.com/api-keys'
             const aiOn = config.ai_enabled === 'true'
             const autoOn = config.ai_auto_reply === 'true'
@@ -464,6 +466,7 @@ export default function IntegrationsPage() {
                       <select value={provider} onChange={e => setField('ai_provider', e.target.value)}
                         className="w-full px-3 py-2.5 border-[1.5px] border-[#f5e6cc] rounded-lg text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a]">
                         <option value="gemini">Google Gemini (rẻ nhất, có free)</option>
+                        <option value="deepseek">DeepSeek (rẻ, tương thích OpenAI)</option>
                         <option value="anthropic">Claude (Anthropic)</option>
                         <option value="openai">OpenAI (GPT)</option>
                       </select>

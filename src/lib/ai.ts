@@ -12,7 +12,7 @@ function admin(): SupabaseClient {
   return createClient(url, key, { auth: { autoRefreshToken: false, persistSession: false } })
 }
 
-export type AIProvider = 'gemini' | 'anthropic' | 'openai'
+export type AIProvider = 'gemini' | 'anthropic' | 'openai' | 'deepseek'
 
 export interface AIConfig {
   enabled: boolean
@@ -27,6 +27,7 @@ const DEFAULT_MODEL: Record<AIProvider, string> = {
   gemini:    'gemini-2.0-flash',
   anthropic: 'claude-haiku-4-5',
   openai:    'gpt-4o-mini',
+  deepseek:  'deepseek-chat',
 }
 
 export async function getAIConfig(): Promise<AIConfig> {
@@ -37,7 +38,7 @@ export async function getAIConfig(): Promise<AIConfig> {
     .in('key', ['ai_enabled', 'ai_auto_reply', 'ai_provider', 'ai_api_key', 'ai_model', 'ai_shop_info'])
   const m: Record<string, string> = {}
   for (const r of (data ?? []) as { key: string; value: string }[]) m[r.key] = r.value ?? ''
-  const provider = (['gemini', 'anthropic', 'openai'].includes(m.ai_provider) ? m.ai_provider : 'gemini') as AIProvider
+  const provider = (['gemini', 'anthropic', 'openai', 'deepseek'].includes(m.ai_provider) ? m.ai_provider : 'gemini') as AIProvider
   return {
     enabled:   m.ai_enabled === 'true',
     autoReply: m.ai_auto_reply === 'true',
@@ -98,7 +99,9 @@ export async function generateReply(
 
   if (cfg.provider === 'gemini')    return callGemini(cfg, system, turns)
   if (cfg.provider === 'anthropic') return callAnthropic(cfg, system, turns)
-  return callOpenAI(cfg, system, turns)
+  if (cfg.provider === 'deepseek')
+    return callOpenAICompatible(cfg, system, turns, 'https://api.deepseek.com/chat/completions', 'DeepSeek')
+  return callOpenAICompatible(cfg, system, turns, 'https://api.openai.com/v1/chat/completions', 'OpenAI')
 }
 
 // ── Google Gemini ──
@@ -150,9 +153,11 @@ async function callAnthropic(cfg: AIConfig, system: string, turns: ChatTurn[]): 
   return text
 }
 
-// ── OpenAI ──
-async function callOpenAI(cfg: AIConfig, system: string, turns: ChatTurn[]): Promise<string> {
-  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+// ── OpenAI & các API tương thích OpenAI (DeepSeek...) ──
+async function callOpenAICompatible(
+  cfg: AIConfig, system: string, turns: ChatTurn[], url: string, label: string
+): Promise<string> {
+  const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${cfg.apiKey}` },
     body: JSON.stringify({
@@ -166,8 +171,8 @@ async function callOpenAI(cfg: AIConfig, system: string, turns: ChatTurn[]): Pro
     choices?: { message?: { content?: string } }[]
     error?: { message?: string }
   }
-  if (!res.ok || data.error) throw new Error('OpenAI lỗi: ' + (data.error?.message ?? res.status))
+  if (!res.ok || data.error) throw new Error(`${label} lỗi: ` + (data.error?.message ?? res.status))
   const text = data.choices?.[0]?.message?.content?.trim()
-  if (!text) throw new Error('OpenAI không trả về nội dung')
+  if (!text) throw new Error(`${label} không trả về nội dung`)
   return text
 }

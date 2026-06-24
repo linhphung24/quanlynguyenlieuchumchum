@@ -310,7 +310,7 @@ try {
 - `zalo/oauth/callback/route.ts`: trang HTML thành công có nút "↩ Quay lại ứng dụng" + đếm ngược tự về `/` sau 5s (chỉ khi thành công). URL về lấy động từ header `host` + `x-forwarded-proto`
 
 ### AI tự động trả lời tin nhắn (Facebook + Zalo)
-- **Provider-agnostic** (`src/lib/ai.ts`): 1 hàm `generateReply` gọi 1 trong 3 nhà cung cấp qua REST — **Gemini** (mặc định, rẻ nhất/free tier), **Anthropic Claude**, **OpenAI**. Đổi provider/model/key trong UI, không sửa code. KHÔNG chạy local được (Vercel serverless không host LLM)
+- **Provider-agnostic** (`src/lib/ai.ts`): 1 hàm `generateReply` gọi 1 trong 4 nhà cung cấp qua REST — **Gemini** (mặc định, rẻ nhất/free tier), **DeepSeek** (tương thích OpenAI, chỉ khác base URL `api.deepseek.com/chat/completions`, model `deepseek-chat`), **Anthropic Claude**, **OpenAI**. DeepSeek + OpenAI dùng chung `callOpenAICompatible(url, label)`. Đổi provider/model/key trong UI, không sửa code. KHÔNG chạy local được (Vercel serverless không host LLM)
 - **Tiết kiệm token**: `buildProductContext` chỉ truy vấn products khớp từ khoá trong tin của khách (ilike, cap 25 SP) — KHÔNG dump toàn bộ 430 SP mỗi request. System prompt gồm thông tin tiệm (`ai_shop_info`) + SP liên quan + giá/tồn
 - **Cấu hình** lưu trong `integration_config` (keys `ai_*`): `ai_enabled`, `ai_auto_reply` (false=chỉ gợi ý), `ai_provider`, `ai_api_key`, `ai_model`, `ai_shop_info`
 - **Auto-reply** (`src/lib/ai-reply.ts` → `maybeAutoReply`): gọi cuối webhook FB/Zalo sau khi lưu tin ĐẾN. Check `ai_enabled` + `ai_auto_reply` + `thread.ai_enabled` → sinh trả lời → gửi qua `lib/channel-send.ts` → lưu tin 'out' (`sent_by='AI'`). Bọc try-catch, KHÔNG throw (webhook luôn trả 200). Await (không fire-and-forget vì serverless freeze sau response)
