@@ -39,14 +39,20 @@ const ZALO_FIELDS: Field[] = [
   { key: 'zalo_oa_id',  label: 'OA ID',      placeholder: 'ID Official Account (tuỳ chọn)' },
 ]
 
-const TRELLO_FIELDS: Field[] = [
-  { key: 'trello_api_key',           label: 'API Key',            placeholder: 'API Key',  hint: 'trello.com/app-key' },
-  { key: 'trello_token',             label: 'Token',              placeholder: '••••••••', secret: true, hint: 'trello.com/app-key → Token' },
-  { key: 'trello_order_list_id',     label: 'List ID — Đơn hàng', placeholder: 'ID list nhận đơn từ chat' },
-  { key: 'trello_birthday_list_id',  label: 'List ID — Sinh nhật', placeholder: 'ID list card sinh nhật' },
+const TRELLO_CRED_FIELDS: Field[] = [
+  { key: 'trello_api_key', label: 'API Key', placeholder: 'API Key', hint: 'trello.com/app-key' },
+  { key: 'trello_token',   label: 'Token',   placeholder: '••••••••', secret: true, hint: 'trello.com/app-key → Token' },
+]
+// board_id chỉ để UI nhớ board đang chọn; backend chỉ dùng list_id
+const TRELLO_SAVE_KEYS = [
+  'trello_api_key', 'trello_token',
+  'trello_order_board_id', 'trello_order_list_id',
+  'trello_birthday_board_id', 'trello_birthday_list_id',
 ]
 
-const ALL_KEYS = [...FB_FIELDS, ...ZALO_FIELDS, ...TRELLO_FIELDS].map(f => f.key)
+const ALL_KEYS = [...FB_FIELDS.map(f => f.key), ...ZALO_FIELDS.map(f => f.key), ...TRELLO_SAVE_KEYS]
+
+interface TrelloBoard { id: string; name: string; lists: { id: string; name: string }[] }
 
 // Đọc access token trực tiếp từ localStorage — KHÔNG qua supabase-js
 // (tránh auth-lock làm treo request khi refresh token / mở nhiều tab)
@@ -72,6 +78,8 @@ export default function IntegrationsPage() {
   const [savingZalo, setSavingZalo] = useState(false)
   const [savingAi, setSavingAi]     = useState(false)
   const [savingTrello, setSavingTrello] = useState(false)
+  const [trelloBoards, setTrelloBoards] = useState<TrelloBoard[]>([])
+  const [loadingBoards, setLoadingBoards] = useState(false)
   const [reveal, setReveal]   = useState<Set<string>>(new Set())
   const [origin, setOrigin]   = useState('')
 
@@ -176,6 +184,35 @@ export default function IntegrationsPage() {
 
   useEffect(() => { if (isAdmin) load() }, [isAdmin, load])
 
+  // Tải danh sách board + list từ Trello (dùng key/token đang nhập)
+  const loadTrelloBoards = useCallback(async (apiKey: string, tokenKey: string) => {
+    const authToken = getAccessToken()
+    if (!authToken || !apiKey || !tokenKey) return
+    setLoadingBoards(true)
+    try {
+      const res = await fetch('/api/trello/meta', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${authToken}` },
+        body: JSON.stringify({ apiKey, token: tokenKey }),
+      })
+      const json = await res.json()
+      if (!res.ok) throw new Error(json.error || 'Lỗi tải board')
+      setTrelloBoards((json.boards ?? []) as TrelloBoard[])
+    } catch (e) {
+      toast('Lỗi tải board Trello: ' + (e as Error).message, 'error')
+    } finally {
+      setLoadingBoards(false)
+    }
+  }, [toast])
+
+  // Tự tải board khi đã có sẵn key/token (lần đầu vào)
+  useEffect(() => {
+    if (isAdmin && config.trello_api_key && config.trello_token && trelloBoards.length === 0) {
+      loadTrelloBoards(config.trello_api_key, config.trello_token)
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAdmin, config.trello_api_key, config.trello_token])
+
   const setField = (key: string, value: string) =>
     setConfig(prev => ({ ...prev, [key]: value }))
 
@@ -253,6 +290,31 @@ export default function IntegrationsPage() {
               {reveal.has(f.key) ? '🙈' : '👁'}
             </button>
           )}
+        </div>
+      </div>
+    )
+  }
+
+  // Dropdown chọn board + list cho 1 mục đích (đơn hàng / sinh nhật)
+  const renderTrelloPicker = (label: string, boardKey: string, listKey: string) => {
+    const lists = trelloBoards.find(b => b.id === config[boardKey])?.lists ?? []
+    return (
+      <div>
+        <span className="block text-xs font-medium text-[#8b5e3c] mb-1">{label}</span>
+        <div className="grid grid-cols-2 gap-2">
+          <select value={config[boardKey] ?? ''}
+            onChange={e => { setField(boardKey, e.target.value); setField(listKey, '') }}
+            className="w-full px-2.5 py-2 border-[1.5px] border-[#f5e6cc] rounded-lg text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a]">
+            <option value="">— Chọn board —</option>
+            {trelloBoards.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+          </select>
+          <select value={config[listKey] ?? ''}
+            onChange={e => setField(listKey, e.target.value)}
+            disabled={!config[boardKey]}
+            className="w-full px-2.5 py-2 border-[1.5px] border-[#f5e6cc] rounded-lg text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] disabled:bg-[#f5f0e6] disabled:text-[#8b5e3c]/50">
+            <option value="">— Chọn list —</option>
+            {lists.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+          </select>
         </div>
       </div>
     )
@@ -538,15 +600,37 @@ export default function IntegrationsPage() {
               <span className="font-semibold text-[#0079bf]">Trello (đơn hàng &amp; sinh nhật)</span>
             </div>
             <div className="p-5 space-y-4">
+              {/* Bước 1: key + token */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {TRELLO_FIELDS.map(renderField)}
+                {TRELLO_CRED_FIELDS.map(renderField)}
               </div>
-              <div className="text-[11px] text-[#8b5e3c]/70 bg-[#fdf6ec] rounded-lg p-2.5 border border-[#f0e8d8] space-y-1">
-                <div>🔑 Lấy <b>API Key</b> + <b>Token</b> tại <span className="text-[#0079bf]">trello.com/app-key</span>.</div>
-                <div>🗂 Lấy <b>List ID</b>: mở board Trello, thêm <code>.json</code> vào cuối URL → tìm <code>id</code> của list muốn dùng. Đơn từ chat vào <b>List Đơn hàng</b>, card sinh nhật vào <b>List Sinh nhật</b>.</div>
+              <div className="flex items-center justify-between gap-2 flex-wrap">
+                <span className="text-[11px] text-[#8b5e3c]/70">🔑 Lấy API Key + Token tại <span className="text-[#0079bf]">trello.com/app-key</span></span>
+                <button
+                  onClick={() => loadTrelloBoards(config.trello_api_key ?? '', config.trello_token ?? '')}
+                  disabled={loadingBoards || !config.trello_api_key || !config.trello_token}
+                  className="px-3.5 py-2 rounded-lg bg-white border border-[#0079bf] text-[#0079bf] text-xs font-semibold hover:bg-[#e7f0fd] disabled:opacity-50 flex items-center gap-1.5">
+                  <span className={loadingBoards ? 'animate-spin' : ''}>{loadingBoards ? '↻' : '🔄'}</span>
+                  Tải board &amp; list
+                </button>
               </div>
+
+              {/* Bước 2: chọn board + list cho từng mục đích */}
+              <div className="h-px bg-[#f0e8d8]" />
+              {trelloBoards.length === 0 ? (
+                <p className="text-[11px] text-[#8b5e3c]/60 text-center py-2">
+                  Nhập API Key + Token rồi bấm <b>“Tải board &amp; list”</b> để chọn nơi tạo card.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {renderTrelloPicker('🧾 Đơn hàng (từ chat)', 'trello_order_board_id', 'trello_order_list_id')}
+                  {renderTrelloPicker('🎂 Sinh nhật nhân sự', 'trello_birthday_board_id', 'trello_birthday_list_id')}
+                  <p className="text-[10px] text-[#8b5e3c]/60">Mỗi mục có thể chọn board khác nhau. Đơn AI/thủ công vào list Đơn hàng; card sinh nhật vào list Sinh nhật.</p>
+                </div>
+              )}
+
               <div className="flex justify-end">
-                <button onClick={() => saveGroup(TRELLO_FIELDS, 'Trello', setSavingTrello)} disabled={savingTrello}
+                <button onClick={() => saveGroup(TRELLO_SAVE_KEYS.map(k => ({ key: k, label: k, placeholder: '' })), 'Trello', setSavingTrello)} disabled={savingTrello}
                   className="px-5 py-2.5 rounded-lg bg-[#0079bf] text-white text-sm font-semibold hover:opacity-90 cursor-pointer disabled:opacity-50">
                   {savingTrello ? '⏳ Đang lưu...' : '💾 Lưu cấu hình Trello'}
                 </button>

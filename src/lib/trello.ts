@@ -39,6 +39,27 @@ export async function getTrelloConfig(): Promise<{
   }
 }
 
+// Lấy danh sách board + list (open) của tài khoản Trello — cho dropdown chọn trên UI.
+export async function fetchTrelloBoards(
+  override?: { apiKey?: string; token?: string }
+): Promise<{ id: string; name: string; lists: { id: string; name: string }[] }[]> {
+  const cfg = await getTrelloConfig()
+  const apiKey = (override?.apiKey || cfg.apiKey).trim()
+  const token  = (override?.token  || cfg.token).trim()
+  if (!apiKey || !token) throw new Error('Chưa có API Key / Token Trello')
+
+  const url = new URL('https://api.trello.com/1/members/me/boards')
+  url.searchParams.set('key', apiKey)
+  url.searchParams.set('token', token)
+  url.searchParams.set('fields', 'name')
+  url.searchParams.set('lists', 'open')          // kèm các list đang mở của từng board
+  url.searchParams.set('list_fields', 'name')
+  const res = await fetch(url.toString())
+  if (!res.ok) throw new Error(`Trello API lỗi: ${await res.text()}`)
+  const data = await res.json() as { id: string; name: string; lists?: { id: string; name: string }[] }[]
+  return data.map(b => ({ id: b.id, name: b.name, lists: (b.lists ?? []).map(l => ({ id: l.id, name: l.name })) }))
+}
+
 // Tạo card thô vào list theo loại (đơn hàng / sinh nhật) — trả về { id, url }
 export async function createTrelloCard(
   name: string, desc: string, listKind: 'order' | 'birthday' = 'order'
