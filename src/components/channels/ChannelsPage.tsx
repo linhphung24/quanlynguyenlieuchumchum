@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useApp } from '@/contexts/AppContext'
+import { sbSelect } from '@/lib/supabase'
 import { fmtDate } from '@/lib/utils'
 
 type Channel = 'facebook' | 'zalo'
@@ -102,20 +103,18 @@ export default function ChannelsPage() {
   const loadThreads = useCallback(async (channel: Channel) => {
     setLoadingList(true)
     try {
-      const { data, error } = await sb
-        .from('channel_threads')
-        .select('*')
-        .eq('channel', channel)
-        .order('last_message_at', { ascending: false })
-        .limit(100)
-      if (error) throw error
-      setThreads((data ?? []) as Thread[])
+      // Đọc qua REST (token localStorage) → không dính auth-lock của supabase-js
+      // gây treo "Đang tải..." ở lần đầu vào (trước đây phải F5 mới được).
+      const data = await sbSelect<Thread>(
+        `channel_threads?channel=eq.${channel}&order=last_message_at.desc&limit=100`
+      )
+      setThreads(data ?? [])
     } catch (e) {
       console.error('loadThreads:', e)
     } finally {
       setLoadingList(false)
     }
-  }, [sb])
+  }, [])
 
   useEffect(() => {
     loadThreads(activeChannel)
@@ -128,20 +127,16 @@ export default function ChannelsPage() {
   const loadMessages = useCallback(async (thread: Thread, silent = false) => {
     if (!silent) setLoadingMsgs(true)
     try {
-      const { data, error } = await sb
-        .from('channel_messages')
-        .select('*')
-        .eq('thread_id', thread.id)
-        .order('created_at', { ascending: true })
-        .limit(200)
-      if (error) throw error
-      setMessages((data ?? []) as Message[])
+      const data = await sbSelect<Message>(
+        `channel_messages?thread_id=eq.${thread.id}&order=created_at.asc&limit=200`
+      )
+      setMessages(data ?? [])
     } catch (e) {
       console.error('loadMessages:', e)
     } finally {
       setLoadingMsgs(false)
     }
-  }, [sb])
+  }, [])
 
   // Mark thread as read
   const markRead = useCallback(async (thread: Thread) => {
@@ -170,13 +165,12 @@ export default function ChannelsPage() {
     pollingRef.current = setInterval(async () => {
       await loadMessages(selectedThread, true)
       // Also refresh thread list silently to update unread counts from other threads
-      const { data } = await sb
-        .from('channel_threads')
-        .select('*')
-        .eq('channel', activeChannel)
-        .order('last_message_at', { ascending: false })
-        .limit(100)
-      if (data) setThreads(data as Thread[])
+      try {
+        const data = await sbSelect<Thread>(
+          `channel_threads?channel=eq.${activeChannel}&order=last_message_at.desc&limit=100`
+        )
+        setThreads(data)
+      } catch { /* bỏ qua lỗi polling */ }
     }, 15000)
 
     return () => {

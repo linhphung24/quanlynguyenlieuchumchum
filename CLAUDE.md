@@ -318,3 +318,11 @@ try {
 - **Nút gợi ý ✨** (`/api/channels/ai-suggest`): sinh nháp KHÔNG gửi → điền vào ô trả lời cho nhân viên xem/sửa. Luôn dùng được kể cả khi tắt auto-reply
 - **Refactor**: tách `sendFacebook`/`sendZalo` từ `reply/route.ts` ra `lib/channel-send.ts` (dùng chung manual reply + auto-reply)
 - **SQL cần chạy**: `supabase/migration_ai_config.sql` — thêm cột `channel_threads.ai_enabled` + seed các hàng `ai_*` mặc định (AI tắt sẵn cho an toàn)
+
+### Fix: Sai URL webhook Zalo (không nhận được tin)
+- UI Cấu hình kênh hiển thị `/api/webhooks/zalo` nhưng route thật là `/api/channels/zalo/webhook` → Zalo gửi tin vào 404 → không tin nào về
+- **Fix IntegrationsPage.tsx**: sửa `WebhookRow` Zalo về đúng `${origin}/api/channels/zalo/webhook`. Người dùng phải cập nhật lại URL trong Zalo Developers → Webhook
+
+### Fix: ChannelsPage "Đang tải..." treo ở lần đầu vào (phải F5)
+- **Nguyên nhân**: `loadThreads`/`loadMessages` đọc qua supabase-js client → dính **auth-lock** (treo khi token đang refresh / nhiều tab) → spinner kẹt mãi, F5 mới hết
+- **Fix**: thêm `sbSelect()` + `getAccessToken()` trong `lib/supabase.ts` — SELECT trực tiếp qua PostgREST bằng fetch + token localStorage (có AbortController timeout 12s), KHÔNG dính auth-lock. ChannelsPage `loadThreads`/`loadMessages`/polling dùng `sbSelect`. Realtime/update/markRead vẫn dùng `sb` (chạy sau khi trang interactive nên lock đã ổn)
