@@ -526,6 +526,9 @@ export default function IntegrationsPage() {
               : 'Lấy ở platform.openai.com/api-keys'
             const aiOn = config.ai_enabled === 'true'
             const autoOn = config.ai_auto_reply === 'true'
+            const chFb  = config.ai_channel_facebook !== 'false'
+            const chZalo = config.ai_channel_zalo    !== 'false'
+            const chTiktok = config.ai_channel_tiktok !== 'false'
             const keyShown = reveal.has('ai_api_key')
             return (
               <div className="bg-[#fffaf4] rounded-2xl border border-[#f5e6cc] shadow-[0_4px_20px_rgba(200,119,58,0.06)] overflow-hidden">
@@ -551,6 +554,29 @@ export default function IntegrationsPage() {
                       </span>
                     </button>
                   </div>
+
+                  {/* Bật/tắt AI theo từng kênh */}
+                  {aiOn && (
+                    <div className="rounded-lg border border-[#f0e8d8] bg-white p-3">
+                      <p className="text-xs font-medium text-[#8b5e3c] mb-2">Bật AI theo kênh</p>
+                      <div className="flex flex-wrap gap-2">
+                        {([
+                          { key: 'ai_channel_facebook', label: '📘 Facebook', on: chFb },
+                          { key: 'ai_channel_zalo',     label: '💬 Zalo OA',  on: chZalo },
+                          { key: 'ai_channel_tiktok',   label: '🎵 TikTok',   on: chTiktok },
+                        ] as const).map(ch => (
+                          <button key={ch.key}
+                            onClick={() => setField(ch.key, ch.on ? 'false' : 'true')}
+                            className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-sm font-medium transition-colors ${ch.on ? 'bg-[#e7f6ec] border-[#bfe6cb] text-[#1a7f37]' : 'bg-[#f9f2ea] border-[#f0e8d8] text-[#8b5e3c] opacity-60'}`}>
+                            <span>{ch.label}</span>
+                            <span className={`w-8 h-4 rounded-full relative transition-colors flex-shrink-0 ${ch.on ? 'bg-[#1a7f37]' : 'bg-[#d8c8a8]'}`}>
+                              <span className={`absolute top-0.5 w-3 h-3 rounded-full bg-white transition-all ${ch.on ? 'left-[18px]' : 'left-0.5'}`} />
+                            </span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {/* Nhà cung cấp */}
@@ -626,7 +652,7 @@ export default function IntegrationsPage() {
 
                   <div className="flex justify-end">
                     <button onClick={() => saveGroup(
-                      ['ai_enabled', 'ai_auto_reply', 'ai_provider', 'ai_api_key', 'ai_model', 'ai_shop_info'].map(k => ({ key: k, label: k, placeholder: '' })),
+                      ['ai_enabled', 'ai_auto_reply', 'ai_provider', 'ai_api_key', 'ai_model', 'ai_shop_info', 'ai_channel_facebook', 'ai_channel_zalo', 'ai_channel_tiktok'].map(k => ({ key: k, label: k, placeholder: '' })),
                       'AI', setSavingAi)} disabled={savingAi}
                       className="px-5 py-2.5 rounded-lg bg-[#7c3aed] text-white text-sm font-semibold hover:opacity-90 cursor-pointer disabled:opacity-50">
                       {savingAi ? '⏳ Đang lưu...' : '💾 Lưu cấu hình AI'}

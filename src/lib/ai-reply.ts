@@ -42,6 +42,10 @@ export async function maybeAutoReply(thread: ThreadLite, userText: string): Prom
     const cfg = await getAIConfig()
     if (!cfg.enabled || !cfg.autoReply) return
 
+    // Kiểm tra kênh có được bật AI không
+    const channelKey = thread.channel as 'facebook' | 'zalo' | 'tiktok'
+    if (cfg.channels[channelKey] === false) return
+
     const sb = admin()
     const history = await loadHistory(sb, thread.id)
     // Tin mới nhất (userText) đã nằm trong history → bỏ phần tử cuối để không lặp

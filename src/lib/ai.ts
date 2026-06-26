@@ -22,6 +22,7 @@ export interface AIConfig {
   apiKey: string
   model: string
   shopInfo: string
+  channels: { facebook: boolean; zalo: boolean; tiktok: boolean }
 }
 
 const DEFAULT_MODEL: Record<AIProvider, string> = {
@@ -36,7 +37,7 @@ export async function getAIConfig(): Promise<AIConfig> {
   const { data } = await sb
     .from('integration_config')
     .select('key, value')
-    .in('key', ['ai_enabled', 'ai_auto_reply', 'ai_provider', 'ai_api_key', 'ai_model', 'ai_shop_info'])
+    .in('key', ['ai_enabled', 'ai_auto_reply', 'ai_provider', 'ai_api_key', 'ai_model', 'ai_shop_info', 'ai_channel_facebook', 'ai_channel_zalo', 'ai_channel_tiktok'])
   const m: Record<string, string> = {}
   for (const r of (data ?? []) as { key: string; value: string }[]) m[r.key] = r.value ?? ''
   const provider = (['gemini', 'anthropic', 'openai', 'deepseek'].includes(m.ai_provider) ? m.ai_provider : 'gemini') as AIProvider
@@ -47,6 +48,11 @@ export async function getAIConfig(): Promise<AIConfig> {
     apiKey:    (m.ai_api_key ?? '').trim(),
     model:     (m.ai_model ?? '').trim() || DEFAULT_MODEL[provider],
     shopInfo:  m.ai_shop_info ?? '',
+    channels: {
+      facebook: m.ai_channel_facebook !== 'false',
+      zalo:     m.ai_channel_zalo     !== 'false',
+      tiktok:   m.ai_channel_tiktok   !== 'false',
+    },
   }
 }
 
