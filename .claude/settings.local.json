@@ -31,7 +31,15 @@
       "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" https://quanlynguyenlieuchumchum.vercel.app/api/webhooks/zalo)",
       "Bash(curl -s -o /dev/null -w \"HTTP %{http_code}\\\\n\" https://quanlynguyenlieuchumchum.vercel.app/api/channels/zalo/webhook)",
       "Bash(curl -s -X POST https://quanlynguyenlieuchumchum.vercel.app/api/channels/zalo/webhook -H 'Content-Type: application/json' -d '{\"event_name\":\"oa_test\"}' -w '\\\\nHTTP %{http_code}\\\\n')",
-      "Bash(git rm *)"
+      "Bash(git rm *)",
+      "Read(//c/Users/phung/AppData/Roaming/Claude/local-agent-mode-sessions/skills-plugin/f2343f55-b78d-45d5-8578-d9b554e8ec9a/648eed54-aab6-4126-a220-a99e44b9d8ca/skills/xlsx/**)",
+      "Bash(extract-text \"C:\\\\Users\\\\phung\\\\Downloads\\\\MauKiemKeHangTonKho_AutoVTS.xlsx\")",
+      "Bash(python \"C:\\\\Users\\\\phung\\\\AppData\\\\Roaming\\\\Claude\\\\local-agent-mode-sessions\\\\skills-plugin\\\\f2343f55-b78d-45d5-8578-d9b554e8ec9a\\\\648eed54-aab6-4126-a220-a99e44b9d8ca\\\\skills\\\\xlsx\\\\scripts\\\\extract_text.py\" \"C:\\\\Users\\\\phung\\\\Downloads\\\\MauKiemKeHangTonKho_AutoVTS.xlsx\")",
+      "Bash(python -c ' *)",
+      "PowerShell(pip install openpyxl -q)",
+      "PowerShell(python -c \"import openpyxl; wb = openpyxl.load_workbook\\('C:/Users/phung/Downloads/MauKiemKeHangTonKho_AutoVTS.xlsx', data_only=True\\); print\\('Sheets:', wb.sheetnames\\)\")",
+      "PowerShell(head -200)",
+      "PowerShell($env:PYTHONIOENCODING='utf-8'; python \"C:\\\\Users\\\\phung\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\D--source-code-quanlynguyenlieuchumchum\\\\9621698e-abaa-4210-8372-604686676f44\\\\scratchpad\\\\create_sheet.py\" 2>&1)"
     ]
   }
 }
