@@ -56,28 +56,45 @@ export default function SummaryPage() {
       const startStr = `${year}-${pad(month)}-01`
       const endStr   = `${year}-${pad(month)}-${pad(new Date(year, month, 0).getDate())}`
 
-      // 3 query song song: hoá đơn tháng + adj kiểm kho tháng + tồn lô hiện tại
+      // 4 query song song: hoá đơn tháng + adj kiểm kho + tồn lô hiện tại + hoá đơn SAU kỳ
       const [
         { data: inMonthData },
         { data: adjData },
         { data: batchData },
+        { data: afterData },
       ] = await Promise.all([
         sb.from('invoices').select('*').gte('inv_date', startStr).lte('inv_date', endStr).order('inv_date'),
         sb.from('stock_opening_adj').select('product_name, adj_qty').eq('year', year).eq('month', month),
         sb.from('batches').select('product_name, remaining_qty').gt('remaining_qty', 0.005),
+        sb.from('invoices').select('type, items').gt('inv_date', endStr),
       ])
       const inMonthInvs = (inMonthData || []) as Invoice[]
 
-      // Adj map: số lượng kiểm kho đầu kỳ (chốt tay)
+      // Adj map: số lượng kiểm kho đầu kỳ (chốt tay override)
       const newAdjMap = new Map<string, number>()
       for (const a of (adjData || [])) newAdjMap.set(a.product_name, a.adj_qty)
       setAdjMap(newAdjMap)
 
-      // Batch map: tổng tồn thực tế theo lô (case-insensitive key)
+      // Batch map: tổng tồn thực tế theo lô hiện tại (case-insensitive key)
       const batchMap = new Map<string, number>()
       for (const b of (batchData || [])) {
         const key = b.product_name.toLowerCase()
         batchMap.set(key, (batchMap.get(key) || 0) + b.remaining_qty)
+      }
+
+      // Future map: nhập/xuất SAU kỳ báo cáo (dùng tính ngược tồn đầu kỳ)
+      const futureMap = new Map<string, { fn: number; fx: number }>()
+      const getFut = (name: string) => {
+        if (!futureMap.has(name)) futureMap.set(name, { fn: 0, fx: 0 })
+        return futureMap.get(name)!
+      }
+      for (const inv of (afterData || []) as { type: string; items: (ItemIn | ItemOut)[] }[]) {
+        for (const it of inv.items) {
+          if (!it.name || !(((it as ItemIn).amount ?? (it as ItemOut).amount ?? 0) > 0)) continue
+          const amt = (it as ItemIn).amount ?? (it as ItemOut).amount ?? 0
+          if (inv.type === 'in') getFut(it.name).fn += amt
+          else getFut(it.name).fx += amt
+        }
       }
 
       // Nhập/xuất trong tháng
@@ -118,23 +135,37 @@ export default function SummaryPage() {
         }
       }
 
-      // Tồn đầu = chỉ từ adj kiểm kho (không tự tính từ tháng trước)
-      // Tồn cuối = tổng remaining_qty trong batches (tồn thực tế theo lô)
+      // Kê khai thường xuyên (TT200): Tồn cuối = Tồn đầu + Nhập − Xuất
+      // tonCuoi tính ngược từ tồn lô hiện tại + biến động tương lai
+      // tonDau = tonCuoi − nhapM + xuatM  (hoặc adj nếu có kiểm kho override)
       const result: TongHopRow[] = []
       let stt = 1
       for (const p of allProducts.filter(p => p.is_active)) {
         const e       = pmap.get(p.name) || { nhapM: 0, xuatM: 0 }
         const donGia  = p.cost_price || 0
-        const tonDau  = newAdjMap.get(p.name) ?? 0
-        const tonCuoi = parseFloat((batchMap.get(p.name.toLowerCase()) || 0).toFixed(2))
+        const batchQty = parseFloat((batchMap.get(p.name.toLowerCase()) || 0).toFixed(2))
+        const fut     = futureMap.get(p.name) || { fn: 0, fx: 0 }
+        const hasAdj  = newAdjMap.has(p.name)
 
-        // Hiển thị dòng nếu có tồn lô, có nhập/xuất trong tháng, hoặc đã chốt tồn đầu
-        if (tonCuoi === 0 && e.nhapM === 0 && e.xuatM === 0 && !newAdjMap.has(p.name)) continue
+        let tonDau: number
+        let tonCuoi: number
+        if (hasAdj) {
+          // Kiểm kho override: tồn đầu là số chốt, tồn cuối tính từ công thức
+          tonDau  = newAdjMap.get(p.name)!
+          tonCuoi = parseFloat((tonDau + e.nhapM - e.xuatM).toFixed(2))
+        } else {
+          // Tính ngược từ tồn lô thực tế: tonCuoi(kỳ) = batchHiệnTại + futXuat − futNhap
+          tonCuoi = parseFloat((batchQty + fut.fx - fut.fn).toFixed(2))
+          tonDau  = parseFloat((tonCuoi - e.nhapM + e.xuatM).toFixed(2))
+        }
+
+        // Hiển thị dòng nếu có phát sinh hoặc tồn kho khác 0
+        if (tonDau === 0 && tonCuoi === 0 && e.nhapM === 0 && e.xuatM === 0) continue
         result.push({
           stt: stt++, code: p.code || '', name: p.name, unit: p.unit,
           donGia, tonDau, nhap: e.nhapM, xuat: e.xuatM,
           tonCuoi, tienCuoi: tonCuoi * donGia,
-          tonDauAuto: false,
+          tonDauAuto: !hasAdj,
         })
       }
 
@@ -251,8 +282,10 @@ export default function SummaryPage() {
   }
 
   const years         = [now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1]
+  const totalTonDau   = rows.reduce((s, r) => s + r.tonDau, 0)
   const totalNhap     = rows.reduce((s, r) => s + r.nhap, 0)
   const totalXuat     = rows.reduce((s, r) => s + r.xuat, 0)
+  const totalTonCuoi  = rows.reduce((s, r) => s + r.tonCuoi, 0)
   const totalTien     = rows.reduce((s, r) => s + r.tienCuoi, 0)
   const totalNhapVnd  = nhapDet.reduce((s, r) => s + r.thanhTien, 0)
 
@@ -319,9 +352,9 @@ export default function SummaryPage() {
           <div className="flex gap-3 text-xs text-[#8b5e3c] flex-wrap">
             <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-[#3aaa6e] inline-block"></span> Nhập</span>
             <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-[#c8773a] inline-block"></span> Xuất</span>
-            <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-amber-100 border border-amber-400 inline-block"></span> Tồn đầu đã chốt kiểm kho ✏</span>
-            <span className="inline-flex items-center gap-1 text-[#555]">Tồn cuối = thực tế theo lô</span>
-            {canEdit && <span className="text-[#c8773a] italic">(click ô Tồn đầu để nhập số kiểm kho)</span>}
+            <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-amber-100 border border-amber-400 inline-block"></span> Tồn đầu đã chốt kiểm kho (✏ để xoá)</span>
+            <span className="inline-flex items-center gap-1 text-[#555] font-medium">Tồn cuối = Tồn đầu + Nhập − Xuất ✓</span>
+            {canEdit && <span className="text-[#c8773a] italic">(click ô Tồn đầu để chốt kiểm kho)</span>}
           </div>
         </div>
 
@@ -381,13 +414,13 @@ export default function SummaryPage() {
                     </td>
                     <td
                       className={`px-3 py-2 border-b border-[#f0e8d8] text-sm text-right group relative
-                        ${adjMap.has(row.name) ? 'bg-amber-50 text-amber-700' : 'text-[#8b5e3c]'}
+                        ${!row.tonDauAuto ? 'bg-amber-50 text-amber-700' : 'text-[#8b5e3c]'}
                         ${canEdit && editingCell !== row.name ? 'cursor-pointer hover:bg-[#fff3e0]' : ''}
                       `}
                       title={
-                        adjMap.has(row.name)
+                        !row.tonDauAuto
                           ? `✏ Kiểm kho: ${fmtNum(row.tonDau)}\nClick để sửa · Click ✏ để xoá`
-                          : canEdit ? 'Click để nhập số lượng kiểm kho đầu kỳ' : '—'
+                          : canEdit ? `Tự động tính từ HĐ: ${fmtNum(row.tonDau)}\nClick để chốt kiểm kho` : `Tự động: ${fmtNum(row.tonDau)}`
                       }
                       onClick={() => editingCell !== row.name && openEdit(row.name, row.tonDau)}
                     >
@@ -420,18 +453,18 @@ export default function SummaryPage() {
                         </div>
                       ) : (
                         <span className="inline-flex items-center gap-1 justify-end">
-                          <span className={adjMap.has(row.name) ? 'font-semibold' : 'text-[#bbb]'}>
-                            {adjMap.has(row.name) ? fmtNum(row.tonDau) : '—'}
+                          <span className={!row.tonDauAuto ? 'font-semibold' : ''}>
+                            {fmtNum(row.tonDau)}
                           </span>
-                          {adjMap.has(row.name) && (
+                          {!row.tonDauAuto && (
                             <span
                               className="text-amber-400 text-xs cursor-pointer hover:text-red-500"
-                              title="Xoá số kiểm kho"
+                              title="Xoá số kiểm kho (về tự động tính)"
                               onClick={e => { e.stopPropagation(); removeAdj(row.name) }}
                             >✏</span>
                           )}
-                          {canEdit && !adjMap.has(row.name) && editingCell !== row.name && (
-                            <span className="opacity-0 group-hover:opacity-60 text-[#c8773a] text-xs transition-opacity">+</span>
+                          {canEdit && row.tonDauAuto && editingCell !== row.name && (
+                            <span className="opacity-0 group-hover:opacity-40 text-[#c8773a] text-[10px] transition-opacity">chốt</span>
                           )}
                         </span>
                       )}
@@ -443,10 +476,11 @@ export default function SummaryPage() {
                       {row.xuat ? fmtNum(row.xuat) : <span className="text-[#ddd]">—</span>}
                     </td>
                     <td
-                      className={`px-3 py-2 border-b border-[#f0e8d8] text-sm text-right font-bold ${row.tonCuoi <= 0 ? 'text-[#aaa]' : 'text-[#3d1f0a]'}`}
-                      title="Tồn thực tế theo lô hàng (batches)"
+                      className={`px-3 py-2 border-b border-[#f0e8d8] text-sm text-right font-bold
+                        ${row.tonCuoi < 0 ? 'text-red-500 bg-red-50' : row.tonCuoi === 0 ? 'text-[#aaa]' : 'text-[#3d1f0a]'}`}
+                      title={`Tồn cuối = Tồn đầu (${fmtNum(row.tonDau)}) + Nhập (${fmtNum(row.nhap)}) − Xuất (${fmtNum(row.xuat)}) = ${fmtNum(row.tonCuoi)}`}
                     >
-                      {row.tonCuoi > 0 ? fmtNum(row.tonCuoi) : <span className="text-[#ddd]">—</span>}
+                      {row.tonCuoi !== 0 ? fmtNum(row.tonCuoi) : <span className="text-[#ddd]">—</span>}
                     </td>
                     <td className="px-3 py-2 border-b border-[#f0e8d8] text-sm text-right text-[#3d1f0a]">
                       {row.tienCuoi ? row.tienCuoi.toLocaleString('vi-VN') + ' ₫' : '—'}
@@ -457,10 +491,10 @@ export default function SummaryPage() {
               <tfoot>
                 <tr className="bg-[#f5e6cc]">
                   <td colSpan={4} className="px-3 py-2 text-xs font-bold text-right text-[#3d1f0a]">TỔNG CỘNG</td>
-                  <td className="px-3 py-2 text-sm text-right font-bold text-[#3d1f0a]"></td>
+                  <td className="px-3 py-2 text-sm text-right font-bold text-[#3d1f0a]">{fmtNum(totalTonDau)}</td>
                   <td className="px-3 py-2 text-sm text-right font-bold text-[#3aaa6e]">{fmtNum(totalNhap)}</td>
                   <td className="px-3 py-2 text-sm text-right font-bold text-[#c8773a]">{fmtNum(totalXuat)}</td>
-                  <td className="px-3 py-2 text-sm text-right font-bold text-[#3d1f0a]"></td>
+                  <td className="px-3 py-2 text-sm text-right font-bold text-[#3d1f0a]">{fmtNum(totalTonCuoi)}</td>
                   <td className="px-3 py-2 text-sm text-right font-bold text-[#3d1f0a]">{totalTien.toLocaleString('vi-VN')} ₫</td>
                 </tr>
               </tfoot>
