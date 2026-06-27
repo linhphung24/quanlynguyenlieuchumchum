@@ -2172,89 +2172,86 @@ export default function ReportsPage() {
                 </div>
 
                 {/* Table */}
-                <div className="overflow-x-auto rounded-xl border border-[#f5e6cc]">
-                  <table className="w-full text-xs border-collapse min-w-[1400px]">
+                <div className="rounded-xl border border-[#e8ddd0] overflow-hidden">
+                  <table className="w-full table-fixed text-[11px] border-collapse">
                     <colgroup>
-                      <col style={{width:'40px'}}/>
-                      <col style={{width:'100px'}}/>
-                      <col style={{width:'220px'}}/>
-                      <col style={{width:'55px'}}/>
-                      <col style={{width:'110px'}}/>
-                      <col style={{width:'80px'}}/><col style={{width:'120px'}}/>
-                      <col style={{width:'80px'}}/><col style={{width:'120px'}}/>
-                      <col style={{width:'80px'}}/><col style={{width:'120px'}}/>
-                      <col style={{width:'80px'}}/><col style={{width:'120px'}}/>
-                      <col style={{width:'80px'}}/>
-                      <col style={{width:'100px'}}/>
+                      <col style={{width:'3%'}}/>
+                      <col style={{width:'8%'}}/>
+                      <col style={{width:'15%'}}/>
+                      <col style={{width:'4%'}}/>
+                      <col style={{width:'7%'}}/>
+                      <col style={{width:'5%'}}/><col style={{width:'8%'}}/>
+                      <col style={{width:'5%'}}/><col style={{width:'8%'}}/>
+                      <col style={{width:'5%'}}/><col style={{width:'8%'}}/>
+                      <col style={{width:'5%'}}/><col style={{width:'8%'}}/>
+                      <col style={{width:'5%'}}/>
+                      <col style={{width:'6%'}}/>
                     </colgroup>
                     <thead>
-                      <tr className="bg-[#3d1f0a] text-white">
-                        <th rowSpan={2} className="py-2 px-3 font-semibold border border-[#5a3a20] text-center">STT</th>
-                        <th rowSpan={2} className="py-2 px-3 font-semibold border border-[#5a3a20]">Mã SP</th>
-                        <th rowSpan={2} className="py-2 px-3 font-semibold border border-[#5a3a20]">Tên hàng hóa</th>
-                        <th rowSpan={2} className="py-2 px-3 font-semibold border border-[#5a3a20] text-center">ĐVT</th>
-                        <th rowSpan={2} className="py-2 px-3 font-semibold border border-[#5a3a20] text-right">Đơn giá nhập (₫)</th>
-                        <th colSpan={2} className="py-1.5 px-3 font-semibold border border-[#5a3a20] text-center">TỒN ĐẦU KỲ</th>
-                        <th colSpan={2} className="py-1.5 px-3 font-semibold border border-[#5a3a20] text-center">TỔNG NHẬP</th>
-                        <th colSpan={2} className="py-1.5 px-3 font-semibold border border-[#5a3a20] text-center">TỔNG XUẤT</th>
-                        <th colSpan={2} className="py-1.5 px-3 font-semibold border border-[#5a3a20] text-center">TỒN CUỐI KỲ</th>
-                        <th rowSpan={2} className="py-2 px-3 font-semibold border border-[#5a3a20] text-center">Tồn<br/>tối thiểu</th>
-                        <th rowSpan={2} className="py-2 px-3 font-semibold border border-[#5a3a20] text-center">Trạng thái</th>
+                      <tr className="bg-[#f5e6cc] text-[#3d1f0a]">
+                        <th rowSpan={2} className="py-2 px-1.5 font-semibold border border-[#e8ddd0] text-center">STT</th>
+                        <th rowSpan={2} className="py-2 px-1.5 font-semibold border border-[#e8ddd0] text-left">Mã SP</th>
+                        <th rowSpan={2} className="py-2 px-1.5 font-semibold border border-[#e8ddd0] text-left">Tên hàng hóa</th>
+                        <th rowSpan={2} className="py-2 px-1 font-semibold border border-[#e8ddd0] text-center">ĐVT</th>
+                        <th rowSpan={2} className="py-2 px-1.5 font-semibold border border-[#e8ddd0] text-right">Đơn giá (₫)</th>
+                        <th colSpan={2} className="py-1.5 px-1 font-semibold border border-[#e8ddd0] text-center bg-[#ede0c8]">TỒN ĐẦU KỲ</th>
+                        <th colSpan={2} className="py-1.5 px-1 font-semibold border border-[#e8ddd0] text-center bg-[#d9eddf]">TỔNG NHẬP</th>
+                        <th colSpan={2} className="py-1.5 px-1 font-semibold border border-[#e8ddd0] text-center bg-[#fde8e8]">TỔNG XUẤT</th>
+                        <th colSpan={2} className="py-1.5 px-1 font-semibold border border-[#e8ddd0] text-center bg-[#dce8f5]">TỒN CUỐI KỲ</th>
+                        <th rowSpan={2} className="py-2 px-1 font-semibold border border-[#e8ddd0] text-center">T.thiểu</th>
+                        <th rowSpan={2} className="py-2 px-1 font-semibold border border-[#e8ddd0] text-center">Trạng thái</th>
                       </tr>
-                      <tr className="text-[10px] bg-[#4a2810] text-white/80">
-                        <th className="py-1.5 px-3 border border-[#5a3a20] text-center">Số lượng</th>
-                        <th className="py-1.5 px-3 border border-[#5a3a20] text-right">Giá trị (₫)</th>
-                        <th className="py-1.5 px-3 border border-[#5a3a20] text-center">Số lượng</th>
-                        <th className="py-1.5 px-3 border border-[#5a3a20] text-right">Giá trị (₫)</th>
-                        <th className="py-1.5 px-3 border border-[#5a3a20] text-center">Số lượng</th>
-                        <th className="py-1.5 px-3 border border-[#5a3a20] text-right">Giá trị (₫)</th>
-                        <th className="py-1.5 px-3 border border-[#5a3a20] text-center">Số lượng</th>
-                        <th className="py-1.5 px-3 border border-[#5a3a20] text-right">Giá trị (₫)</th>
+                      <tr className="text-[10px] text-[#5a3a20] bg-[#faf0e0]">
+                        <th className="py-1 px-1.5 border border-[#e8ddd0] text-center bg-[#ede0c8]">SL</th>
+                        <th className="py-1 px-1.5 border border-[#e8ddd0] text-right bg-[#ede0c8]">Giá trị (₫)</th>
+                        <th className="py-1 px-1.5 border border-[#e8ddd0] text-center bg-[#d9eddf]">SL</th>
+                        <th className="py-1 px-1.5 border border-[#e8ddd0] text-right bg-[#d9eddf]">Giá trị (₫)</th>
+                        <th className="py-1 px-1.5 border border-[#e8ddd0] text-center bg-[#fde8e8]">SL</th>
+                        <th className="py-1 px-1.5 border border-[#e8ddd0] text-right bg-[#fde8e8]">Giá trị (₫)</th>
+                        <th className="py-1 px-1.5 border border-[#e8ddd0] text-center bg-[#dce8f5]">SL</th>
+                        <th className="py-1 px-1.5 border border-[#e8ddd0] text-right bg-[#dce8f5]">Giá trị (₫)</th>
                       </tr>
                     </thead>
                     <tbody>
                       {filtered.map((r, i) => {
                         const statusBadge =
-                          r.trangThai === 'het'     ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-medium text-[10px]">🔴 HẾT HÀNG</span> :
-                          r.trangThai === 'sap_het' ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium text-[10px]">🟡 SẮP HẾT</span> :
-                                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium text-[10px]">🟢 ĐỦ HÀNG</span>
+                          r.trangThai === 'het'     ? <span className="text-[10px] font-medium text-red-600">🔴 Hết</span> :
+                          r.trangThai === 'sap_het' ? <span className="text-[10px] font-medium text-amber-600">🟡 Sắp hết</span> :
+                                                      <span className="text-[10px] font-medium text-green-600">🟢 Đủ</span>
                         const rowBg = i%2===0 ? 'bg-white' : 'bg-[#fffdf9]'
+                        const td = 'py-1.5 px-1.5 border border-[#ede8de] truncate'
                         return (
                           <tr key={r.name} className={`${rowBg} hover:bg-[#fef4e8] transition-colors`}>
-                            <td className="py-2 px-3 border border-[#f0e8d8] text-center text-[#8b5e3c]/60">{i+1}</td>
-                            <td className="py-2 px-3 border border-[#f0e8d8] font-mono text-[10px] text-[#8b5e3c]">{r.code}</td>
-                            <td className="py-2 px-3 border border-[#f0e8d8] font-medium text-[#1a0f07]">{r.name}</td>
-                            <td className="py-2 px-3 border border-[#f0e8d8] text-center text-[#8b5e3c]">{r.unit}</td>
-                            <td className="py-2 px-3 border border-[#f0e8d8] text-right text-[#8b5e3c]">{r.donGia > 0 ? fmtPrice(r.donGia) : '—'}</td>
-                            {/* Tồn đầu */}
-                            <td className="py-2 px-3 border border-[#f0e8d8] text-center font-medium text-[#1a0f07]">{fmtNum(r.tonDauSL)}</td>
-                            <td className="py-2 px-3 border border-[#f0e8d8] text-right text-[#3d1f0a]">{r.giaTriTonDau > 0 ? fmtPrice(r.giaTriTonDau) : '—'}</td>
-                            {/* Nhập */}
-                            <td className="py-2 px-3 border border-[#f0e8d8] text-center font-medium text-[#1a0f07]">{r.nhapSL > 0.001 ? fmtNum(r.nhapSL) : '—'}</td>
-                            <td className="py-2 px-3 border border-[#f0e8d8] text-right text-[#3d1f0a]">{r.giaTriNhap > 0 ? fmtPrice(r.giaTriNhap) : '—'}</td>
-                            {/* Xuất */}
-                            <td className="py-2 px-3 border border-[#f0e8d8] text-center font-medium text-[#1a0f07]">{r.xuatSL > 0.001 ? fmtNum(r.xuatSL) : '—'}</td>
-                            <td className="py-2 px-3 border border-[#f0e8d8] text-right text-[#3d1f0a]">{r.giaTriXuat > 0 ? fmtPrice(r.giaTriXuat) : '—'}</td>
-                            {/* Tồn cuối */}
-                            <td className={`py-2 px-3 border border-[#f0e8d8] text-center font-bold ${r.tonCuoiSL < 0 ? 'text-red-600' : 'text-[#1a0f07]'}`}>{fmtNum(r.tonCuoiSL)}</td>
-                            <td className={`py-2 px-3 border border-[#f0e8d8] text-right font-bold ${r.tonCuoiSL < 0 ? 'text-red-600' : 'text-[#3d1f0a]'}`}>{r.giaTriTonCuoi > 0 ? fmtPrice(r.giaTriTonCuoi) : r.tonCuoiSL < 0 ? fmtPrice(r.giaTriTonCuoi) : '—'}</td>
-                            <td className="py-2 px-3 border border-[#f0e8d8] text-center text-[#8b5e3c]">{r.tonToiThieu > 0 ? fmtNum(r.tonToiThieu) : '—'}</td>
-                            <td className="py-2 px-3 border border-[#f0e8d8] text-center">{statusBadge}</td>
+                            <td className={`${td} text-center text-[#8b5e3c]/50`}>{i+1}</td>
+                            <td className={`${td} font-mono text-[10px] text-[#8b5e3c]`} title={r.code}>{r.code}</td>
+                            <td className={`${td} font-medium text-[#1a0f07]`} title={r.name}>{r.name}</td>
+                            <td className={`${td} text-center text-[#8b5e3c]`}>{r.unit}</td>
+                            <td className={`${td} text-right text-[#8b5e3c]`}>{r.donGia > 0 ? fmtPrice(r.donGia) : '—'}</td>
+                            <td className={`${td} text-center bg-[#fdf8f0]`}>{fmtNum(r.tonDauSL)}</td>
+                            <td className={`${td} text-right bg-[#fdf8f0] text-[#6b4226]`}>{r.giaTriTonDau > 0 ? fmtPrice(r.giaTriTonDau) : '—'}</td>
+                            <td className={`${td} text-center bg-[#f5fdf7]`}>{r.nhapSL > 0.001 ? fmtNum(r.nhapSL) : '—'}</td>
+                            <td className={`${td} text-right bg-[#f5fdf7] text-[#1a5c30]`}>{r.giaTriNhap > 0 ? fmtPrice(r.giaTriNhap) : '—'}</td>
+                            <td className={`${td} text-center bg-[#fef8f8]`}>{r.xuatSL > 0.001 ? fmtNum(r.xuatSL) : '—'}</td>
+                            <td className={`${td} text-right bg-[#fef8f8] text-[#7a2020]`}>{r.giaTriXuat > 0 ? fmtPrice(r.giaTriXuat) : '—'}</td>
+                            <td className={`${td} text-center bg-[#f5f8fd] font-semibold ${r.tonCuoiSL < 0 ? 'text-red-600' : 'text-[#1a0f07]'}`}>{fmtNum(r.tonCuoiSL)}</td>
+                            <td className={`${td} text-right bg-[#f5f8fd] font-semibold ${r.tonCuoiSL < 0 ? 'text-red-600' : 'text-[#1a3a5c]'}`}>{r.giaTriTonCuoi !== 0 ? fmtPrice(r.giaTriTonCuoi) : '—'}</td>
+                            <td className={`${td} text-center text-[#8b5e3c]`}>{r.tonToiThieu > 0 ? fmtNum(r.tonToiThieu) : '—'}</td>
+                            <td className={`${td} text-center`}>{statusBadge}</td>
                           </tr>
                         )
                       })}
                       {/* Footer totals */}
-                      <tr className="bg-[#3d1f0a] text-white font-semibold text-xs">
-                        <td colSpan={5} className="py-2.5 px-3 border border-[#5a3a20] text-center">TỔNG CỘNG ({filtered.length} mặt hàng)</td>
-                        <td className="py-2.5 px-3 border border-[#5a3a20] text-center">—</td>
-                        <td className="py-2.5 px-3 border border-[#5a3a20] text-right">{fmtPrice(totals.giaTriTonDau)}</td>
-                        <td className="py-2.5 px-3 border border-[#5a3a20] text-center">—</td>
-                        <td className="py-2.5 px-3 border border-[#5a3a20] text-right">{fmtPrice(totals.giaTriNhap)}</td>
-                        <td className="py-2.5 px-3 border border-[#5a3a20] text-center">—</td>
-                        <td className="py-2.5 px-3 border border-[#5a3a20] text-right">{fmtPrice(totals.giaTriXuat)}</td>
-                        <td className="py-2.5 px-3 border border-[#5a3a20] text-center">—</td>
-                        <td className="py-2.5 px-3 border border-[#5a3a20] text-right">{fmtPrice(totals.giaTriTonCuoi)}</td>
-                        <td colSpan={2} className="py-2.5 px-3 border border-[#5a3a20] text-center text-amber-300">🔴 {hetHang} · 🟡 {sapHet}</td>
+                      <tr className="bg-[#f5e6cc] text-[#3d1f0a] font-semibold text-[11px]">
+                        <td colSpan={5} className="py-2 px-2 border border-[#e8ddd0] text-center">TỔNG CỘNG ({filtered.length} mặt hàng)</td>
+                        <td className="py-2 px-1.5 border border-[#e8ddd0] text-center">—</td>
+                        <td className="py-2 px-1.5 border border-[#e8ddd0] text-right">{fmtPrice(totals.giaTriTonDau)}</td>
+                        <td className="py-2 px-1.5 border border-[#e8ddd0] text-center">—</td>
+                        <td className="py-2 px-1.5 border border-[#e8ddd0] text-right">{fmtPrice(totals.giaTriNhap)}</td>
+                        <td className="py-2 px-1.5 border border-[#e8ddd0] text-center">—</td>
+                        <td className="py-2 px-1.5 border border-[#e8ddd0] text-right">{fmtPrice(totals.giaTriXuat)}</td>
+                        <td className="py-2 px-1.5 border border-[#e8ddd0] text-center">—</td>
+                        <td className="py-2 px-1.5 border border-[#e8ddd0] text-right">{fmtPrice(totals.giaTriTonCuoi)}</td>
+                        <td colSpan={2} className="py-2 px-1.5 border border-[#e8ddd0] text-center text-[#8b5e3c]">🔴 {hetHang} · 🟡 {sapHet}</td>
                       </tr>
                     </tbody>
                   </table>
