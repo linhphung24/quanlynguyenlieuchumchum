@@ -43,8 +43,18 @@ function getRangeForPreset(preset: string): [string, string] {
 }
 
 // ─── Types ────────────────────────────────────────────────────
-type TabKey = 'nxt' | 'chitiet' | 'kiekem' | 'congno'
+type TabKey = 'nxt' | 'chitiet' | 'kiekem' | 'congno' | 'tonghop'
 type PeriodPreset = 'day' | 'week' | 'month' | 'quarter' | 'year' | 'custom'
+
+interface TongHopRow {
+  code: string; name: string; unit: string; donGia: number
+  tonDauSL: number; giaTriTonDau: number
+  nhapSL: number; giaTriNhap: number
+  xuatSL: number; giaTriXuat: number
+  tonCuoiSL: number; giaTriTonCuoi: number
+  tonToiThieu: number
+  trangThai: 'het' | 'sap_het' | 'du'
+}
 
 interface NXTRow {
   code: string; name: string; unit: string
@@ -488,6 +498,15 @@ export default function ReportsPage() {
   const [savingPay,   setSavingPay]   = useState(false)
   // Modal xem bill đã đính kèm
   const [viewBillUrl, setViewBillUrl] = useState<string | null>(null)
+
+  // ── Tổng hợp XNT state ──────────────────────────────────────
+  const _now = new Date()
+  const [thMonth,   setThMonth]   = useState(_now.getMonth() + 1)
+  const [thYear,    setThYear]    = useState(_now.getFullYear())
+  const [thRows,    setThRows]    = useState<TongHopRow[]>([])
+  const [thLoading, setThLoading] = useState(false)
+  const [thLoaded,  setThLoaded]  = useState(false)
+  const [thSearch,  setThSearch]  = useState('')
 
   // ── Preset handler ───────────────────────────────────────────
   function applyNxtPreset(preset: PeriodPreset) {
@@ -1085,6 +1104,115 @@ export default function ReportsPage() {
     XLSX.writeFile(wb, `CongNoNhap_${cnFrom}_${cnTo}.xlsx`)
   }
 
+  // ── Tổng hợp XNT: load ──────────────────────────────────────
+  const loadTongHop = async () => {
+    setThLoading(true)
+    try {
+      const y = thYear, m = thMonth
+      const startStr = `${y}-${String(m).padStart(2,'0')}-01`
+      const lastDay  = new Date(y, m, 0).getDate()
+      const endStr   = `${y}-${String(m).padStart(2,'0')}-${String(lastDay).padStart(2,'0')}`
+
+      const PAGE = 1000
+      const allInvs: Invoice[] = []; let pg = 0
+      while (true) {
+        const { data, error } = await sb.from('invoices').select('id, type, inv_date, items')
+          .lte('inv_date', endStr).range(pg, pg + PAGE - 1)
+        if (error || !data || data.length === 0) break
+        allInvs.push(...(data as Invoice[])); if (data.length < PAGE) break; pg += PAGE
+      }
+
+      const { data: afterRaw } = await sb.from('invoices').select('type, items').gt('inv_date', endStr)
+      const { data: batchRaw  } = await sb.from('batches').select('product_name, remaining_qty').gt('remaining_qty', 0.005)
+
+      // batch stock map
+      const batchMap: Record<string, number> = {}
+      for (const b of (batchRaw || []) as { product_name: string; remaining_qty: number }[]) {
+        const k = b.product_name.toLowerCase().trim()
+        batchMap[k] = (batchMap[k] || 0) + b.remaining_qty
+      }
+
+      // future invoices (after period) for backward tonDau calc
+      const futMap: Record<string, { fn: number; fx: number }> = {}
+      for (const inv of (afterRaw || []) as { type: string; items: { name?: string; amount?: number }[] }[]) {
+        for (const it of inv.items) {
+          if (!it.name) continue
+          const k = it.name.toLowerCase().trim()
+          if (!futMap[k]) futMap[k] = { fn: 0, fx: 0 }
+          const amt = Number(it.amount) || 0
+          if (inv.type === 'in') futMap[k].fn += amt; else futMap[k].fx += amt
+        }
+      }
+
+      // aggregate invoices in period + compute giá trị nhập/xuất
+      type PMap = Record<string, { nhapSL: number; giaTriNhap: number; xuatSL: number; giaTriXuat: number }>
+      const map: PMap = {}
+      for (const inv of allInvs) {
+        if (inv.inv_date < startStr || inv.inv_date > endStr) continue
+        for (const it of (inv.items as { name?: string; amount?: number; price?: number }[])) {
+          if (!it.name) continue
+          const k   = it.name.toLowerCase().trim()
+          if (!map[k]) map[k] = { nhapSL: 0, giaTriNhap: 0, xuatSL: 0, giaTriXuat: 0 }
+          const amt = Number(it.amount) || 0
+          const val = amt * (Number(it.price) || 0)
+          if (inv.type === 'in')  { map[k].nhapSL += amt; map[k].giaTriNhap += val }
+          else                    { map[k].xuatSL += amt; map[k].giaTriXuat += val }
+        }
+      }
+
+      const rows: TongHopRow[] = []
+      for (const p of allProducts.filter(p => p.is_active)) {
+        const k   = p.name.toLowerCase().trim()
+        const m2  = map[k] || { nhapSL: 0, giaTriNhap: 0, xuatSL: 0, giaTriXuat: 0 }
+        const fut = futMap[k] || { fn: 0, fx: 0 }
+        const bq  = parseFloat((batchMap[k] || 0).toFixed(2))
+        const tonCuoiSL  = parseFloat((bq + fut.fx - fut.fn).toFixed(2))
+        const tonDauSL   = parseFloat((tonCuoiSL - m2.nhapSL + m2.xuatSL).toFixed(2))
+        if (tonDauSL === 0 && tonCuoiSL === 0 && m2.nhapSL === 0 && m2.xuatSL === 0) continue
+        const donGia       = Number(p.cost_price) || 0
+        const giaTriTonDau  = parseFloat((tonDauSL * donGia).toFixed(0))
+        const giaTriTonCuoi = parseFloat((tonCuoiSL * donGia).toFixed(0))
+        const tonToiThieu  = Number(p.min_stock) || 0
+        const trangThai: TongHopRow['trangThai'] =
+          tonCuoiSL <= 0 ? 'het' :
+          tonToiThieu > 0 && tonCuoiSL <= tonToiThieu ? 'sap_het' : 'du'
+        rows.push({
+          code: p.code || '', name: p.name, unit: p.unit, donGia,
+          tonDauSL, giaTriTonDau,
+          nhapSL: m2.nhapSL, giaTriNhap: parseFloat(m2.giaTriNhap.toFixed(0)),
+          xuatSL: m2.xuatSL, giaTriXuat: parseFloat(m2.giaTriXuat.toFixed(0)),
+          tonCuoiSL, giaTriTonCuoi,
+          tonToiThieu, trangThai,
+        })
+      }
+      rows.sort((a, b) => a.name.localeCompare(b.name, 'vi'))
+      setThRows(rows); setThLoaded(true)
+    } catch (e) {
+      toast('Lỗi tải báo cáo: ' + (e as Error).message, 'error')
+    } finally {
+      setThLoading(false)
+    }
+  }
+
+  const exportTongHopExcel = () => {
+    const header = ['STT','Mã SP','Tên hàng hóa','ĐVT','Đơn giá nhập',
+      'Tồn đầu SL','Tồn đầu GT','Nhập SL','Nhập GT','Xuất SL','Xuất GT',
+      'Tồn cuối SL','Tồn cuối GT','Tồn tối thiểu','Trạng thái']
+    const data = thRows
+      .filter(r => thSearch === '' || r.name.toLowerCase().includes(thSearch.toLowerCase()) || r.code.toLowerCase().includes(thSearch.toLowerCase()))
+      .map((r, i) => [
+        i + 1, r.code, r.name, r.unit, r.donGia,
+        r.tonDauSL, r.giaTriTonDau, r.nhapSL, r.giaTriNhap, r.xuatSL, r.giaTriXuat,
+        r.tonCuoiSL, r.giaTriTonCuoi, r.tonToiThieu || '',
+        r.trangThai === 'het' ? 'HẾT HÀNG' : r.trangThai === 'sap_het' ? 'SẮP HẾT' : 'ĐỦ HÀNG',
+      ])
+    const ws = XLSX.utils.aoa_to_sheet([header, ...data])
+    ws['!cols'] = [4,10,36,7,12,10,14,10,14,10,14,12,14,12,12].map(w => ({ wch: w }))
+    const wb = XLSX.utils.book_new()
+    XLSX.utils.book_append_sheet(wb, ws, 'BC_TONG_HOP_XNT')
+    XLSX.writeFile(wb, `BC_TongHopXNT_T${thMonth}_${thYear}.xlsx`)
+  }
+
   // ── Shared UI atoms ──────────────────────────────────────────
   const sectionBox = 'bg-[#fffaf4] rounded-2xl border border-[#f5e6cc] shadow-[0_4px_20px_rgba(200,119,58,0.06)]'
   const btnPrimary = 'inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-gradient-to-br from-[#c8773a] to-[#e8a44a] text-white text-xs font-medium hover:opacity-90 transition-all cursor-pointer'
@@ -1092,10 +1220,11 @@ export default function ReportsPage() {
   const inputCls  = 'border border-[#e8ddd0] rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:border-[#c8773a] focus:ring-1 focus:ring-[#c8773a]/20'
 
   const TABS = [
-    { key: 'nxt'    as TabKey, label: '📊 Nhập-Xuất-Tồn' },
-    { key: 'chitiet' as TabKey, label: '📋 Sổ chi tiết' },
-    { key: 'kiekem'  as TabKey, label: '🔍 Kiểm kê định kỳ' },
-    { key: 'congno'  as TabKey, label: '💳 Công nợ nhập' },
+    { key: 'nxt'      as TabKey, label: '📊 Nhập-Xuất-Tồn' },
+    { key: 'tonghop'  as TabKey, label: '📦 Tổng hợp XNT' },
+    { key: 'chitiet'  as TabKey, label: '📋 Sổ chi tiết' },
+    { key: 'kiekem'   as TabKey, label: '🔍 Kiểm kê định kỳ' },
+    { key: 'congno'   as TabKey, label: '💳 Công nợ nhập' },
   ]
 
   // ─── RENDER ──────────────────────────────────────────────────
@@ -1969,6 +2098,163 @@ export default function ReportsPage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* ═══ TAB: TỔNG HỢP XNT ═══════════════════════════════════ */}
+      {tab === 'tonghop' && (
+        <div className="space-y-4">
+          {/* Filter bar */}
+          <div className={`${sectionBox} p-4`}>
+            <div className="flex flex-wrap items-end gap-4">
+              <div>
+                <div className="text-[11px] text-[#8b5e3c]/60 mb-1.5 font-medium">Kỳ báo cáo</div>
+                <div className="flex items-center gap-2">
+                  <select value={thMonth} onChange={e => { setThMonth(Number(e.target.value)); setThLoaded(false) }}
+                    className={inputCls + ' text-xs w-28'}>
+                    {Array.from({length:12},(_,i)=>i+1).map(m=>(
+                      <option key={m} value={m}>Tháng {m}</option>
+                    ))}
+                  </select>
+                  <select value={thYear} onChange={e => { setThYear(Number(e.target.value)); setThLoaded(false) }}
+                    className={inputCls + ' text-xs w-24'}>
+                    {Array.from({length:6},(_,i)=>new Date().getFullYear()-i).map(y=>(
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
+                  <button onClick={loadTongHop} disabled={thLoading}
+                    className={`${btnPrimary} disabled:opacity-60 disabled:cursor-not-allowed`}>
+                    {thLoading ? '⏳ Đang tải...' : '🔄 Tải báo cáo'}
+                  </button>
+                </div>
+              </div>
+              {thLoaded && (
+                <div className="flex items-center gap-2 ml-auto">
+                  <input value={thSearch} onChange={e=>setThSearch(e.target.value)} placeholder="Tìm sản phẩm..."
+                    className={inputCls + ' text-xs w-48'} />
+                  <button onClick={exportTongHopExcel} className={btnOutline}>⬇ Excel</button>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {thLoaded && (() => {
+            const q = thSearch.toLowerCase()
+            const filtered = thSearch
+              ? thRows.filter(r => r.name.toLowerCase().includes(q) || r.code.toLowerCase().includes(q))
+              : thRows
+
+            const totals = filtered.reduce((s,r)=>({
+              giaTriTonDau:  s.giaTriTonDau  + r.giaTriTonDau,
+              giaTriNhap:    s.giaTriNhap    + r.giaTriNhap,
+              giaTriXuat:    s.giaTriXuat    + r.giaTriXuat,
+              giaTriTonCuoi: s.giaTriTonCuoi + r.giaTriTonCuoi,
+            }), { giaTriTonDau:0, giaTriNhap:0, giaTriXuat:0, giaTriTonCuoi:0 })
+
+            const hetHang = filtered.filter(r=>r.trangThai==='het').length
+            const sapHet  = filtered.filter(r=>r.trangThai==='sap_het').length
+
+            return (
+              <div className={`${sectionBox} p-4 space-y-4`}>
+                {/* Stat cards */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {[
+                    { label: 'Tổng GT tồn cuối', val: fmtPrice(totals.giaTriTonCuoi), color: '#c8773a' },
+                    { label: 'Tổng GT nhập kỳ',  val: fmtPrice(totals.giaTriNhap),    color: '#1e7a4a' },
+                    { label: 'Tổng GT xuất kỳ',  val: fmtPrice(totals.giaTriXuat),    color: '#6d4c2a' },
+                    { label: 'Cảnh báo tồn kho', val: `🔴 ${hetHang} hết · 🟡 ${sapHet} sắp hết`, color: '#b45309' },
+                  ].map(s=>(
+                    <div key={s.label} className="bg-white rounded-xl border border-[#f5e6cc] p-3">
+                      <div className="text-[11px] text-[#8b5e3c]/70 mb-1">{s.label}</div>
+                      <div className="text-sm font-bold" style={{color:s.color}}>{s.val}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Table */}
+                <div className="overflow-x-auto rounded-xl border border-[#f5e6cc]">
+                  <table className="w-full text-xs border-collapse min-w-[1200px]">
+                    <thead>
+                      <tr className="bg-[#3d1f0a] text-white">
+                        <th rowSpan={2} className="py-2 px-2 font-semibold border border-[#5a3a20] text-center">STT</th>
+                        <th rowSpan={2} className="py-2 px-2 font-semibold border border-[#5a3a20]">Mã SP</th>
+                        <th rowSpan={2} className="py-2 px-2 font-semibold border border-[#5a3a20]">Tên hàng hóa</th>
+                        <th rowSpan={2} className="py-2 px-2 font-semibold border border-[#5a3a20] text-center">ĐVT</th>
+                        <th rowSpan={2} className="py-2 px-2 font-semibold border border-[#5a3a20] text-right">Đơn giá nhập (₫)</th>
+                        <th colSpan={2} className="py-1 px-2 font-semibold border border-[#5a3a20] text-center bg-[#5c3317]">TỒN ĐẦU KỲ</th>
+                        <th colSpan={2} className="py-1 px-2 font-semibold border border-[#5a3a20] text-center bg-[#1a4a2e]">TỔNG NHẬP</th>
+                        <th colSpan={2} className="py-1 px-2 font-semibold border border-[#5a3a20] text-center bg-[#4a1a1a]">TỔNG XUẤT</th>
+                        <th colSpan={2} className="py-1 px-2 font-semibold border border-[#5a3a20] text-center bg-[#1a3a5c]">TỒN CUỐI KỲ</th>
+                        <th rowSpan={2} className="py-2 px-2 font-semibold border border-[#5a3a20] text-center">Tồn<br/>tối thiểu</th>
+                        <th rowSpan={2} className="py-2 px-2 font-semibold border border-[#5a3a20] text-center">Trạng thái</th>
+                      </tr>
+                      <tr className="text-[10px] text-white/80">
+                        <th className="py-1 px-2 border border-[#5a3a20] text-center bg-[#5c3317]">Số lượng</th>
+                        <th className="py-1 px-2 border border-[#5a3a20] text-right bg-[#5c3317]">Giá trị (₫)</th>
+                        <th className="py-1 px-2 border border-[#5a3a20] text-center bg-[#1a4a2e]">Số lượng</th>
+                        <th className="py-1 px-2 border border-[#5a3a20] text-right bg-[#1a4a2e]">Giá trị (₫)</th>
+                        <th className="py-1 px-2 border border-[#5a3a20] text-center bg-[#4a1a1a]">Số lượng</th>
+                        <th className="py-1 px-2 border border-[#5a3a20] text-right bg-[#4a1a1a]">Giá trị (₫)</th>
+                        <th className="py-1 px-2 border border-[#5a3a20] text-center bg-[#1a3a5c]">Số lượng</th>
+                        <th className="py-1 px-2 border border-[#5a3a20] text-right bg-[#1a3a5c]">Giá trị (₫)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filtered.map((r, i) => {
+                        const statusBadge =
+                          r.trangThai === 'het'     ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 text-red-700 font-medium text-[10px]">🔴 HẾT HÀNG</span> :
+                          r.trangThai === 'sap_het' ? <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-700 font-medium text-[10px]">🟡 SẮP HẾT</span> :
+                                                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-700 font-medium text-[10px]">🟢 ĐỦ HÀNG</span>
+                        const rowBg = r.trangThai === 'het' ? 'bg-red-50' : r.trangThai === 'sap_het' ? 'bg-amber-50' : i%2===0 ? 'bg-white' : 'bg-[#fffdf9]'
+                        return (
+                          <tr key={r.name} className={`${rowBg} hover:bg-[#fef4e8] transition-colors`}>
+                            <td className="py-1.5 px-2 border border-[#f0e8d8] text-center text-[#8b5e3c]/60">{i+1}</td>
+                            <td className="py-1.5 px-2 border border-[#f0e8d8] font-mono text-[10px] text-[#8b5e3c]">{r.code}</td>
+                            <td className="py-1.5 px-2 border border-[#f0e8d8] font-medium text-[#1a0f07]">{r.name}</td>
+                            <td className="py-1.5 px-2 border border-[#f0e8d8] text-center text-[#8b5e3c]">{r.unit}</td>
+                            <td className="py-1.5 px-2 border border-[#f0e8d8] text-right text-[#8b5e3c]">{r.donGia > 0 ? fmtPrice(r.donGia) : '—'}</td>
+                            {/* Tồn đầu */}
+                            <td className="py-1.5 px-2 border border-[#f0e8d8] text-center text-[#5c3317] font-medium">{fmtNum(r.tonDauSL)}</td>
+                            <td className="py-1.5 px-2 border border-[#f0e8d8] text-right text-[#5c3317]">{r.giaTriTonDau > 0 ? fmtPrice(r.giaTriTonDau) : '—'}</td>
+                            {/* Nhập */}
+                            <td className="py-1.5 px-2 border border-[#f0e8d8] text-center text-[#1a4a2e] font-medium">{r.nhapSL > 0.001 ? fmtNum(r.nhapSL) : '—'}</td>
+                            <td className="py-1.5 px-2 border border-[#f0e8d8] text-right text-[#1a4a2e]">{r.giaTriNhap > 0 ? fmtPrice(r.giaTriNhap) : '—'}</td>
+                            {/* Xuất */}
+                            <td className="py-1.5 px-2 border border-[#f0e8d8] text-center text-[#7a2020] font-medium">{r.xuatSL > 0.001 ? fmtNum(r.xuatSL) : '—'}</td>
+                            <td className="py-1.5 px-2 border border-[#f0e8d8] text-right text-[#7a2020]">{r.giaTriXuat > 0 ? fmtPrice(r.giaTriXuat) : '—'}</td>
+                            {/* Tồn cuối */}
+                            <td className={`py-1.5 px-2 border border-[#f0e8d8] text-center font-bold ${r.tonCuoiSL < 0 ? 'text-red-600' : 'text-[#1a3a5c]'}`}>{fmtNum(r.tonCuoiSL)}</td>
+                            <td className={`py-1.5 px-2 border border-[#f0e8d8] text-right font-bold ${r.tonCuoiSL < 0 ? 'text-red-600' : 'text-[#1a3a5c]'}`}>{r.giaTriTonCuoi > 0 ? fmtPrice(r.giaTriTonCuoi) : r.tonCuoiSL < 0 ? fmtPrice(r.giaTriTonCuoi) : '—'}</td>
+                            <td className="py-1.5 px-2 border border-[#f0e8d8] text-center text-[#8b5e3c]">{r.tonToiThieu > 0 ? fmtNum(r.tonToiThieu) : '—'}</td>
+                            <td className="py-1.5 px-2 border border-[#f0e8d8] text-center">{statusBadge}</td>
+                          </tr>
+                        )
+                      })}
+                      {/* Footer totals */}
+                      <tr className="bg-[#3d1f0a] text-white font-semibold text-xs">
+                        <td colSpan={5} className="py-2 px-2 border border-[#5a3a20] text-center">TỔNG CỘNG ({filtered.length} mặt hàng)</td>
+                        <td className="py-2 px-2 border border-[#5a3a20] text-center">—</td>
+                        <td className="py-2 px-2 border border-[#5a3a20] text-right">{fmtPrice(totals.giaTriTonDau)}</td>
+                        <td className="py-2 px-2 border border-[#5a3a20] text-center">—</td>
+                        <td className="py-2 px-2 border border-[#5a3a20] text-right">{fmtPrice(totals.giaTriNhap)}</td>
+                        <td className="py-2 px-2 border border-[#5a3a20] text-center">—</td>
+                        <td className="py-2 px-2 border border-[#5a3a20] text-right">{fmtPrice(totals.giaTriXuat)}</td>
+                        <td className="py-2 px-2 border border-[#5a3a20] text-center">—</td>
+                        <td className="py-2 px-2 border border-[#5a3a20] text-right">{fmtPrice(totals.giaTriTonCuoi)}</td>
+                        <td colSpan={2} className="py-2 px-2 border border-[#5a3a20] text-center text-amber-300">🔴 {hetHang} · 🟡 {sapHet}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )
+          })()}
+
+          {!thLoaded && !thLoading && (
+            <div className={`${sectionBox} p-10 text-center text-[#8b5e3c]/60 text-sm`}>
+              Chọn tháng/năm và nhấn <b>Tải báo cáo</b> để xem tổng hợp nhập xuất tồn kho
+            </div>
+          )}
         </div>
       )}
 
