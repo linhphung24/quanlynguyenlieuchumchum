@@ -11,8 +11,11 @@ type ItemIn  = { name: string; amount: number; unit: string; price?: number }
 type ItemOut = { name?: string; amount?: number; unit?: string; price?: number }
 
 interface TongHopRow {
-  stt: number; code: string; name: string; unit: string
-  donGia: number; tonDau: number; nhap: number; xuat: number
+  stt: number; code: string; name: string; category: string; unit: string
+  donGia: number
+  tonDau: number; tienDau: number
+  nhap: number; tienNhap: number
+  xuat: number; tienXuat: number
   tonCuoi: number; tienCuoi: number
   tonDauAuto: boolean // true = lấy từ tồn cuối tháng trước (chưa có adj)
 }
@@ -31,13 +34,14 @@ export default function SummaryPage() {
   const canEdit = !!profile // tất cả user đã đăng nhập đều sửa được tồn đầu
 
   const now = new Date()
-  const [year, setYear]       = useState(now.getFullYear())
-  const [month, setMonth]     = useState(now.getMonth() + 1)
-  const [rows, setRows]       = useState<TongHopRow[]>([])
-  const [nhapDet, setNhapDet] = useState<NhapRow[]>([])
-  const [xuatDet, setXuatDet] = useState<XuatRow[]>([])
-  const [loading, setLoading] = useState(false)
-  const [search, setSearch]   = useState('')
+  const [year, setYear]             = useState(now.getFullYear())
+  const [month, setMonth]           = useState(now.getMonth() + 1)
+  const [rows, setRows]             = useState<TongHopRow[]>([])
+  const [nhapDet, setNhapDet]       = useState<NhapRow[]>([])
+  const [xuatDet, setXuatDet]       = useState<XuatRow[]>([])
+  const [loading, setLoading]       = useState(false)
+  const [search, setSearch]         = useState('')
+  const [selectedCat, setSelectedCat] = useState<string>('all')
 
   // Tồn đầu được chỉnh tay: product_name → qty override
   const [adjMap, setAdjMap]           = useState<Map<string, number>>(new Map())
@@ -45,6 +49,15 @@ export default function SummaryPage() {
   const [editVal, setEditVal]         = useState('')
   const [saving, setSaving]           = useState(false)
   const editInputRef = useRef<HTMLInputElement>(null)
+
+  // Lấy danh sách kho/danh mục độc nhất từ allProducts
+  const categories = useMemo(() => {
+    const set = new Set<string>()
+    for (const p of allProducts) {
+      if (p.category) set.add(p.category)
+    }
+    return Array.from(set).sort()
+  }, [allProducts])
 
   useEffect(() => { loadData() }, [year, month, allProducts]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -55,6 +68,12 @@ export default function SummaryPage() {
       const pad      = (n: number) => String(n).padStart(2, '0')
       const startStr = `${year}-${pad(month)}-01`
       const endStr   = `${year}-${pad(month)}-${pad(new Date(year, month, 0).getDate())}`
+
+      // Map nhanh thông tin sản phẩm
+      const productMap = new Map<string, typeof allProducts[0]>()
+      for (const p of allProducts) {
+        productMap.set(p.name, p)
+      }
 
       // 4 query song song: hoá đơn tháng + adj kiểm kho + tồn lô hiện tại + hoá đơn SAU kỳ
       const [
@@ -97,10 +116,10 @@ export default function SummaryPage() {
         }
       }
 
-      // Nhập/xuất trong tháng
-      const pmap = new Map<string, { nhapM: number; xuatM: number }>()
+      // Nhập/xuất trong tháng (Số lượng & Thành tiền)
+      const pmap = new Map<string, { nhapM: number; tienNhapM: number; xuatM: number; tienXuatM: number }>()
       const get  = (name: string) => {
-        if (!pmap.has(name)) pmap.set(name, { nhapM: 0, xuatM: 0 })
+        if (!pmap.has(name)) pmap.set(name, { nhapM: 0, tienNhapM: 0, xuatM: 0, tienXuatM: 0 })
         return pmap.get(name)!
       }
 
@@ -111,24 +130,38 @@ export default function SummaryPage() {
         if (inv.type === 'in') {
           for (const it of (inv.items as ItemIn[])) {
             if (!it.name || !(it.amount > 0)) continue
-            get(it.name).nhapM += it.amount
+            const p = productMap.get(it.name)
+            const price = it.price || p?.cost_price || 0
+            const thanhTien = it.amount * price
+
+            const e = get(it.name)
+            e.nhapM += it.amount
+            e.tienNhapM += thanhTien
+
             nhapRows.push({
               ngay: inv.inv_date, soChungTu: inv.code,
               ten: it.name, dvt: it.unit,
-              soLuong: it.amount, donGia: it.price || 0,
-              thanhTien: it.amount * (it.price || 0),
+              soLuong: it.amount, donGia: price,
+              thanhTien,
               nhaCungCap: inv.partner || '', ghiChu: inv.note || '',
             })
           }
         } else {
           for (const it of (inv.items as ItemOut[])) {
             if (!it.name || !(it.amount! > 0)) continue
-            get(it.name).xuatM += it.amount!
+            const p = productMap.get(it.name)
+            const price = it.price || p?.cost_price || 0
+            const thanhTien = it.amount! * price
+
+            const e = get(it.name)
+            e.xuatM += it.amount!
+            e.tienXuatM += thanhTien
+
             xuatRows.push({
               ngay: inv.inv_date, soChungTu: inv.code,
               ten: it.name, dvt: it.unit || '',
-              donGia: it.price || 0, soLuong: it.amount!,
-              thanhTien: it.amount! * (it.price || 0),
+              donGia: price, soLuong: it.amount!,
+              thanhTien,
               ghiChu: inv.note || '',
             })
           }
@@ -141,11 +174,11 @@ export default function SummaryPage() {
       const result: TongHopRow[] = []
       let stt = 1
       for (const p of allProducts.filter(p => p.is_active)) {
-        const e       = pmap.get(p.name) || { nhapM: 0, xuatM: 0 }
-        const donGia  = p.cost_price || 0
+        const e        = pmap.get(p.name) || { nhapM: 0, tienNhapM: 0, xuatM: 0, tienXuatM: 0 }
+        const donGia   = p.cost_price || 0
         const batchQty = parseFloat((batchMap.get(p.name.toLowerCase()) || 0).toFixed(2))
-        const fut     = futureMap.get(p.name) || { fn: 0, fx: 0 }
-        const hasAdj  = newAdjMap.has(p.name)
+        const fut      = futureMap.get(p.name) || { fn: 0, fx: 0 }
+        const hasAdj   = newAdjMap.has(p.name)
 
         let tonDau: number
         let tonCuoi: number
@@ -159,12 +192,17 @@ export default function SummaryPage() {
           tonDau  = parseFloat((tonCuoi - e.nhapM + e.xuatM).toFixed(2))
         }
 
+        const tienDau  = parseFloat((tonDau * donGia).toFixed(0))
+        const tienNhap = e.tienNhapM || parseFloat((e.nhapM * donGia).toFixed(0))
+        const tienXuat = e.tienXuatM || parseFloat((e.xuatM * donGia).toFixed(0))
+        const tienCuoi = parseFloat((tonCuoi * donGia).toFixed(0))
+
         // Hiển thị dòng nếu có phát sinh hoặc tồn kho khác 0
         if (tonDau === 0 && tonCuoi === 0 && e.nhapM === 0 && e.xuatM === 0) continue
         result.push({
-          stt: stt++, code: p.code || '', name: p.name, unit: p.unit,
-          donGia, tonDau, nhap: e.nhapM, xuat: e.xuatM,
-          tonCuoi, tienCuoi: tonCuoi * donGia,
+          stt: stt++, code: p.code || '', name: p.name, category: p.category || 'Khác', unit: p.unit,
+          donGia, tonDau, tienDau, nhap: e.nhapM, tienNhap, xuat: e.xuatM, tienXuat,
+          tonCuoi, tienCuoi,
           tonDauAuto: !hasAdj,
         })
       }
@@ -204,7 +242,14 @@ export default function SummaryPage() {
       setRows(prev => prev.map(r => {
         if (r.name !== productName) return r
         const tonCuoiAdj = qty + r.nhap - r.xuat
-        return { ...r, tonDau: qty, tonCuoi: tonCuoiAdj, tienCuoi: tonCuoiAdj * r.donGia, tonDauAuto: false }
+        return {
+          ...r,
+          tonDau: qty,
+          tienDau: qty * r.donGia,
+          tonCuoi: tonCuoiAdj,
+          tienCuoi: tonCuoiAdj * r.donGia,
+          tonDauAuto: false
+        }
       }))
     } catch (e) {
       toast('Lỗi khi lưu: ' + (e as Error).message, 'error')
@@ -230,33 +275,143 @@ export default function SummaryPage() {
     }
   }
 
-  /* ── Search filter (client-side, không gây reload) ── */
+  /* ── Lọc theo danh mục/kho + tìm kiếm ── */
   const filteredRows = useMemo(() => {
+    let list = rows
+    if (selectedCat !== 'all') {
+      list = list.filter(r => r.category === selectedCat)
+    }
     const q = search.trim().toLowerCase()
-    if (!q) return rows
-    return rows.filter(r =>
-      r.name.toLowerCase().includes(q) ||
-      (r.code ?? '').toLowerCase().includes(q)
-    )
-  }, [rows, search])
+    if (q) {
+      list = list.filter(r =>
+        r.name.toLowerCase().includes(q) ||
+        (r.code ?? '').toLowerCase().includes(q)
+      )
+    }
+    return list
+  }, [rows, selectedCat, search])
 
-  /* ── Export Excel 3 sheets ── */
+  /* ── Nhóm dữ liệu theo Kho / Danh mục ── */
+  const groupedData = useMemo(() => {
+    const map = new Map<string, TongHopRow[]>()
+    for (const r of filteredRows) {
+      const cat = r.category || 'Khác'
+      if (!map.has(cat)) map.set(cat, [])
+      map.get(cat)!.push(r)
+    }
+    return Array.from(map.entries()).sort((a, b) => a[0].localeCompare(b[0], 'vi'))
+  }, [filteredRows])
+
+  /* ── Export Excel chuẩn MISA (Header 2 tầng + Nhóm theo kho) ── */
   const exportExcel = () => {
     const wb  = XLSX.utils.book_new()
     const tag = `T${month}.${year}`
 
-    // ── Sheet 1: TỔNG HỢP ──
-    const s1Data: (string | number)[][] = [
-      [`TỔNG HỢP VẬT LIỆU — ${tag}`],
+    // Sheet 1: TỔNG HỢP TỒN KHO (MISA Format)
+    const s1Rows: (string | number)[][] = [
+      [`TỔNG HỢP TỒN KHO`],
+      [`Chi nhánh: Tiệm bánh Chum Chum`],
+      [`Kỳ báo cáo: Tháng ${month} năm ${year}`],
       [],
-      ['STT','MÃ SP','TÊN SẢN PHẨM','ĐVT','ĐƠN GIÁ','TỒN ĐẦU','NHẬP','XUẤT','TỒN CUỐI','TIỀN CUỐI KỲ'],
-      ...rows.map(r => [r.stt, r.code, r.name, r.unit, r.donGia || '', r.tonDau, r.nhap, r.xuat, r.tonCuoi, r.tienCuoi || '']),
+      [
+        'STT', 'Mã hàng', 'Tên hàng', 'ĐVT', 'Đơn giá',
+        'Đầu kỳ', '',
+        'Nhập kho', '',
+        'Xuất kho', '',
+        'Cuối kỳ', ''
+      ],
+      [
+        '', '', '', '', '',
+        'Số lượng', 'Giá trị',
+        'Số lượng', 'Giá trị',
+        'Số lượng', 'Giá trị',
+        'Số lượng', 'Giá trị'
+      ]
     ]
-    const ws1 = XLSX.utils.aoa_to_sheet(s1Data)
-    ws1['!cols'] = [{wch:6},{wch:14},{wch:42},{wch:8},{wch:12},{wch:12},{wch:12},{wch:12},{wch:12},{wch:16}]
-    XLSX.utils.book_append_sheet(wb, ws1, 'TỔNG HỢP VẬT LIỆU')
 
-    // ── Sheet 2: NHẬP KHO ──
+    const merges: XLSX.Range[] = [
+      { s: { r: 0, c: 0 }, e: { r: 0, c: 12 } },
+      { s: { r: 1, c: 0 }, e: { r: 1, c: 12 } },
+      { s: { r: 2, c: 0 }, e: { r: 2, c: 12 } },
+      // STT, Mã hàng, Tên hàng, ĐVT, Đơn giá merge 2 dòng (rows 4..5)
+      { s: { r: 4, c: 0 }, e: { r: 5, c: 0 } },
+      { s: { r: 4, c: 1 }, e: { r: 5, c: 1 } },
+      { s: { r: 4, c: 2 }, e: { r: 5, c: 2 } },
+      { s: { r: 4, c: 3 }, e: { r: 5, c: 3 } },
+      { s: { r: 4, c: 4 }, e: { r: 5, c: 4 } },
+      // Đầu kỳ, Nhập kho, Xuất kho, Cuối kỳ merge 2 cột
+      { s: { r: 4, c: 5 }, e: { r: 4, c: 6 } },
+      { s: { r: 4, c: 7 }, e: { r: 4, c: 8 } },
+      { s: { r: 4, c: 9 }, e: { r: 4, c: 10 } },
+      { s: { r: 4, c: 11 }, e: { r: 4, c: 12 } },
+    ]
+
+    // Duyệt qua từng nhóm Kho
+    for (const [catName, catItems] of groupedData) {
+      // Dòng tên kho
+      s1Rows.push([`Tên kho: ${catName}`])
+      const groupHeaderRowIdx = s1Rows.length - 1
+      merges.push({ s: { r: groupHeaderRowIdx, c: 0 }, e: { r: groupHeaderRowIdx, c: 12 } })
+
+      let sumTD = 0, sumTDTien = 0, sumN = 0, sumNTien = 0, sumX = 0, sumXTien = 0, sumTC = 0, sumTCTien = 0
+
+      for (const r of catItems) {
+        s1Rows.push([
+          r.stt, r.code, r.name, r.unit, r.donGia || '',
+          r.tonDau, r.tienDau || '',
+          r.nhap, r.tienNhap || '',
+          r.xuat, r.tienXuat || '',
+          r.tonCuoi, r.tienCuoi || ''
+        ])
+        sumTD += r.tonDau; sumTDTien += r.tienDau
+        sumN += r.nhap; sumNTien += r.tienNhap
+        sumX += r.xuat; sumXTien += r.tienXuat
+        sumTC += r.tonCuoi; sumTCTien += r.tienCuoi
+      }
+
+      // Dòng Cộng kho
+      s1Rows.push([
+        '', '', `Cộng ${catName}`, '', '',
+        sumTD, sumTDTien || '',
+        sumN, sumNTien || '',
+        sumX, sumXTien || '',
+        sumTC, sumTCTien || ''
+      ])
+    }
+
+    // Dòng TỔNG CỘNG CHUNG
+    s1Rows.push([
+      '', '', 'TỔNG CỘNG', '', '',
+      filteredRows.reduce((s, r) => s + r.tonDau, 0),
+      filteredRows.reduce((s, r) => s + r.tienDau, 0) || '',
+      filteredRows.reduce((s, r) => s + r.nhap, 0),
+      filteredRows.reduce((s, r) => s + r.tienNhap, 0) || '',
+      filteredRows.reduce((s, r) => s + r.xuat, 0),
+      filteredRows.reduce((s, r) => s + r.tienXuat, 0) || '',
+      filteredRows.reduce((s, r) => s + r.tonCuoi, 0),
+      filteredRows.reduce((s, r) => s + r.tienCuoi, 0) || ''
+    ])
+
+    const ws1 = XLSX.utils.aoa_to_sheet(s1Rows)
+    ws1['!merges'] = merges
+    ws1['!cols'] = [
+      { wch: 6 },  // STT
+      { wch: 14 }, // Mã hàng
+      { wch: 38 }, // Tên hàng
+      { wch: 8 },  // ĐVT
+      { wch: 12 }, // Đơn giá
+      { wch: 12 }, // Đầu kỳ SL
+      { wch: 15 }, // Đầu kỳ Giá trị
+      { wch: 12 }, // Nhập kho SL
+      { wch: 15 }, // Nhập kho Giá trị
+      { wch: 12 }, // Xuất kho SL
+      { wch: 15 }, // Xuất kho Giá trị
+      { wch: 12 }, // Cuối kỳ SL
+      { wch: 15 }  // Cuối kỳ Giá trị
+    ]
+    XLSX.utils.book_append_sheet(wb, ws1, 'Tong hop ton kho MISA')
+
+    // Sheet 2: NHẬP KHO
     const s2Data: (string | number)[][] = [
       [`NHẬP KHO NVL — ${tag}`],
       [],
@@ -267,7 +422,7 @@ export default function SummaryPage() {
     ws2['!cols'] = [{wch:12},{wch:14},{wch:38},{wch:8},{wch:14},{wch:12},{wch:14},{wch:36},{wch:20}]
     XLSX.utils.book_append_sheet(wb, ws2, 'NHẬP KHO NVL')
 
-    // ── Sheet 3: XUẤT KHO ──
+    // Sheet 3: XUẤT KHO
     const s3Data: (string | number)[][] = [
       [`XUẤT KHO NVL — ${tag}`],
       [],
@@ -278,95 +433,80 @@ export default function SummaryPage() {
     ws3['!cols'] = [{wch:12},{wch:14},{wch:38},{wch:8},{wch:12},{wch:14},{wch:14},{wch:20}]
     XLSX.utils.book_append_sheet(wb, ws3, 'XUẤT KHO NVL')
 
-    XLSX.writeFile(wb, `Quan-li-vat-lieu-${tag}.xlsx`)
+    XLSX.writeFile(wb, `Tong-hop-ton-kho-MISA-${tag}.xlsx`)
   }
 
   const years         = [now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1]
-  const totalTonDau   = rows.reduce((s, r) => s + r.tonDau, 0)
-  const totalNhap     = rows.reduce((s, r) => s + r.nhap, 0)
-  const totalXuat     = rows.reduce((s, r) => s + r.xuat, 0)
-  const totalTonCuoi  = rows.reduce((s, r) => s + r.tonCuoi, 0)
-  const totalTien     = rows.reduce((s, r) => s + r.tienCuoi, 0)
-  const totalNhapVnd  = nhapDet.reduce((s, r) => s + r.thanhTien, 0)
+  const totalTonDau   = filteredRows.reduce((s, r) => s + r.tonDau, 0)
+  const totalTienDau  = filteredRows.reduce((s, r) => s + r.tienDau, 0)
+  const totalNhap     = filteredRows.reduce((s, r) => s + r.nhap, 0)
+  const totalTienNhap = filteredRows.reduce((s, r) => s + r.tienNhap, 0)
+  const totalXuat     = filteredRows.reduce((s, r) => s + r.xuat, 0)
+  const totalTienXuat = filteredRows.reduce((s, r) => s + r.tienXuat, 0)
+  const totalTonCuoi  = filteredRows.reduce((s, r) => s + r.tonCuoi, 0)
+  const totalTienCuoi = filteredRows.reduce((s, r) => s + r.tienCuoi, 0)
 
   return (
-    <div className="p-4 max-w-5xl mx-auto">
-      <h2 className="font-['Playfair_Display'] text-xl font-bold text-[#3d1f0a] mb-4">📊 Tổng kết tháng</h2>
-
-      {/* Bộ lọc + Xuất Excel */}
-      <div className="bg-[#fffaf4] rounded-2xl p-5 mb-4 border border-[#f5e6cc] shadow-[0_4px_20px_rgba(200,119,58,0.06)]">
-        <div className="flex gap-3 items-end flex-wrap">
-          <div>
-            <label className="block text-xs font-medium text-[#8b5e3c] mb-1">Tháng</label>
-            <select value={month} onChange={e => setMonth(Number(e.target.value))}
-              className="px-3 py-2.5 border-[1.5px] border-[#f5e6cc] rounded-lg text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors appearance-none pr-7">
-              {MONTHS_VN.map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
-            </select>
+    <div className="p-4 max-w-7xl mx-auto">
+      {/* Header phong cách MISA */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 bg-white p-4 rounded-xl border border-[#f5e6cc] shadow-sm">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="text-2xl">📋</span>
+            <h2 className="font-['Playfair_Display'] text-xl font-bold text-[#3d1f0a]">TỔNG HỢP TỒN KHO</h2>
           </div>
-          <div>
-            <label className="block text-xs font-medium text-[#8b5e3c] mb-1">Năm</label>
-            <select value={year} onChange={e => setYear(Number(e.target.value))}
-              className="px-3 py-2.5 border-[1.5px] border-[#f5e6cc] rounded-lg text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors appearance-none pr-7">
-              {years.map(y => <option key={y} value={y}>{y}</option>)}
-            </select>
-          </div>
-          <button
-            onClick={exportExcel}
-            disabled={rows.length === 0 || loading}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-[#1e7a4a] text-white text-sm font-semibold cursor-pointer hover:opacity-90 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            📥 Xuất Excel (.xlsx)
-          </button>
-        </div>
-      </div>
-
-      {/* Stats */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
-        {[
-          { label: 'Tổng nhập (SL)', value: fmtNum(totalNhap),                      icon: '↓',  color: '#3aaa6e' },
-          { label: 'Tổng xuất (SL)', value: fmtNum(totalXuat),                      icon: '↑',  color: '#c8773a' },
-          { label: 'Tiền nhập',      value: (totalNhapVnd/1e6).toFixed(1)+' tr',    icon: '🧾', color: '#3d1f0a' },
-          { label: 'Giá trị tồn',    value: (totalTien/1e6).toFixed(1)+' tr',       icon: '💰', color: '#8b5e3c' },
-        ].map(s => (
-          <div key={s.label} className="bg-white rounded-xl p-4 border-[1.5px] border-[#f5e6cc] text-center">
-            <div className="text-2xl mb-1" style={{ color: s.color }}>{s.icon}</div>
-            <div className="text-lg font-bold" style={{ color: s.color }}>{s.value}</div>
-            <div className="text-[10px] text-[#8b5e3c] mt-0.5">{s.label}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Bảng TỔNG HỢP */}
-      <div className="bg-[#fffaf4] rounded-2xl p-5 border border-[#f5e6cc] shadow-[0_4px_20px_rgba(200,119,58,0.06)]">
-        <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-          <h3 className="text-sm font-semibold text-[#3d1f0a]">
-            Tổng hợp vật liệu — {MONTHS_VN[month - 1]} {year}
-            {!loading && rows.length > 0 && (
-              <span className="ml-2 text-xs font-normal text-[#8b5e3c]">
-                ({filteredRows.length !== rows.length
-                  ? `${filteredRows.length}/${rows.length} mặt hàng`
-                  : `${rows.length} mặt hàng`})
-              </span>
-            )}
-          </h3>
-          <div className="flex gap-3 text-xs text-[#8b5e3c] flex-wrap">
-            <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-[#3aaa6e] inline-block"></span> Nhập</span>
-            <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-full bg-[#c8773a] inline-block"></span> Xuất</span>
-            <span className="inline-flex items-center gap-1"><span className="w-2.5 h-2.5 rounded bg-amber-100 border border-amber-400 inline-block"></span> Tồn đầu đã chốt kiểm kho (✏ để xoá)</span>
-            <span className="inline-flex items-center gap-1 text-[#555] font-medium">Tồn cuối = Tồn đầu + Nhập − Xuất ✓</span>
-            {canEdit && <span className="text-[#c8773a] italic">(click ô Tồn đầu để chốt kiểm kho)</span>}
-          </div>
+          <p className="text-xs text-[#8b5e3c] mt-0.5">
+            Chi nhánh: <span className="font-semibold">Tiệm bánh Chum Chum</span> &bull; Kỳ báo cáo: <span className="font-semibold">Tháng {month} năm {year}</span>
+          </p>
         </div>
 
-        {/* Search box */}
-        <div className="mb-3">
-          <div className="relative max-w-xs">
+        <button
+          onClick={exportExcel}
+          disabled={rows.length === 0 || loading}
+          className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-[#1e7a4a] text-white text-sm font-semibold hover:bg-[#165c37] transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-sm self-start sm:self-auto cursor-pointer"
+        >
+          📥 Xuất Excel chuẩn MISA (.xlsx)
+        </button>
+      </div>
+
+      {/* Bộ lọc + Tìm kiếm */}
+      <div className="bg-[#fffaf4] rounded-2xl p-4 mb-4 border border-[#f5e6cc] shadow-[0_4px_20px_rgba(200,119,58,0.06)]">
+        <div className="flex flex-wrap gap-4 items-center justify-between">
+          <div className="flex flex-wrap gap-3 items-center">
+            <div>
+              <label className="block text-[11px] font-medium text-[#8b5e3c] mb-1">Tháng</label>
+              <select value={month} onChange={e => setMonth(Number(e.target.value))}
+                className="px-3 py-2 border-[1.5px] border-[#f5e6cc] rounded-lg text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors appearance-none pr-7">
+                {MONTHS_VN.map((m, i) => <option key={i + 1} value={i + 1}>{m}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-medium text-[#8b5e3c] mb-1">Năm</label>
+              <select value={year} onChange={e => setYear(Number(e.target.value))}
+                className="px-3 py-2 border-[1.5px] border-[#f5e6cc] rounded-lg text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors appearance-none pr-7">
+                {years.map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+            </div>
+
+            <div>
+              <label className="block text-[11px] font-medium text-[#8b5e3c] mb-1">Kho / Danh mục</label>
+              <select value={selectedCat} onChange={e => setSelectedCat(e.target.value)}
+                className="px-3 py-2 border-[1.5px] border-[#f5e6cc] rounded-lg text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors appearance-none pr-7 font-medium">
+                <option value="all">-- Tất cả các kho ({categories.length}) --</option>
+                {categories.map(c => <option key={c} value={c}>Kho {c}</option>)}
+              </select>
+            </div>
+          </div>
+
+          {/* Ô tìm kiếm */}
+          <div className="relative w-full sm:w-64">
             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[#c8a87a] text-sm pointer-events-none">🔍</span>
             <input
               type="text"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Tìm theo tên hoặc mã SP..."
+              placeholder="Tìm theo mã hoặc tên hàng..."
               className="w-full pl-8 pr-8 py-2 text-sm border-[1.5px] border-[#f5e6cc] rounded-lg bg-white text-[#3d1f0a] placeholder-[#c8a87a] outline-none focus:border-[#c8773a] transition-colors"
             />
             {search && (
@@ -377,125 +517,248 @@ export default function SummaryPage() {
             )}
           </div>
         </div>
+      </div>
+
+      {/* Stats tổng quan */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+        {[
+          { label: 'Tồn đầu kỳ', value: (totalTienDau/1e6).toFixed(1)+' tr', sub: fmtNum(totalTonDau) + ' mặt hàng', icon: '📦', color: '#6b7280' },
+          { label: 'Tổng nhập kho', value: (totalTienNhap/1e6).toFixed(1)+' tr', sub: fmtNum(totalNhap) + ' sp', icon: '↓', color: '#10b981' },
+          { label: 'Tổng xuất kho', value: (totalTienXuat/1e6).toFixed(1)+' tr', sub: fmtNum(totalXuat) + ' sp', icon: '↑', color: '#f59e0b' },
+          { label: 'Tồn cuối kỳ', value: (totalTienCuoi/1e6).toFixed(1)+' tr', sub: fmtNum(totalTonCuoi) + ' sp', icon: '💰', color: '#c8773a' },
+        ].map(s => (
+          <div key={s.label} className="bg-white rounded-xl p-3.5 border-[1.5px] border-[#f5e6cc] text-center shadow-xs">
+            <div className="text-xl mb-0.5" style={{ color: s.color }}>{s.icon}</div>
+            <div className="text-lg font-bold text-[#3d1f0a]">{s.value}</div>
+            <div className="text-[10px] text-[#8b5e3c] mt-0.5 font-medium">{s.label} ({s.sub})</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Bảng TỔNG HỢP TỒN KHO MISA */}
+      <div className="bg-white rounded-xl border border-[#e5e7eb] shadow-sm overflow-hidden">
+        <div className="p-3 bg-[#f8fafc] border-b border-[#e2e8f0] flex items-center justify-between flex-wrap gap-2 text-xs">
+          <div className="font-semibold text-[#1e293b] flex items-center gap-2">
+            <span>Báo cáo Tổng hợp tồn kho</span>
+            <span className="px-2 py-0.5 bg-[#e2e8f0] rounded text-[#475569] text-[11px] font-normal">
+              {filteredRows.length} mặt hàng
+            </span>
+          </div>
+
+          <div className="flex gap-3 text-[11px] text-[#64748b] flex-wrap items-center">
+            <span className="inline-flex items-center gap-1">
+              <span className="w-2.5 h-2.5 rounded bg-amber-100 border border-amber-400 inline-block"></span>
+              Tồn đầu chốt kiểm kho (✏ để sửa)
+            </span>
+            <span className="text-[#0284c7] font-medium">Tồn cuối = Tồn đầu + Nhập − Xuất</span>
+          </div>
+        </div>
 
         {loading ? (
-          <div className="text-center py-10 text-sm text-[#8b5e3c]">
-            <div className="inline-block w-5 h-5 border-2 border-[#c8773a] border-t-transparent rounded-full animate-spin mb-2"></div>
-            <div>Đang tải...</div>
+          <div className="text-center py-12 text-sm text-[#8b5e3c]">
+            <div className="inline-block w-6 h-6 border-2 border-[#c8773a] border-t-transparent rounded-full animate-spin mb-2"></div>
+            <div>Đang tính toán dữ liệu kho...</div>
           </div>
         ) : filteredRows.length === 0 ? (
-          <div className="text-center py-10 text-sm text-[#8b5e3c]">
-            {rows.length === 0 ? 'Không có dữ liệu trong tháng này' : 'Không tìm thấy sản phẩm phù hợp'}
+          <div className="text-center py-12 text-sm text-[#64748b]">
+            {rows.length === 0 ? 'Không có phát sinh dữ liệu kho trong tháng này' : 'Không tìm thấy mặt hàng phù hợp với bộ lọc'}
           </div>
         ) : (
-          <div className="overflow-x-auto rounded-lg border border-[#f0e8d8]">
-            <table className="border-collapse" style={{ minWidth: '920px', width: '100%' }}>
+          <div className="overflow-x-auto">
+            <table className="w-full text-xs text-left border-collapse" style={{ minWidth: '1100px' }}>
               <thead>
-                <tr className="bg-[#f5e6cc]">
-                  <th className="text-center text-[10px] font-semibold uppercase text-[#8b5e3c] px-2 py-2.5 w-10">STT</th>
-                  <th className="text-left   text-[10px] font-semibold uppercase text-[#8b5e3c] px-3 py-2.5">Tên sản phẩm</th>
-                  <th className="text-left   text-[10px] font-semibold uppercase text-[#8b5e3c] px-3 py-2.5 w-16">ĐVT</th>
-                  <th className="text-right  text-[10px] font-semibold uppercase text-[#8b5e3c] px-3 py-2.5 w-28">Đơn giá</th>
-                  <th className="text-right  text-[10px] font-semibold uppercase text-[#8b5e3c] px-3 py-2.5 w-24">Tồn đầu</th>
-                  <th className="text-right  text-[10px] font-semibold uppercase text-[#8b5e3c] px-3 py-2.5 w-24 text-[#3aaa6e]">Nhập</th>
-                  <th className="text-right  text-[10px] font-semibold uppercase text-[#8b5e3c] px-3 py-2.5 w-24 text-[#c8773a]">Xuất</th>
-                  <th className="text-right  text-[10px] font-semibold uppercase text-[#8b5e3c] px-3 py-2.5 w-24">Tồn cuối</th>
-                  <th className="text-right  text-[10px] font-semibold uppercase text-[#8b5e3c] px-3 py-2.5 w-32">Tiền cuối kỳ</th>
+                {/* Header tầng 1 */}
+                <tr className="bg-[#2c3e50] text-white font-medium text-[11px] border-b border-[#1a252f]">
+                  <th rowSpan={2} className="px-2.5 py-2.5 text-center border-r border-[#34495e] w-10">STT</th>
+                  <th rowSpan={2} className="px-3 py-2.5 border-r border-[#34495e] w-24">Mã hàng</th>
+                  <th rowSpan={2} className="px-3 py-2.5 border-r border-[#34495e] min-w-[200px]">Tên hàng</th>
+                  <th rowSpan={2} className="px-2 py-2.5 text-center border-r border-[#34495e] w-14">ĐVT</th>
+                  <th rowSpan={2} className="px-3 py-2.5 text-right border-r border-[#34495e] w-24">Đơn giá</th>
+
+                  <th colSpan={2} className="px-3 py-1.5 text-center border-r border-[#34495e] bg-[#34495e]">Đầu kỳ</th>
+                  <th colSpan={2} className="px-3 py-1.5 text-center border-r border-[#34495e] bg-[#27ae60]">Nhập kho</th>
+                  <th colSpan={2} className="px-3 py-1.5 text-center border-r border-[#34495e] bg-[#d35400]">Xuất kho</th>
+                  <th colSpan={2} className="px-3 py-1.5 text-center bg-[#2980b9]">Cuối kỳ</th>
+                </tr>
+
+                {/* Header tầng 2 */}
+                <tr className="bg-[#34495e] text-white text-[10px] uppercase font-semibold border-b border-[#2c3e50]">
+                  {/* Đầu kỳ */}
+                  <th className="px-2.5 py-1.5 text-right border-r border-[#455a64] w-20">Số lượng</th>
+                  <th className="px-3 py-1.5 text-right border-r border-[#455a64] w-28">Giá trị</th>
+
+                  {/* Nhập kho */}
+                  <th className="px-2.5 py-1.5 text-right border-r border-[#455a64] w-20 bg-[#219150]">Số lượng</th>
+                  <th className="px-3 py-1.5 text-right border-r border-[#455a64] w-28 bg-[#219150]">Giá trị</th>
+
+                  {/* Xuất kho */}
+                  <th className="px-2.5 py-1.5 text-right border-r border-[#455a64] w-20 bg-[#ba4a00]">Số lượng</th>
+                  <th className="px-3 py-1.5 text-right border-r border-[#455a64] w-28 bg-[#ba4a00]">Giá trị</th>
+
+                  {/* Cuối kỳ */}
+                  <th className="px-2.5 py-1.5 text-right border-r border-[#455a64] w-20 bg-[#2471a3]">Số lượng</th>
+                  <th className="px-3 py-1.5 text-right bg-[#2471a3] w-28">Giá trị</th>
                 </tr>
               </thead>
+
               <tbody>
-                {filteredRows.map((row, i) => (
-                  <tr key={i} className={`${i % 2 === 0 ? '' : 'bg-[#fdf6ec]'} hover:bg-[#fef4e8] transition-colors`}>
-                    <td className="px-2 py-2 border-b border-[#f0e8d8] text-xs text-[#aaa] text-center">{row.stt}</td>
-                    <td className="px-3 py-2 border-b border-[#f0e8d8] text-sm font-medium text-[#3d1f0a]">{row.name}</td>
-                    <td className="px-3 py-2 border-b border-[#f0e8d8] text-sm text-[#8b5e3c]">{row.unit}</td>
-                    <td className="px-3 py-2 border-b border-[#f0e8d8] text-sm text-right text-[#8b5e3c]">
-                      {row.donGia ? row.donGia.toLocaleString('vi-VN') : '—'}
-                    </td>
-                    <td
-                      className={`px-3 py-2 border-b border-[#f0e8d8] text-sm text-right group relative
-                        ${!row.tonDauAuto ? 'bg-amber-50 text-amber-700' : 'text-[#8b5e3c]'}
-                        ${canEdit && editingCell !== row.name ? 'cursor-pointer hover:bg-[#fff3e0]' : ''}
-                      `}
-                      title={
-                        !row.tonDauAuto
-                          ? `✏ Kiểm kho: ${fmtNum(row.tonDau)}\nClick để sửa · Click ✏ để xoá`
-                          : canEdit ? `Tự động tính từ HĐ: ${fmtNum(row.tonDau)}\nClick để chốt kiểm kho` : `Tự động: ${fmtNum(row.tonDau)}`
-                      }
-                      onClick={() => editingCell !== row.name && openEdit(row.name, row.tonDau)}
-                    >
-                      {editingCell === row.name ? (
-                        <div className="flex items-center gap-1 justify-end" onClick={e => e.stopPropagation()}>
-                          <input
-                            ref={editInputRef}
-                            type="number"
-                            step="0.01"
-                            value={editVal}
-                            onChange={e => setEditVal(e.target.value)}
-                            onKeyDown={e => {
-                              if (e.key === 'Enter') saveEdit(row.name)
-                              if (e.key === 'Escape') cancelEdit()
-                            }}
-                            className="w-20 text-right text-sm border border-[#c8773a] rounded px-1 py-0.5 outline-none bg-white text-[#3d1f0a]"
-                            disabled={saving}
-                          />
-                          <button
-                            onClick={() => saveEdit(row.name)}
-                            disabled={saving}
-                            className="text-[#1e7a4a] hover:text-green-700 text-base font-bold leading-none"
-                            title="Lưu (Enter)"
-                          >✓</button>
-                          <button
-                            onClick={cancelEdit}
-                            className="text-[#aaa] hover:text-[#c8773a] text-base font-bold leading-none"
-                            title="Huỷ (Esc)"
-                          >✕</button>
-                        </div>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 justify-end">
-                          <span className={!row.tonDauAuto ? 'font-semibold' : ''}>
-                            {fmtNum(row.tonDau)}
-                          </span>
-                          {!row.tonDauAuto && (
-                            <span
-                              className="text-amber-400 text-xs cursor-pointer hover:text-red-500"
-                              title="Xoá số kiểm kho (về tự động tính)"
-                              onClick={e => { e.stopPropagation(); removeAdj(row.name) }}
-                            >✏</span>
-                          )}
-                          {canEdit && row.tonDauAuto && editingCell !== row.name && (
-                            <span className="opacity-0 group-hover:opacity-40 text-[#c8773a] text-[10px] transition-opacity">chốt</span>
-                          )}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 border-b border-[#f0e8d8] text-sm text-right font-semibold text-[#3aaa6e]">
-                      {row.nhap ? fmtNum(row.nhap) : <span className="text-[#ddd]">—</span>}
-                    </td>
-                    <td className="px-3 py-2 border-b border-[#f0e8d8] text-sm text-right font-semibold text-[#c8773a]">
-                      {row.xuat ? fmtNum(row.xuat) : <span className="text-[#ddd]">—</span>}
-                    </td>
-                    <td
-                      className={`px-3 py-2 border-b border-[#f0e8d8] text-sm text-right font-bold
-                        ${row.tonCuoi < 0 ? 'text-red-500 bg-red-50' : row.tonCuoi === 0 ? 'text-[#aaa]' : 'text-[#3d1f0a]'}`}
-                      title={`Tồn cuối = Tồn đầu (${fmtNum(row.tonDau)}) + Nhập (${fmtNum(row.nhap)}) − Xuất (${fmtNum(row.xuat)}) = ${fmtNum(row.tonCuoi)}`}
-                    >
-                      {row.tonCuoi !== 0 ? fmtNum(row.tonCuoi) : <span className="text-[#ddd]">—</span>}
-                    </td>
-                    <td className="px-3 py-2 border-b border-[#f0e8d8] text-sm text-right text-[#3d1f0a]">
-                      {row.tienCuoi ? row.tienCuoi.toLocaleString('vi-VN') + ' ₫' : '—'}
-                    </td>
-                  </tr>
-                ))}
+                {groupedData.map(([catName, catItems]) => {
+                  const catTD    = catItems.reduce((s, r) => s + r.tonDau, 0)
+                  const catTDTien= catItems.reduce((s, r) => s + r.tienDau, 0)
+                  const catN     = catItems.reduce((s, r) => s + r.nhap, 0)
+                  const catNTien = catItems.reduce((s, r) => s + r.tienNhap, 0)
+                  const catX     = catItems.reduce((s, r) => s + r.xuat, 0)
+                  const catXTien = catItems.reduce((s, r) => s + r.tienXuat, 0)
+                  const catTC    = catItems.reduce((s, r) => s + r.tonCuoi, 0)
+                  const catTCTien= catItems.reduce((s, r) => s + r.tienCuoi, 0)
+
+                  return (
+                    <tr key={catName} className="contents">
+                      {/* Dòng tên Kho MISA */}
+                      <tr className="bg-[#eef2f7] border-y border-[#cbd5e1] font-semibold text-[#1e293b]">
+                        <td colSpan={13} className="px-3 py-2 border-r border-[#cbd5e1]">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs flex items-center gap-1.5 text-[#1e40af]">
+                              <span>📁</span> Tên kho: <span className="font-bold">{catName}</span> ({catItems.length} mặt hàng)
+                            </span>
+                            <span className="text-[11px] font-normal text-[#64748b]">
+                              Cộng tồn cuối: <span className="font-semibold text-[#1e293b]">{fmtNum(catTC)}</span> ({catTCTien.toLocaleString('vi-VN')} ₫)
+                            </span>
+                          </div>
+                        </td>
+                      </tr>
+
+                      {/* Các dòng sản phẩm thuộc Kho */}
+                      {catItems.map((row, idx) => (
+                        <tr key={row.name} className={`hover:bg-[#f8fafc] border-b border-[#e2e8f0] transition-colors ${idx % 2 === 1 ? 'bg-[#fcfdfd]' : ''}`}>
+                          <td className="px-2.5 py-2 text-center border-r border-[#e2e8f0] text-[#94a3b8]">{row.stt}</td>
+                          <td className="px-3 py-2 border-r border-[#e2e8f0] font-mono text-[11px] text-[#475569]">{row.code || '—'}</td>
+                          <td className="px-3 py-2 border-r border-[#e2e8f0] font-medium text-[#0f172a]">{row.name}</td>
+                          <td className="px-2 py-2 text-center border-r border-[#e2e8f0] text-[#64748b]">{row.unit}</td>
+                          <td className="px-3 py-2 text-right border-r border-[#e2e8f0] text-[#64748b]">
+                            {row.donGia ? row.donGia.toLocaleString('vi-VN') : '—'}
+                          </td>
+
+                          {/* Đầu kỳ (SL & Giá trị) */}
+                          <td
+                            className={`px-2.5 py-2 text-right border-r border-[#e2e8f0] font-medium group relative
+                              ${!row.tonDauAuto ? 'bg-amber-50 text-amber-800' : 'text-[#334155]'}
+                              ${canEdit && editingCell !== row.name ? 'cursor-pointer hover:bg-amber-100' : ''}
+                            `}
+                            title={
+                              !row.tonDauAuto
+                                ? `✏ Kiểm kho: ${fmtNum(row.tonDau)}\nClick để sửa · Click ✏ để xoá`
+                                : canEdit ? `Tự động tính từ HĐ: ${fmtNum(row.tonDau)}\nClick để chốt kiểm kho` : `Tự động: ${fmtNum(row.tonDau)}`
+                            }
+                            onClick={() => editingCell !== row.name && openEdit(row.name, row.tonDau)}
+                          >
+                            {editingCell === row.name ? (
+                              <div className="flex items-center gap-1 justify-end" onClick={e => e.stopPropagation()}>
+                                <input
+                                  ref={editInputRef}
+                                  type="number"
+                                  step="0.01"
+                                  value={editVal}
+                                  onChange={e => setEditVal(e.target.value)}
+                                  onKeyDown={e => {
+                                    if (e.key === 'Enter') saveEdit(row.name)
+                                    if (e.key === 'Escape') cancelEdit()
+                                  }}
+                                  className="w-16 text-right text-xs border border-[#c8773a] rounded px-1 py-0.5 outline-none bg-white text-[#3d1f0a]"
+                                  disabled={saving}
+                                />
+                                <button
+                                  onClick={() => saveEdit(row.name)}
+                                  disabled={saving}
+                                  className="text-green-600 hover:text-green-800 font-bold"
+                                  title="Lưu (Enter)"
+                                >✓</button>
+                                <button
+                                  onClick={cancelEdit}
+                                  className="text-gray-400 hover:text-red-500 font-bold"
+                                  title="Huỷ (Esc)"
+                                >✕</button>
+                              </div>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 justify-end w-full">
+                                <span className={!row.tonDauAuto ? 'font-semibold' : ''}>
+                                  {fmtNum(row.tonDau)}
+                                </span>
+                                {!row.tonDauAuto && (
+                                  <span
+                                    className="text-amber-500 text-[10px] cursor-pointer hover:text-red-500"
+                                    title="Xoá số kiểm kho (về tự động)"
+                                    onClick={e => { e.stopPropagation(); removeAdj(row.name) }}
+                                  >✏</span>
+                                )}
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-right border-r border-[#e2e8f0] text-[#64748b]">
+                            {row.tienDau ? row.tienDau.toLocaleString('vi-VN') : '—'}
+                          </td>
+
+                          {/* Nhập kho (SL & Giá trị) */}
+                          <td className="px-2.5 py-2 text-right border-r border-[#e2e8f0] font-semibold text-[#16a34a]">
+                            {row.nhap ? fmtNum(row.nhap) : <span className="text-[#cbd5e1] font-normal">—</span>}
+                          </td>
+                          <td className="px-3 py-2 text-right border-r border-[#e2e8f0] text-[#15803d]">
+                            {row.tienNhap ? row.tienNhap.toLocaleString('vi-VN') : <span className="text-[#cbd5e1]">—</span>}
+                          </td>
+
+                          {/* Xuất kho (SL & Giá trị) */}
+                          <td className="px-2.5 py-2 text-right border-r border-[#e2e8f0] font-semibold text-[#d97706]">
+                            {row.xuat ? fmtNum(row.xuat) : <span className="text-[#cbd5e1] font-normal">—</span>}
+                          </td>
+                          <td className="px-3 py-2 text-right border-r border-[#e2e8f0] text-[#b45309]">
+                            {row.tienXuat ? row.tienXuat.toLocaleString('vi-VN') : <span className="text-[#cbd5e1]">—</span>}
+                          </td>
+
+                          {/* Cuối kỳ (SL & Giá trị) */}
+                          <td
+                            className={`px-2.5 py-2 text-right border-r border-[#e2e8f0] font-bold
+                              ${row.tonCuoi < 0 ? 'text-red-600 bg-red-50' : row.tonCuoi === 0 ? 'text-[#cbd5e1] font-normal' : 'text-[#0f172a]'}`}
+                            title={`Tồn cuối = ${fmtNum(row.tonDau)} + ${fmtNum(row.nhap)} − ${fmtNum(row.xuat)} = ${fmtNum(row.tonCuoi)}`}
+                          >
+                            {row.tonCuoi !== 0 ? fmtNum(row.tonCuoi) : '—'}
+                          </td>
+                          <td className="px-3 py-2 text-right font-semibold text-[#0f172a]">
+                            {row.tienCuoi ? row.tienCuoi.toLocaleString('vi-VN') : '—'}
+                          </td>
+                        </tr>
+                      ))}
+
+                      {/* Dòng Cộng theo Kho */}
+                      <tr className="bg-[#f1f5f9] font-semibold text-[#334155] border-b border-[#cbd5e1]">
+                        <td colSpan={5} className="px-3 py-1.5 text-right border-r border-[#cbd5e1] italic text-[11px]">
+                          Cộng {catName}
+                        </td>
+                        <td className="px-2.5 py-1.5 text-right border-r border-[#cbd5e1]">{fmtNum(catTD)}</td>
+                        <td className="px-3 py-1.5 text-right border-r border-[#cbd5e1]">{catTDTien.toLocaleString('vi-VN')}</td>
+                        <td className="px-2.5 py-1.5 text-right border-r border-[#cbd5e1] text-[#16a34a]">{fmtNum(catN)}</td>
+                        <td className="px-3 py-1.5 text-right border-r border-[#cbd5e1] text-[#15803d]">{catNTien.toLocaleString('vi-VN')}</td>
+                        <td className="px-2.5 py-1.5 text-right border-r border-[#cbd5e1] text-[#d97706]">{fmtNum(catX)}</td>
+                        <td className="px-3 py-1.5 text-right border-r border-[#cbd5e1] text-[#b45309]">{catXTien.toLocaleString('vi-VN')}</td>
+                        <td className="px-2.5 py-1.5 text-right border-r border-[#cbd5e1] text-[#0f172a]">{fmtNum(catTC)}</td>
+                        <td className="px-3 py-1.5 text-right text-[#0f172a]">{catTCTien.toLocaleString('vi-VN')}</td>
+                      </tr>
+                    </tr>
+                  )
+                })}
               </tbody>
+
+              {/* TỔNG CỘNG CHUNG */}
               <tfoot>
-                <tr className="bg-[#f5e6cc]">
-                  <td colSpan={4} className="px-3 py-2 text-xs font-bold text-right text-[#3d1f0a]">TỔNG CỘNG</td>
-                  <td className="px-3 py-2 text-sm text-right font-bold text-[#3d1f0a]">{fmtNum(totalTonDau)}</td>
-                  <td className="px-3 py-2 text-sm text-right font-bold text-[#3aaa6e]">{fmtNum(totalNhap)}</td>
-                  <td className="px-3 py-2 text-sm text-right font-bold text-[#c8773a]">{fmtNum(totalXuat)}</td>
-                  <td className="px-3 py-2 text-sm text-right font-bold text-[#3d1f0a]">{fmtNum(totalTonCuoi)}</td>
-                  <td className="px-3 py-2 text-sm text-right font-bold text-[#3d1f0a]">{totalTien.toLocaleString('vi-VN')} ₫</td>
+                <tr className="bg-[#e2e8f0] font-bold text-[#0f172a] text-xs border-t-2 border-[#94a3b8]">
+                  <td colSpan={5} className="px-3 py-2.5 text-right border-r border-[#cbd5e1] uppercase">TỔNG CỘNG CHUNG</td>
+                  <td className="px-2.5 py-2.5 text-right border-r border-[#cbd5e1]">{fmtNum(totalTonDau)}</td>
+                  <td className="px-3 py-2.5 text-right border-r border-[#cbd5e1]">{totalTienDau.toLocaleString('vi-VN')}</td>
+                  <td className="px-2.5 py-2.5 text-right border-r border-[#cbd5e1] text-[#16a34a]">{fmtNum(totalNhap)}</td>
+                  <td className="px-3 py-2.5 text-right border-r border-[#cbd5e1] text-[#15803d]">{totalTienNhap.toLocaleString('vi-VN')}</td>
+                  <td className="px-2.5 py-2.5 text-right border-r border-[#cbd5e1] text-[#d97706]">{fmtNum(totalXuat)}</td>
+                  <td className="px-3 py-2.5 text-right border-r border-[#cbd5e1] text-[#b45309]">{totalTienXuat.toLocaleString('vi-VN')}</td>
+                  <td className="px-2.5 py-2.5 text-right border-r border-[#cbd5e1] text-[#0f172a]">{fmtNum(totalTonCuoi)}</td>
+                  <td className="px-3 py-2.5 text-right text-[#0f172a]">{totalTienCuoi.toLocaleString('vi-VN')} ₫</td>
                 </tr>
               </tfoot>
             </table>
