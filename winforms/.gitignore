@@ -1,0 +1,17 @@
+# Visual Studio & .NET / WinForms .gitignore
+
+# Build results
+[Bb]in/
+[Oo]bj/
+publish_release/
+
+# Visual Studio temporary files & user settings
+.vs/
+*.user
+*.userosv
+*.suo
+*.userprefs
+
+# C# cache files
+*.cache
+*.DotNetAttributeCache

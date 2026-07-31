@@ -449,7 +449,7 @@ export default function SummaryPage() {
       { wch: 12 }, // Cuối kỳ SL
       { wch: 15 }  // Cuối kỳ Giá trị
     ]
-    XLSX.utils.book_append_sheet(wb, ws1, 'Tong hop ton kho MISA')
+    XLSX.utils.book_append_sheet(wb, ws1, 'Tong hop ton kho')
 
     // Sheet 2: NHẬP KHO
     const s2Data: (string | number)[][] = [
@@ -473,7 +473,7 @@ export default function SummaryPage() {
     ws3['!cols'] = [{wch:12},{wch:14},{wch:38},{wch:8},{wch:12},{wch:14},{wch:14},{wch:20}]
     XLSX.utils.book_append_sheet(wb, ws3, 'XUẤT KHO NVL')
 
-    XLSX.writeFile(wb, `Tong-hop-ton-kho-MISA-${tag}.xlsx`)
+    XLSX.writeFile(wb, `Tong-hop-ton-kho-${tag}.xlsx`)
   }
 
   const years         = [now.getFullYear() - 1, now.getFullYear(), now.getFullYear() + 1]
@@ -488,7 +488,7 @@ export default function SummaryPage() {
 
   return (
     <div className="p-4 max-w-7xl mx-auto">
-      {/* Header phong cách MISA */}
+      {/* Header báo cáo tổng hợp */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 bg-white p-4 rounded-xl border border-[#f5e6cc] shadow-sm">
         <div>
           <div className="flex items-center gap-2">
@@ -505,7 +505,7 @@ export default function SummaryPage() {
           disabled={rows.length === 0 || loading}
           className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg bg-[#1e7a4a] text-white text-sm font-semibold hover:bg-[#165c37] transition-colors disabled:opacity-40 disabled:cursor-not-allowed shadow-sm self-start sm:self-auto cursor-pointer"
         >
-          📥 Xuất Excel chuẩn MISA (.xlsx)
+          📥 Xuất Excel (.xlsx)
         </button>
       </div>
 

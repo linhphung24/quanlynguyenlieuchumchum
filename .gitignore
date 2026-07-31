@@ -34,3 +34,31 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# ============================================================================
+# Visual Studio / C# / .NET / WinForms
+# ============================================================================
+# Build results
+[Bb]in/
+[Oo]bj/
+[Ll]og/
+[Ll]ogs/
+winforms/publish_release/
+winforms/*/bin/
+winforms/*/obj/
+
+# Visual Studio 2022 / 2019 / 2017 IDE files
+.vs/
+*.user
+*.userosv
+*.suo
+*.userprefs
+*.sln.docstates
+
+# NuGet Packages
+*.nupkg
+packages/
+
+# C# cache files
+*.cache
+*.DotNetAttributeCache
