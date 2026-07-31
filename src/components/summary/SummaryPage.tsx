@@ -69,10 +69,10 @@ export default function SummaryPage() {
       const startStr = `${year}-${pad(month)}-01`
       const endStr   = `${year}-${pad(month)}-${pad(new Date(year, month, 0).getDate())}`
 
-      // Map nhanh thông tin sản phẩm
+      // Map nhanh thông tin sản phẩm (key lowercase + trim)
       const productMap = new Map<string, typeof allProducts[0]>()
       for (const p of allProducts) {
-        productMap.set(p.name, p)
+        productMap.set(p.name.trim().toLowerCase(), p)
       }
 
       // 4 query song song: hoá đơn tháng + adj kiểm kho + tồn lô hiện tại + hoá đơn SAU kỳ
@@ -89,38 +89,41 @@ export default function SummaryPage() {
       ])
       const inMonthInvs = (inMonthData || []) as Invoice[]
 
-      // Adj map: số lượng kiểm kho đầu kỳ (chốt tay override)
+      // Adj map: số lượng kiểm kho đầu kỳ (key lowercase + trim)
       const newAdjMap = new Map<string, number>()
-      for (const a of (adjData || [])) newAdjMap.set(a.product_name, a.adj_qty)
+      for (const a of (adjData || [])) newAdjMap.set(a.product_name.trim().toLowerCase(), a.adj_qty)
       setAdjMap(newAdjMap)
 
-      // Batch map: tổng tồn thực tế theo lô hiện tại (case-insensitive key)
+      // Batch map: tổng tồn thực tế theo lô hiện tại (key lowercase + trim)
       const batchMap = new Map<string, number>()
       for (const b of (batchData || [])) {
-        const key = b.product_name.toLowerCase()
+        const key = b.product_name.trim().toLowerCase()
         batchMap.set(key, (batchMap.get(key) || 0) + b.remaining_qty)
       }
 
-      // Future map: nhập/xuất SAU kỳ báo cáo (dùng tính ngược tồn đầu kỳ)
+      // Future map: nhập/xuất SAU kỳ báo cáo (key lowercase + trim)
       const futureMap = new Map<string, { fn: number; fx: number }>()
       const getFut = (name: string) => {
-        if (!futureMap.has(name)) futureMap.set(name, { fn: 0, fx: 0 })
-        return futureMap.get(name)!
+        const key = name.trim().toLowerCase()
+        if (!futureMap.has(key)) futureMap.set(key, { fn: 0, fx: 0 })
+        return futureMap.get(key)!
       }
       for (const inv of (afterData || []) as { type: string; items: (ItemIn | ItemOut)[] }[]) {
         for (const it of inv.items) {
-          if (!it.name || !(((it as ItemIn).amount ?? (it as ItemOut).amount ?? 0) > 0)) continue
-          const amt = (it as ItemIn).amount ?? (it as ItemOut).amount ?? 0
-          if (inv.type === 'in') getFut(it.name).fn += amt
-          else getFut(it.name).fx += amt
+          const name = it.name || ''
+          const amt  = (it as ItemIn).amount ?? (it as ItemOut).amount ?? 0
+          if (!name || !(amt > 0)) continue
+          if (inv.type === 'in') getFut(name).fn += amt
+          else getFut(name).fx += amt
         }
       }
 
-      // Nhập/xuất trong tháng (Số lượng & Thành tiền)
+      // Nhập/xuất trong tháng (Số lượng & Thành tiền) - Key lowercase + trim
       const pmap = new Map<string, { nhapM: number; tienNhapM: number; xuatM: number; tienXuatM: number }>()
       const get  = (name: string) => {
-        if (!pmap.has(name)) pmap.set(name, { nhapM: 0, tienNhapM: 0, xuatM: 0, tienXuatM: 0 })
-        return pmap.get(name)!
+        const key = name.trim().toLowerCase()
+        if (!pmap.has(key)) pmap.set(key, { nhapM: 0, tienNhapM: 0, xuatM: 0, tienXuatM: 0 })
+        return pmap.get(key)!
       }
 
       const nhapRows: NhapRow[] = []
@@ -129,38 +132,44 @@ export default function SummaryPage() {
       for (const inv of inMonthInvs) {
         if (inv.type === 'in') {
           for (const it of (inv.items as ItemIn[])) {
-            if (!it.name || !(it.amount > 0)) continue
-            const p = productMap.get(it.name)
-            const price = it.price || p?.cost_price || 0
-            const thanhTien = it.amount * price
+            const name = it.name?.trim() || ''
+            const amt  = it.amount || 0
+            if (!name || !(amt > 0)) continue
 
-            const e = get(it.name)
-            e.nhapM += it.amount
+            const p = productMap.get(name.toLowerCase())
+            const price = it.price || p?.cost_price || 0
+            const thanhTien = amt * price
+
+            const e = get(name)
+            e.nhapM += amt
             e.tienNhapM += thanhTien
 
             nhapRows.push({
               ngay: inv.inv_date, soChungTu: inv.code,
-              ten: it.name, dvt: it.unit,
-              soLuong: it.amount, donGia: price,
+              ten: name, dvt: it.unit || p?.unit || '',
+              soLuong: amt, donGia: price,
               thanhTien,
               nhaCungCap: inv.partner || '', ghiChu: inv.note || '',
             })
           }
         } else {
           for (const it of (inv.items as ItemOut[])) {
-            if (!it.name || !(it.amount! > 0)) continue
-            const p = productMap.get(it.name)
-            const price = it.price || p?.cost_price || 0
-            const thanhTien = it.amount! * price
+            const name = it.name?.trim() || ''
+            const amt  = it.amount! || 0
+            if (!name || !(amt > 0)) continue
 
-            const e = get(it.name)
-            e.xuatM += it.amount!
+            const p = productMap.get(name.toLowerCase())
+            const price = it.price || p?.cost_price || 0
+            const thanhTien = amt * price
+
+            const e = get(name)
+            e.xuatM += amt
             e.tienXuatM += thanhTien
 
             xuatRows.push({
               ngay: inv.inv_date, soChungTu: inv.code,
-              ten: it.name, dvt: it.unit || '',
-              donGia: price, soLuong: it.amount!,
+              ten: name, dvt: it.unit || p?.unit || '',
+              donGia: price, soLuong: amt,
               thanhTien,
               ghiChu: inv.note || '',
             })
@@ -173,21 +182,26 @@ export default function SummaryPage() {
       // tonDau = tonCuoi − nhapM + xuatM  (hoặc adj nếu có kiểm kho override)
       const result: TongHopRow[] = []
       let stt = 1
+      const processedKeys = new Set<string>()
+
       for (const p of allProducts.filter(p => p.is_active)) {
-        const e        = pmap.get(p.name) || { nhapM: 0, tienNhapM: 0, xuatM: 0, tienXuatM: 0 }
+        const key      = p.name.trim().toLowerCase()
+        processedKeys.add(key)
+
+        const e        = pmap.get(key) || { nhapM: 0, tienNhapM: 0, xuatM: 0, tienXuatM: 0 }
         const donGia   = p.cost_price || 0
-        const batchQty = parseFloat((batchMap.get(p.name.toLowerCase()) || 0).toFixed(2))
-        const fut      = futureMap.get(p.name) || { fn: 0, fx: 0 }
-        const hasAdj   = newAdjMap.has(p.name)
+        const batchQty = parseFloat((batchMap.get(key) || 0).toFixed(2))
+        const fut      = futureMap.get(key) || { fn: 0, fx: 0 }
+        const hasAdj   = newAdjMap.has(key)
 
         let tonDau: number
         let tonCuoi: number
         if (hasAdj) {
           // Kiểm kho override: tồn đầu là số chốt, tồn cuối tính từ công thức
-          tonDau  = newAdjMap.get(p.name)!
+          tonDau  = newAdjMap.get(key)!
           tonCuoi = parseFloat((tonDau + e.nhapM - e.xuatM).toFixed(2))
         } else {
-          // Tính ngược từ tồn lô thực tế: tonCuoi(kỳ) = batchHiệnTại + futXuat − futNhap
+          // Tính ngược từ tồn lô thực tế: tonCuoi(kỳ) = batchHiện Tại + futXuat − futNhap
           tonCuoi = parseFloat((batchQty + fut.fx - fut.fn).toFixed(2))
           tonDau  = parseFloat((tonCuoi - e.nhapM + e.xuatM).toFixed(2))
         }
@@ -204,6 +218,30 @@ export default function SummaryPage() {
           donGia, tonDau, tienDau, nhap: e.nhapM, tienNhap, xuat: e.xuatM, tienXuat,
           tonCuoi, tienCuoi,
           tonDauAuto: !hasAdj,
+        })
+      }
+
+      // Xử lý các sản phẩm có hoá đơn nhập/xuất trong tháng nhưng chưa có trong danh mục products active
+      for (const [key, e] of pmap.entries()) {
+        if (processedKeys.has(key)) continue
+        const sampleIn  = nhapRows.find(r => r.ten.trim().toLowerCase() === key)
+        const sampleOut = xuatRows.find(r => r.ten.trim().toLowerCase() === key)
+        const name      = sampleIn?.ten || sampleOut?.ten || key
+        const unit      = sampleIn?.dvt || sampleOut?.dvt || ''
+        const donGia    = sampleIn?.donGia || sampleOut?.donGia || 0
+
+        const tonDau   = 0
+        const tonCuoi  = parseFloat((e.nhapM - e.xuatM).toFixed(2))
+        const tienDau  = 0
+        const tienNhap = e.tienNhapM
+        const tienXuat = e.tienXuatM
+        const tienCuoi = parseFloat((tonCuoi * donGia).toFixed(0))
+
+        result.push({
+          stt: stt++, code: '—', name, category: 'Khác', unit,
+          donGia, tonDau, tienDau, nhap: e.nhapM, tienNhap, xuat: e.xuatM, tienXuat,
+          tonCuoi, tienCuoi,
+          tonDauAuto: true,
         })
       }
 
@@ -238,9 +276,10 @@ export default function SummaryPage() {
         { onConflict: 'product_name,year,month' }
       )
       if (error) throw error
-      setAdjMap(prev => new Map(prev).set(productName, qty))
+      const key = productName.trim().toLowerCase()
+      setAdjMap(prev => new Map(prev).set(key, qty))
       setRows(prev => prev.map(r => {
-        if (r.name !== productName) return r
+        if (r.name.trim().toLowerCase() !== key) return r
         const tonCuoiAdj = qty + r.nhap - r.xuat
         return {
           ...r,
@@ -266,7 +305,8 @@ export default function SummaryPage() {
         .delete()
         .eq('product_name', productName).eq('year', year).eq('month', month)
       if (error) throw error
-      setAdjMap(prev => { const m = new Map(prev); m.delete(productName); return m })
+      const key = productName.trim().toLowerCase()
+      setAdjMap(prev => { const m = new Map(prev); m.delete(key); return m })
       loadData()
     } catch (e) {
       toast('Lỗi khi xoá điều chỉnh: ' + (e as Error).message, 'error')
