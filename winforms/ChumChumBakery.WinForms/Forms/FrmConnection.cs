@@ -1,7 +1,7 @@
 using System;
 using System.Windows.Forms;
 using ChumChumBakery.Core.Data;
-using Microsoft.Data.SqlClient;
+using System.Data.SqlClient;
 
 namespace ChumChumBakery.WinForms.Forms
 {

@@ -4,6 +4,7 @@ using System.Drawing;
 using System.Linq;
 using System.Windows.Forms;
 using ChumChumBakery.Core.Services;
+using ClosedXML.Excel;
 
 namespace ChumChumBakery.WinForms.Forms
 {
@@ -35,7 +36,46 @@ namespace ChumChumBakery.WinForms.Forms
 
             txtSearch.TextChanged += (s, e) => FilterData();
 
-            btnExport.Click += (s, e) => MessageBox.Show("Đã xuất báo cáo Tổng hợp tồn kho ra file Excel thành công!", "Xuất Excel", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            btnExport.Click += (s, e) => {
+                using (var sfd = new SaveFileDialog()) {
+                    sfd.Filter = "Excel files (*.xlsx)|*.xlsx|All files (*.*)|*.*";
+                    sfd.Title = "Chọn nơi lưu báo cáo Excel";
+                    sfd.FileName = $"BaoCaoTonKho_{cbMonth.SelectedItem}_{cbYear.SelectedItem}.xlsx";
+                    
+                    if (sfd.ShowDialog() == DialogResult.OK) {
+                        try {
+                            using (var wb = new XLWorkbook()) {
+                                var ws = wb.Worksheets.Add("BaoCaoTonKho");
+                                
+                                // Headers
+                                for (int i = 0; i < grid.Columns.Count; i++) {
+                                    ws.Cell(1, i + 1).Value = grid.Columns[i].HeaderText;
+                                    ws.Cell(1, i + 1).Style.Font.Bold = true;
+                                    ws.Cell(1, i + 1).Style.Fill.BackgroundColor = XLColor.LightGray;
+                                }
+                                
+                                // Rows
+                                int rowIndex = 2;
+                                foreach (DataGridViewRow row in grid.Rows) {
+                                    if (row.IsNewRow) continue;
+                                    for (int j = 0; j < grid.Columns.Count; j++) {
+                                        var val = row.Cells[j].Value?.ToString() ?? "";
+                                        ws.Cell(rowIndex, j + 1).Value = val;
+                                    }
+                                    rowIndex++;
+                                }
+                                
+                                ws.Columns().AdjustToContents();
+                                wb.SaveAs(sfd.FileName);
+                            }
+                            MessageBox.Show("Xuất báo cáo Excel thành công!\nFile được lưu tại: " + sfd.FileName, "Thông báo", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                        }
+                        catch (Exception ex) {
+                            MessageBox.Show("Lỗi khi xuất file Excel: " + ex.Message, "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        }
+                    }
+                }
+            };
 
             // Setup Custom DataGridView Columns
             grid.Columns.Clear();

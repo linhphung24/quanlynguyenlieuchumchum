@@ -34,6 +34,11 @@ namespace ChumChumBakery.Core.Models
         public string CreatedBy { get; set; } = string.Empty;
         public string UpdatedBy { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; } = DateTime.Now;
+        public DateTime? UpdatedAt { get; set; }
+        
+        // Phục vụ hiển thị trên lưới
+        public string TypeDisplay => Type == "in" ? "Nhập kho" : "Xuất kho";
+        public decimal TotalAmount { get; set; }
     }
 
     public class InvoiceDetail
@@ -81,10 +86,53 @@ namespace ChumChumBakery.Core.Models
     {
         public int Id { get; set; }
         public string ProductName { get; set; } = string.Empty;
+        public string ProductCode { get; set; } = string.Empty; // Added for UI display
+        public string Unit { get; set; } = string.Empty; // Added for UI display
         public int Year { get; set; }
         public int Month { get; set; }
         public decimal AdjQty { get; set; }
+        public decimal CurrentStock { get; set; } // Real-time stock for Excel export
+        public string CreatedBy { get; set; } = string.Empty;
         public string UpdatedBy { get; set; } = string.Empty;
+        public DateTime CreatedAt { get; set; } = DateTime.Now;
+        public DateTime? UpdatedAt { get; set; }
+    }
+
+    public class Recipe
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public decimal BaseYield { get; set; } = 1;
+        public string CreatedBy { get; set; } = string.Empty;
+        public string UpdatedBy { get; set; } = string.Empty;
+        public DateTime CreatedAt { get; set; } = DateTime.Now;
+        public DateTime? UpdatedAt { get; set; }
+    }
+
+    public class RecipeIngredient
+    {
+        public int Id { get; set; }
+        public int RecipeId { get; set; }
+        public string ProductName { get; set; } = string.Empty;
+        public decimal Amount { get; set; }
+        public string Unit { get; set; } = "g";
+        public decimal Price { get; set; }
+        
+        // Dùng cho hiển thị trên máy tính định mức
+        public decimal RequiredAmount { get; set; } 
+    }
+
+
+    public class AuditLog
+    {
+        public int Id { get; set; }
+        public string UserId { get; set; } = string.Empty;
+        public string UserName { get; set; } = string.Empty;
+        public string Action { get; set; } = string.Empty;
+        public string Entity { get; set; } = string.Empty;
+        public string EntityId { get; set; } = string.Empty;
+        public string Detail { get; set; } = string.Empty;
+        public DateTime CreatedAt { get; set; } = DateTime.Now;
     }
 
     public class User
@@ -94,5 +142,23 @@ namespace ChumChumBakery.Core.Models
         public string PasswordHash { get; set; } = string.Empty;
         public string FullName { get; set; } = string.Empty;
         public string Role { get; set; } = "staff"; // admin, manager, staff
+        public string CreatedBy { get; set; } = string.Empty;
+        public string UpdatedBy { get; set; } = string.Empty;
+        public DateTime CreatedAt { get; set; } = DateTime.Now;
+        public DateTime? UpdatedAt { get; set; }
+    }
+
+    public class Supplier
+    {
+        public int Id { get; set; }
+        public string Name { get; set; } = string.Empty;
+        public string Phone { get; set; } = string.Empty;
+        public string Address { get; set; } = string.Empty;
+        public string Note { get; set; } = string.Empty;
+        public bool IsActive { get; set; } = true;
+        public string CreatedBy { get; set; } = string.Empty;
+        public string UpdatedBy { get; set; } = string.Empty;
+        public DateTime CreatedAt { get; set; } = DateTime.Now;
+        public DateTime? UpdatedAt { get; set; }
     }
 }

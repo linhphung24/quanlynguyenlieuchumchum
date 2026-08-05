@@ -2,7 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Data;
 using ChumChumBakery.Core.Data;
-using Microsoft.Data.SqlClient;
+using System.Data.SqlClient;
 
 namespace ChumChumBakery.Core.Services
 {

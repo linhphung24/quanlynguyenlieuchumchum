@@ -9,17 +9,21 @@ namespace ChumChumBakery.WinForms.Forms
         public FrmMain()
         {
             InitializeComponent();
+            try { this.Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch {}
+            this.WindowState = FormWindowState.Maximized;
             SetupNavButtons();
             OpenSummaryReport();
         }
 
         private void SetupNavButtons()
         {
-            AddNavButton("📦 Sản phẩm / Kho", 60, (s, e) => ShowPanel(new Label { Text = "Quản lý Sản phẩm / Kho", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, Font = new Font("Segoe UI", 16) }));
-            AddNavButton("🧾 Hoá đơn Nhập / Xuất", 105, (s, e) => ShowPanel(new Label { Text = "Quản lý Hoá đơn", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, Font = new Font("Segoe UI", 16) }));
+            AddNavButton("📦 Sản phẩm / Kho", 60, (s, e) => { lblTitle.Text = "📦 Quản lý Sản phẩm / Kho"; ShowPanel(new FrmProducts()); });
+            AddNavButton("🧾 Hoá đơn Nhập / Xuất", 105, (s, e) => { lblTitle.Text = "🧾 Quản lý Hoá đơn Nhập / Xuất"; ShowPanel(new FrmInvoices()); });
             AddNavButton("📊 Tổng hợp tồn kho", 150, (s, e) => OpenSummaryReport());
-            AddNavButton("🥖 Công thức & Sản xuất", 195, (s, e) => ShowPanel(new Label { Text = "Công thức Bánh & Nhật ký Sản xuất", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, Font = new Font("Segoe UI", 16) }));
-            AddNavButton("👥 Quản lý Nhân sự", 240, (s, e) => ShowPanel(new Label { Text = "Quản lý Nhân sự Tiệm bánh", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleCenter, Font = new Font("Segoe UI", 16) }));
+            AddNavButton("📝 Tồn đầu kỳ / Kiểm kê", 195, (s, e) => { lblTitle.Text = "📝 Khai báo Tồn đầu kỳ"; ShowPanel(new FrmStockOpening()); });
+            AddNavButton("🥖 Tính định mức", 240, (s, e) => { lblTitle.Text = "🥖 Tính định mức (Công thức)"; ShowPanel(new FrmRecipes()); });
+            AddNavButton("🔐 Quản lý Tài khoản", 285, (s, e) => { lblTitle.Text = "🔐 Quản lý Tài khoản"; ShowPanel(new FrmUsers()); });
+            AddNavButton("🏢 Nhà Cung Cấp", 330, (s, e) => { lblTitle.Text = "🏢 Danh sách Nhà Cung Cấp"; ShowPanel(new FrmSuppliers()); });
         }
 
         private void AddNavButton(string text, int top, EventHandler onClick)

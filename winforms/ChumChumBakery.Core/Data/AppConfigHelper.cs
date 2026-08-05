@@ -36,7 +36,6 @@ namespace ChumChumBakery.Core.Data
         public static void SaveConfig(DbConfig config)
         {
             var json = JsonSerializer.Serialize(config, new JsonSerializerOptions { WriteIndented = true });
-            File.ReadAllText(ConfigPath);
             File.WriteAllText(ConfigPath, json);
             ApplyConnectionString(config);
         }
@@ -45,11 +44,11 @@ namespace ChumChumBakery.Core.Data
         {
             if (config.IntegratedSecurity)
             {
-                return $"Server={config.Server};Database={config.Database};Trusted_Connection=True;TrustServerCertificate=True;Connection Timeout=8;";
+                return $"Server={config.Server};Database={config.Database};Trusted_Connection=True;Encrypt=False;TrustServerCertificate=True;Connection Timeout=8;";
             }
             else
             {
-                return $"Server={config.Server};Database={config.Database};User Id={config.Username};Password={config.Password};TrustServerCertificate=True;Connection Timeout=8;";
+                return $"Server={config.Server};Database={config.Database};User Id={config.Username};Password={config.Password};Encrypt=False;TrustServerCertificate=True;Connection Timeout=8;";
             }
         }
 

@@ -1,0 +1,237 @@
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Drawing;
+using System.Linq;
+using System.Windows.Forms;
+using ChumChumBakery.Core.Models;
+using ChumChumBakery.Core.Services;
+
+namespace ChumChumBakery.WinForms.Forms
+{
+    public class FrmInvoiceEdit : Form
+    {
+        private InvoiceService _invoiceService = new InvoiceService();
+        private ProductService _productService = new ProductService();
+        
+        private ComboBox cbType;
+        private DateTimePicker dtInvDate;
+        private ComboBox cbPartner;
+        private TextBox txtPartner; // Keeping this reference temporarily if needed, but will replace functionality
+        private TextBox txtNote;
+        
+        private ComboBox cbProducts;
+        private TextBox txtAmount;
+        private TextBox txtPrice;
+        private Button btnAddItem;
+        private DataGridView gridDetails;
+        
+        private BindingList<InvoiceDetail> _details = new BindingList<InvoiceDetail>();
+        private List<Product> _allProducts = new List<Product>();
+        private SupplierService _supplierService = new SupplierService();
+
+        public FrmInvoiceEdit()
+        {
+            InitializeUI();
+            LoadData();
+        }
+
+        private void InitializeUI()
+        {
+            this.Text = "Tạo Hóa Đơn Mới";
+            this.Size = new Size(800, 600);
+            this.StartPosition = FormStartPosition.CenterParent;
+            this.BackColor = Color.White;
+            this.Font = new Font("Segoe UI", 10F);
+
+            // Header info
+            var grpInfo = new GroupBox { Text = "Thông tin chung", Location = new Point(10, 10), Size = new Size(760, 100) };
+            
+            grpInfo.Controls.Add(new Label { Text = "Loại HĐ:", Location = new Point(20, 30), AutoSize = true });
+            cbType = new ComboBox { Location = new Point(90, 27), Width = 120, DropDownStyle = ComboBoxStyle.DropDownList };
+            cbType.Items.AddRange(new[] { "Nhập kho", "Xuất kho" });
+            cbType.SelectedIndex = 0;
+            grpInfo.Controls.Add(cbType);
+
+            grpInfo.Controls.Add(new Label { Text = "Ngày:", Location = new Point(230, 30), AutoSize = true });
+            dtInvDate = new DateTimePicker { Location = new Point(280, 27), Width = 120, Format = DateTimePickerFormat.Short };
+            grpInfo.Controls.Add(dtInvDate);
+
+            grpInfo.Controls.Add(new Label { Text = "Đối tác:", Location = new Point(420, 30), AutoSize = true });
+            cbPartner = new ComboBox { Location = new Point(480, 27), Width = 260 };
+            cbPartner.AutoCompleteMode = AutoCompleteMode.SuggestAppend;
+            cbPartner.AutoCompleteSource = AutoCompleteSource.ListItems;
+            grpInfo.Controls.Add(cbPartner);
+
+            grpInfo.Controls.Add(new Label { Text = "Ghi chú:", Location = new Point(20, 65), AutoSize = true });
+            txtNote = new TextBox { Location = new Point(90, 62), Width = 650 };
+            grpInfo.Controls.Add(txtNote);
+
+            // Add detail panel
+            var grpAdd = new GroupBox { Text = "Thêm Sản Phẩm", Location = new Point(10, 120), Size = new Size(760, 70) };
+            
+            cbProducts = new ComboBox { Location = new Point(20, 30), Width = 300, DropDownStyle = ComboBoxStyle.DropDown };
+            cbProducts.AutoCompleteMode = AutoCompleteMode.SuggestAppend;
+            cbProducts.AutoCompleteSource = AutoCompleteSource.ListItems;
+            cbProducts.SelectedIndexChanged += (s, e) => {
+                if (cbProducts.SelectedItem is Product p)
+                {
+                    txtPrice.Text = cbType.SelectedIndex == 0 ? p.CostPrice.ToString("0.##") : p.SellPrice.ToString("0.##");
+                }
+            };
+            grpAdd.Controls.Add(cbProducts);
+
+            grpAdd.Controls.Add(new Label { Text = "SL:", Location = new Point(340, 33), AutoSize = true });
+            txtAmount = new TextBox { Location = new Point(370, 30), Width = 80 };
+            grpAdd.Controls.Add(txtAmount);
+
+            grpAdd.Controls.Add(new Label { Text = "Đơn giá:", Location = new Point(470, 33), AutoSize = true });
+            txtPrice = new TextBox { Location = new Point(530, 30), Width = 100 };
+            grpAdd.Controls.Add(txtPrice);
+
+            btnAddItem = new Button { Text = "Thêm", Location = new Point(650, 28), Width = 90, BackColor = Color.FromArgb(33, 150, 243), ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
+            btnAddItem.FlatAppearance.BorderSize = 0;
+            btnAddItem.Click += BtnAddItem_Click;
+            grpAdd.Controls.Add(btnAddItem);
+
+            // Grid
+            gridDetails = new DataGridView
+            {
+                Location = new Point(10, 200),
+                Size = new Size(760, 300),
+                AutoGenerateColumns = false,
+                AllowUserToAddRows = false,
+                BackgroundColor = Color.WhiteSmoke,
+                SelectionMode = DataGridViewSelectionMode.FullRowSelect,
+                MultiSelect = false
+            };
+            gridDetails.Columns.Add(new DataGridViewTextBoxColumn { DataPropertyName = "ProductName", HeaderText = "Sản phẩm", Width = 300 });
+            gridDetails.Columns.Add(new DataGridViewTextBoxColumn { DataPropertyName = "Unit", HeaderText = "ĐVT", Width = 80 });
+            gridDetails.Columns.Add(new DataGridViewTextBoxColumn { DataPropertyName = "Amount", HeaderText = "Số lượng", Width = 100 });
+            gridDetails.Columns.Add(new DataGridViewTextBoxColumn { DataPropertyName = "Price", HeaderText = "Đơn giá", Width = 120 });
+            gridDetails.Columns.Add(new DataGridViewTextBoxColumn { DataPropertyName = "Subtotal", HeaderText = "Thành tiền", Width = 120 });
+            gridDetails.DataSource = _details;
+
+            // Buttons
+            var btnSave = new Button { Text = "Lưu Hóa Đơn", Location = new Point(650, 510), Width = 120, Height = 40, BackColor = Color.FromArgb(76, 175, 80), ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
+            btnSave.FlatAppearance.BorderSize = 0;
+            btnSave.Click += BtnSave_Click;
+
+            this.Controls.AddRange(new Control[] { grpInfo, grpAdd, gridDetails, btnSave });
+        }
+
+        private void LoadData()
+        {
+            _allProducts = _productService.GetAllProducts("");
+            cbProducts.DataSource = _allProducts;
+            cbProducts.DisplayMember = "Name";
+            cbProducts.ValueMember = "Id";
+
+            var suppliers = _supplierService.GetAllSuppliers("");
+            foreach (var s in suppliers)
+            {
+                cbPartner.Items.Add(s.Name);
+            }
+        }
+
+        private void BtnAddItem_Click(object sender, EventArgs e)
+        {
+            if (cbProducts.SelectedItem is Product p)
+            {
+                if (decimal.TryParse(txtAmount.Text, out decimal amt) && decimal.TryParse(txtPrice.Text, out decimal price))
+                {
+                    _details.Add(new InvoiceDetail
+                    {
+                        ProductId = p.Id,
+                        ProductName = p.Name,
+                        Unit = p.Unit,
+                        Amount = amt,
+                        Price = price
+                    });
+                    txtAmount.Clear();
+                    cbProducts.Focus();
+                }
+                else
+                {
+                    MessageBox.Show("Vui lòng nhập số lượng và đơn giá hợp lệ.");
+                }
+            }
+            else
+            {
+                // Try matching by typed text if SelectedItem is null
+                string typedName = cbProducts.Text.Trim();
+                var matchedProduct = _allProducts.FirstOrDefault(x => x.Name.Equals(typedName, StringComparison.OrdinalIgnoreCase) || x.Code.Equals(typedName, StringComparison.OrdinalIgnoreCase));
+                if (matchedProduct != null)
+                {
+                    if (decimal.TryParse(txtAmount.Text, out decimal amt) && decimal.TryParse(txtPrice.Text, out decimal price))
+                    {
+                        _details.Add(new InvoiceDetail
+                        {
+                            ProductId = matchedProduct.Id,
+                            ProductName = matchedProduct.Name,
+                            Unit = matchedProduct.Unit,
+                            Amount = amt,
+                            Price = price
+                        });
+                        txtAmount.Clear();
+                        cbProducts.Focus();
+                    }
+                    else
+                    {
+                        MessageBox.Show("Vui lòng nhập số lượng và đơn giá hợp lệ.");
+                    }
+                }
+                else
+                {
+                    MessageBox.Show("Vui lòng chọn hoặc nhập đúng tên sản phẩm có trong danh mục.");
+                }
+            }
+        }
+
+        protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+        {
+            if (keyData == Keys.Enter && !gridDetails.Focused)
+            {
+                if (this.ActiveControl == txtPrice || this.ActiveControl == btnAddItem)
+                {
+                    BtnAddItem_Click(this, EventArgs.Empty);
+                    return true;
+                }
+
+                this.SelectNextControl(this.ActiveControl, true, true, true, true);
+                return true;
+            }
+            return base.ProcessCmdKey(ref msg, keyData);
+        }
+
+        private void BtnSave_Click(object sender, EventArgs e)
+        {
+            if (_details.Count == 0)
+            {
+                MessageBox.Show("Vui lòng thêm ít nhất 1 sản phẩm vào hóa đơn.");
+                return;
+            }
+
+            var inv = new Invoice
+            {
+                Type = cbType.SelectedIndex == 0 ? "in" : "out",
+                InvDate = dtInvDate.Value,
+                Code = "HD-" + DateTime.Now.ToString("yyMMddHHmm"), // Generate mock code
+                Partner = cbPartner.Text,
+                Note = txtNote.Text
+            };
+
+            try
+            {
+                _invoiceService.SaveInvoice(inv, _details.ToList());
+                MessageBox.Show("Thêm hóa đơn thành công!", "Thông báo", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                this.DialogResult = DialogResult.OK;
+                this.Close();
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Lỗi: " + ex.Message, "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+    }
+}
