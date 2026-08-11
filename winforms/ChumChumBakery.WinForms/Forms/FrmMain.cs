@@ -12,21 +12,60 @@ namespace ChumChumBakery.WinForms.Forms
             try { this.Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath); } catch {}
             this.WindowState = FormWindowState.Maximized;
             SetupNavButtons();
-            OpenSummaryReport();
         }
+
+        private Button _activeButton = null;
 
         private void SetupNavButtons()
         {
-            AddNavButton("📦 Sản phẩm / Kho", 60, (s, e) => { lblTitle.Text = "📦 Quản lý Sản phẩm / Kho"; ShowPanel(new FrmProducts()); });
-            AddNavButton("🧾 Hoá đơn Nhập / Xuất", 105, (s, e) => { lblTitle.Text = "🧾 Quản lý Hoá đơn Nhập / Xuất"; ShowPanel(new FrmInvoices()); });
-            AddNavButton("📊 Tổng hợp tồn kho", 150, (s, e) => OpenSummaryReport());
-            AddNavButton("📝 Tồn đầu kỳ / Kiểm kê", 195, (s, e) => { lblTitle.Text = "📝 Khai báo Tồn đầu kỳ"; ShowPanel(new FrmStockOpening()); });
-            AddNavButton("🥖 Tính định mức", 240, (s, e) => { lblTitle.Text = "🥖 Tính định mức (Công thức)"; ShowPanel(new FrmRecipes()); });
-            AddNavButton("🔐 Quản lý Tài khoản", 285, (s, e) => { lblTitle.Text = "🔐 Quản lý Tài khoản"; ShowPanel(new FrmUsers()); });
-            AddNavButton("🏢 Nhà Cung Cấp", 330, (s, e) => { lblTitle.Text = "🏢 Danh sách Nhà Cung Cấp"; ShowPanel(new FrmSuppliers()); });
+            pnlSidebar.Controls.Clear();
+            pnlSidebar.AutoScroll = true;
+
+            int currentY = 60; // vị trí bắt đầu bên dưới Logo
+
+            // NHÓM 1: QUẢN LÝ NHẬP XUẤT KHO
+            currentY = AddGroupHeader("📦 QUẢN LÝ NHẬP XUẤT", currentY);
+            AddNavButton("🧾 Hóa đơn Nhập / Xuất", ref currentY, (s, e) => { lblTitle.Text = "🧾 Quản lý Hóa đơn Nhập / Xuất"; ShowPanel(new FrmInvoices(), (Button)s); });
+            AddNavButton("📝 Tồn đầu kỳ / Kiểm kê", ref currentY, (s, e) => { lblTitle.Text = "📝 Khai báo Tồn đầu kỳ"; ShowPanel(new FrmStockOpening(), (Button)s); });
+            AddNavButton("🏷️ Lô hàng & FIFO", ref currentY, (s, e) => { lblTitle.Text = "🏷️ Quản lý Lô hàng & Hạn sử dụng (FIFO)"; ShowPanel(new FrmBatches(), (Button)s); });
+
+            currentY += 10;
+
+            // NHÓM 2: BÁO CÁO & ĐỊNH MỨC
+            currentY = AddGroupHeader("📊 BÁO CÁO & THỐNG KÊ", currentY);
+            var btnReport = AddNavButton("📊 Tổng hợp tồn kho", ref currentY, (s, e) => OpenSummaryReport((Button)s));
+            AddNavButton("🥖 Tính định mức (Công thức)", ref currentY, (s, e) => { lblTitle.Text = "🥖 Tính định mức (Công thức)"; ShowPanel(new FrmRecipes(), (Button)s); });
+
+            currentY += 10;
+
+            // NHÓM 3: DANH MỤC & HỆ THỐNG
+            currentY = AddGroupHeader("⚙️ DANH MỤC HỆ THỐNG", currentY);
+            AddNavButton("📦 Danh mục Sản phẩm", ref currentY, (s, e) => { lblTitle.Text = "📦 Quản lý Danh mục Sản phẩm / Kho"; ShowPanel(new FrmProducts(), (Button)s); });
+            AddNavButton("🏢 Danh sách Nhà Cung Cấp", ref currentY, (s, e) => { lblTitle.Text = "🏢 Danh sách Nhà Cung Cấp"; ShowPanel(new FrmSuppliers(), (Button)s); });
+            AddNavButton("🔐 Quản lý Tài khoản", ref currentY, (s, e) => { lblTitle.Text = "🔐 Quản lý Tài khoản"; ShowPanel(new FrmUsers(), (Button)s); });
+
+            // Mặc định chọn Báo cáo tổng hợp
+            OpenSummaryReport(btnReport);
         }
 
-        private void AddNavButton(string text, int top, EventHandler onClick)
+        private int AddGroupHeader(string text, int top)
+        {
+            var lbl = new Label
+            {
+                Text = text,
+                Top = top,
+                Left = 12,
+                Width = 216,
+                Height = 25,
+                ForeColor = Color.FromArgb(220, 180, 120),
+                Font = new Font("Segoe UI", 8.5F, FontStyle.Bold),
+                TextAlign = ContentAlignment.BottomLeft
+            };
+            pnlSidebar.Controls.Add(lbl);
+            return top + 28;
+        }
+
+        private Button AddNavButton(string text, ref int top, EventHandler onClick)
         {
             var btn = new Button
             {
@@ -34,7 +73,7 @@ namespace ChumChumBakery.WinForms.Forms
                 Top = top,
                 Left = 0,
                 Width = 240,
-                Height = 42,
+                Height = 38,
                 FlatStyle = FlatStyle.Flat,
                 ForeColor = Color.FromArgb(245, 230, 204),
                 BackColor = Color.Transparent,
@@ -46,19 +85,33 @@ namespace ChumChumBakery.WinForms.Forms
             btn.FlatAppearance.MouseOverBackColor = Color.FromArgb(61, 31, 10);
             btn.Click += onClick;
             pnlSidebar.Controls.Add(btn);
+            top += 40;
+            return btn;
         }
 
-        private void ShowPanel(Control c)
+        private void ShowPanel(Control c, Button btn = null)
         {
+            if (btn != null)
+            {
+                if (_activeButton != null)
+                {
+                    _activeButton.BackColor = Color.Transparent;
+                    _activeButton.Font = new Font("Segoe UI", 9.5F, FontStyle.Regular);
+                }
+                _activeButton = btn;
+                _activeButton.BackColor = Color.FromArgb(85, 45, 15);
+                _activeButton.Font = new Font("Segoe UI", 9.5F, FontStyle.Bold);
+            }
+
             pnlContent.Controls.Clear();
             c.Dock = DockStyle.Fill;
             pnlContent.Controls.Add(c);
         }
 
-        private void OpenSummaryReport()
+        private void OpenSummaryReport(Button btn = null)
         {
             lblTitle.Text = "📊 Báo cáo Tổng hợp tồn kho";
-            ShowPanel(new FrmSummaryReport());
+            ShowPanel(new FrmSummaryReport(), btn);
         }
     }
 }
