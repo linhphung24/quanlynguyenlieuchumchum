@@ -30,7 +30,7 @@ CREATE TABLE Users (
     Username NVARCHAR(50) NOT NULL UNIQUE,
     PasswordHash NVARCHAR(255) NOT NULL,
     FullName NVARCHAR(100) NOT NULL,
-    Role NVARCHAR(20) NOT NULL DEFAULT 'staff' CHECK (Role IN ('admin', 'manager', 'staff')),
+    Role NVARCHAR(20) NOT NULL DEFAULT 'staff' CHECK (Role IN ('admin', 'manager', 'staff', 'ketoan', 'thukho')),
     CreatedAt DATETIME2 NOT NULL DEFAULT GETDATE()
 );
 GO

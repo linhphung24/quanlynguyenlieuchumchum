@@ -9,7 +9,7 @@ namespace ChumChumBakery.Core.Services
 {
     public class InvoiceService
     {
-        public List<Invoice> GetAllInvoices(DateTime fromDate, DateTime toDate)
+        public List<Invoice> GetAllInvoices(DateTime fromDate, DateTime toDate, string keyword = "", string type = "")
         {
             var result = new List<Invoice>();
             string sql = @"
@@ -17,12 +17,33 @@ namespace ChumChumBakery.Core.Services
                        ISNULL((SELECT SUM(d.Subtotal) FROM InvoiceDetails d WHERE d.InvoiceId = i.Id), 0) AS TotalAmount
                 FROM Invoices i
                 WHERE i.InvDate >= @FromDate AND i.InvDate <= @ToDate
-                ORDER BY i.InvDate DESC, i.Id DESC";
-                
-            var dt = DatabaseHelper.ExecuteQuery(sql,
+            ";
+            
+            var parameters = new List<SqlParameter>
+            {
                 new SqlParameter("@FromDate", fromDate.ToString("yyyy-MM-dd")),
                 new SqlParameter("@ToDate", toDate.ToString("yyyy-MM-dd"))
-            );
+            };
+
+            if (!string.IsNullOrEmpty(keyword))
+            {
+                sql += @" AND (
+                    i.Code LIKE @Keyword OR 
+                    i.Partner LIKE @Keyword OR 
+                    EXISTS (SELECT 1 FROM InvoiceDetails d LEFT JOIN Products p ON d.ProductId = p.Id WHERE d.InvoiceId = i.Id AND (d.ProductName LIKE @Keyword OR p.Code LIKE @Keyword))
+                )";
+                parameters.Add(new SqlParameter("@Keyword", "%" + keyword + "%"));
+            }
+
+            if (!string.IsNullOrEmpty(type))
+            {
+                sql += " AND i.Type = @Type";
+                parameters.Add(new SqlParameter("@Type", type));
+            }
+
+            sql += " ORDER BY i.InvDate DESC, i.Id DESC";
+            
+            var dt = DatabaseHelper.ExecuteQuery(sql, parameters.ToArray());
             
             foreach (DataRow row in dt.Rows)
             {
@@ -47,7 +68,7 @@ namespace ChumChumBakery.Core.Services
         public List<InvoiceDetail> GetInvoiceDetails(int invoiceId)
         {
             var result = new List<InvoiceDetail>();
-            string sql = "SELECT * FROM InvoiceDetails WHERE InvoiceId = @InvoiceId";
+            string sql = "SELECT d.*, p.Code as ProductCode FROM InvoiceDetails d LEFT JOIN Products p ON d.ProductId = p.Id WHERE d.InvoiceId = @InvoiceId";
             
             var dt = DatabaseHelper.ExecuteQuery(sql, new SqlParameter("@InvoiceId", invoiceId));
             
@@ -58,6 +79,7 @@ namespace ChumChumBakery.Core.Services
                     Id = Convert.ToInt32(row["Id"]),
                     InvoiceId = Convert.ToInt32(row["InvoiceId"]),
                     ProductId = row["ProductId"] != DBNull.Value ? Convert.ToInt32(row["ProductId"]) : (int?)null,
+                    ProductCode = row["ProductCode"]?.ToString() ?? "",
                     ProductName = row["ProductName"]?.ToString(),
                     Unit = row["Unit"]?.ToString(),
                     Amount = Convert.ToDecimal(row["Amount"]),
@@ -88,6 +110,11 @@ namespace ChumChumBakery.Core.Services
                             cmd.ExecuteNonQuery();
                         }
                         tx.Commit();
+
+                        // Rebuild all batches to maintain FIFO integrity after a historical delete
+                        try {
+                            new FifoBatchService().RebuildAllFifoBatches();
+                        } catch { }
                     }
                     catch
                     {
@@ -145,6 +172,26 @@ namespace ChumChumBakery.Core.Services
                         AuditLogService.LogAction("CREATE", "Invoice", newId.ToString(), $"Tạo hóa đơn {invoice.Code}", tx);
 
                         tx.Commit();
+
+                        // Cập nhật lô hàng realtime
+                        try
+                        {
+                            var fifo = new FifoBatchService();
+                            if (invoice.Type == "in")
+                            {
+                                fifo.AddBatchesFromInvoice(newId);
+                            }
+                            else if (invoice.Type == "out")
+                            {
+                                var items = new List<(string productName, decimal qty, string unit)>();
+                                foreach (var d in details)
+                                {
+                                    items.Add((d.ProductName, d.Amount, d.Unit));
+                                }
+                                fifo.DeductBatchesFifo(newId, invoice.Code, invoice.InvDate, items);
+                            }
+                        }
+                        catch { }
                     }
                     catch
                     {

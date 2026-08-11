@@ -7,6 +7,7 @@ namespace ChumChumBakery.Core.Models
         public int Id { get; set; }
         public string Code { get; set; } = string.Empty;
         public string Name { get; set; } = string.Empty;
+        public string DisplayCodeAndName => string.IsNullOrEmpty(Code) ? Name : $"{Code} - {Name}";
         public string Category { get; set; } = "Nguyên liệu";
         public string Unit { get; set; } = "kg";
         public decimal CostPrice { get; set; }
@@ -46,6 +47,7 @@ namespace ChumChumBakery.Core.Models
         public int Id { get; set; }
         public int InvoiceId { get; set; }
         public int? ProductId { get; set; }
+        public string ProductCode { get; set; } = string.Empty;
         public string ProductName { get; set; } = string.Empty;
         public string Unit { get; set; } = "kg";
         public decimal Amount { get; set; }
@@ -62,6 +64,7 @@ namespace ChumChumBakery.Core.Models
         public int InvoiceId { get; set; }
         public string InvoiceCode { get; set; } = string.Empty;
         public DateTime InvoiceDate { get; set; }
+        public string ProductCode { get; set; } = string.Empty;
         public decimal Quantity { get; set; }
         public decimal RemainingQty { get; set; }
         public decimal Price { get; set; }

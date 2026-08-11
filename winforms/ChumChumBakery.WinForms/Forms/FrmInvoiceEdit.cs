@@ -51,6 +51,18 @@ namespace ChumChumBakery.WinForms.Forms
             cbType = new ComboBox { Location = new Point(90, 27), Width = 120, DropDownStyle = ComboBoxStyle.DropDownList };
             cbType.Items.AddRange(new[] { "Nhập kho", "Xuất kho" });
             cbType.SelectedIndex = 0;
+            
+            if (ChumChumBakery.Core.Session.CurrentUser?.Role == "ketoan")
+            {
+                cbType.SelectedIndex = 0;
+                cbType.Enabled = false;
+            }
+            else if (ChumChumBakery.Core.Session.CurrentUser?.Role == "thukho")
+            {
+                cbType.SelectedIndex = 1;
+                cbType.Enabled = false;
+            }
+            
             grpInfo.Controls.Add(cbType);
 
             grpInfo.Controls.Add(new Label { Text = "Ngày:", Location = new Point(230, 30), AutoSize = true });
@@ -105,7 +117,8 @@ namespace ChumChumBakery.WinForms.Forms
                 SelectionMode = DataGridViewSelectionMode.FullRowSelect,
                 MultiSelect = false
             };
-            gridDetails.Columns.Add(new DataGridViewTextBoxColumn { DataPropertyName = "ProductName", HeaderText = "Sản phẩm", Width = 300 });
+            gridDetails.Columns.Add(new DataGridViewTextBoxColumn { DataPropertyName = "ProductCode", HeaderText = "Mã SP", Width = 100 });
+            gridDetails.Columns.Add(new DataGridViewTextBoxColumn { DataPropertyName = "ProductName", HeaderText = "Sản phẩm", Width = 250 });
             gridDetails.Columns.Add(new DataGridViewTextBoxColumn { DataPropertyName = "Unit", HeaderText = "ĐVT", Width = 80 });
             gridDetails.Columns.Add(new DataGridViewTextBoxColumn { DataPropertyName = "Amount", HeaderText = "Số lượng", Width = 100 });
             gridDetails.Columns.Add(new DataGridViewTextBoxColumn { DataPropertyName = "Price", HeaderText = "Đơn giá", Width = 120 });
@@ -124,7 +137,7 @@ namespace ChumChumBakery.WinForms.Forms
         {
             _allProducts = _productService.GetAllProducts("");
             cbProducts.DataSource = _allProducts;
-            cbProducts.DisplayMember = "Name";
+            cbProducts.DisplayMember = "DisplayCodeAndName";
             cbProducts.ValueMember = "Id";
 
             var suppliers = _supplierService.GetAllSuppliers("");
@@ -143,6 +156,7 @@ namespace ChumChumBakery.WinForms.Forms
                     _details.Add(new InvoiceDetail
                     {
                         ProductId = p.Id,
+                        ProductCode = p.Code,
                         ProductName = p.Name,
                         Unit = p.Unit,
                         Amount = amt,
@@ -168,6 +182,7 @@ namespace ChumChumBakery.WinForms.Forms
                         _details.Add(new InvoiceDetail
                         {
                             ProductId = matchedProduct.Id,
+                            ProductCode = matchedProduct.Code,
                             ProductName = matchedProduct.Name,
                             Unit = matchedProduct.Unit,
                             Amount = amt,

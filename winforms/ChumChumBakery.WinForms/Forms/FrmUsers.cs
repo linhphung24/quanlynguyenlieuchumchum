@@ -48,7 +48,7 @@ namespace ChumChumBakery.WinForms.Forms
 
             pnlLeft.Controls.Add(new Label { Text = "Phân quyền:", AutoSize = true, Location = new Point(15, 200) });
             _cbRole = new ComboBox { Location = new Point(15, 225), Width = 270, DropDownStyle = ComboBoxStyle.DropDownList };
-            _cbRole.Items.AddRange(new[] { "admin", "manager", "staff" });
+            _cbRole.Items.AddRange(new[] { "admin", "manager", "staff", "ketoan", "thukho" });
             pnlLeft.Controls.Add(_cbRole);
 
             _btnSave = new Button { Text = "Lưu Mới", Location = new Point(15, 280), Width = 130, Height = 35, BackColor = Color.FromArgb(33, 150, 243), ForeColor = Color.White, FlatStyle = FlatStyle.Flat };

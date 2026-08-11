@@ -93,9 +93,10 @@ namespace ChumChumBakery.Core.Services
         {
             var result = new List<Batch>();
             string sql = @"
-                SELECT b.* 
+                SELECT b.*, p.Code as ProductCode 
                 FROM Batches b
-                WHERE (b.ProductName LIKE @Search OR b.InvoiceCode LIKE @Search)";
+                LEFT JOIN Products p ON b.ProductName = p.Name
+                WHERE (b.ProductName LIKE @Search OR b.InvoiceCode LIKE @Search OR p.Code LIKE @Search)";
 
             if (statusFilter == "active")
             {
@@ -115,6 +116,7 @@ namespace ChumChumBakery.Core.Services
                 result.Add(new Batch
                 {
                     Id = Convert.ToInt32(r["Id"]),
+                    ProductCode = r["ProductCode"]?.ToString() ?? "",
                     ProductName = r["ProductName"]?.ToString() ?? "",
                     InvoiceId = Convert.ToInt32(r["InvoiceId"]),
                     InvoiceCode = r["InvoiceCode"]?.ToString() ?? "",
@@ -131,9 +133,31 @@ namespace ChumChumBakery.Core.Services
             return result;
         }
 
+        public void AddBatchesFromInvoice(int invoiceId)
+        {
+            string sql = @"
+                INSERT INTO Batches (ProductName, InvoiceId, InvoiceCode, InvoiceDate, Quantity, RemainingQty, Price, Unit, MfgDate, ExpDate)
+                SELECT d.ProductName, i.Id, i.Code, i.InvDate, d.Amount, d.Amount, d.Price, d.Unit, d.MfgDate, d.ExpDate
+                FROM InvoiceDetails d
+                INNER JOIN Invoices i ON d.InvoiceId = i.Id
+                WHERE i.Id = @InvoiceId AND i.Type = 'in'";
+
+            DatabaseHelper.ExecuteNonQuery(sql, new SqlParameter("@InvoiceId", invoiceId));
+        }
+
         public void RebuildAllFifoBatches()
         {
             DatabaseHelper.ExecuteNonQuery("DELETE FROM BatchDeductions; DELETE FROM Batches;");
+
+            // Ensure dummy invoice 0 exists for StockOpeningAdj
+            DatabaseHelper.ExecuteNonQuery(@"
+                IF NOT EXISTS (SELECT 1 FROM Invoices WHERE Id = 0)
+                BEGIN
+                    SET IDENTITY_INSERT Invoices ON;
+                    INSERT INTO Invoices (Id, Type, InvDate, Code, Partner, CreatedBy) VALUES (0, 'in', '2000-01-01', 'TONDAU_DUMMY', 'System', 'System');
+                    SET IDENTITY_INSERT Invoices OFF;
+                END
+            ");
 
             // 1. Tải các Lô Tồn Đầu Kỳ từ Khai Báo Tồn Đầu Kỳ (vào ngày mùng 1 của tháng)
             DatabaseHelper.ExecuteNonQuery(@"

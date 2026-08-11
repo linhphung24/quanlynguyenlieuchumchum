@@ -89,11 +89,23 @@ namespace ChumChumBakery.Core.Services
             {
                 // Cập nhật
                 string sql = @"
+                    DECLARE @OldName NVARCHAR(255);
+                    SELECT @OldName = Name FROM Products WHERE Id = @Id;
+                    
                     UPDATE Products 
                     SET Code = @Code, Name = @Name, Category = @Category, Unit = @Unit, 
                         CostPrice = @CostPrice, SellPrice = @SellPrice, MinStock = @MinStock,
                         Supplier = @Supplier, Description = @Description, UpdatedBy = @UpdatedBy, UpdatedAt = GETDATE()
-                    WHERE Id = @Id";
+                    WHERE Id = @Id;
+                    
+                    IF (@OldName <> @Name)
+                    BEGIN
+                        UPDATE InvoiceDetails SET ProductName = @Name WHERE ProductId = @Id;
+                        UPDATE Batches SET ProductName = @Name WHERE ProductName = @OldName;
+                        UPDATE StockOpeningAdj SET ProductName = @Name WHERE ProductName = @OldName;
+                        UPDATE RecipeIngredients SET ProductName = @Name WHERE ProductName = @OldName;
+                    END
+                    ";
                     
                 DatabaseHelper.ExecuteNonQuery(sql,
                     new SqlParameter("@Code", p.Code ?? (object)DBNull.Value),

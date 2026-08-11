@@ -33,7 +33,7 @@ namespace ChumChumBakery.WinForms.Forms
             var lblTitle = new Label { Text = "📦 QUẢN LÝ LÔ HÀNG & HẠN SỬ DỤNG (FIFO)", Font = new Font("Segoe UI", 14F, FontStyle.Bold), AutoSize = true, Location = new Point(10, 10) };
             
             var lblSearch = new Label { Text = "Tìm kiếm:", AutoSize = true, Location = new Point(10, 48) };
-            _txtSearch = new TextBox { Location = new Point(85, 45), Width = 250, PlaceholderText = "Tìm tên nguyên liệu hoặc mã HĐ..." };
+            _txtSearch = new TextBox { Location = new Point(85, 45), Width = 250, PlaceholderText = "Mã/Tên SP, mã HĐ..." };
             _txtSearch.TextChanged += (s, e) => LoadData();
 
             var lblStatus = new Label { Text = "Trạng thái:", AutoSize = true, Location = new Point(350, 48) };
@@ -86,6 +86,7 @@ namespace ChumChumBakery.WinForms.Forms
 
             if (_grid.Columns["InvoiceCode"] != null) { _grid.Columns["InvoiceCode"].HeaderText = "Mã HĐ Nhập"; _grid.Columns["InvoiceCode"].FillWeight = 90; }
             if (_grid.Columns["InvoiceDate"] != null) { _grid.Columns["InvoiceDate"].HeaderText = "Ngày Nhập"; _grid.Columns["InvoiceDate"].DefaultCellStyle.Format = "dd/MM/yyyy"; _grid.Columns["InvoiceDate"].FillWeight = 90; }
+            if (_grid.Columns["ProductCode"] != null) { _grid.Columns["ProductCode"].HeaderText = "Mã SP"; _grid.Columns["ProductCode"].FillWeight = 80; }
             if (_grid.Columns["ProductName"] != null) { _grid.Columns["ProductName"].HeaderText = "Tên Nguyên Liệu"; _grid.Columns["ProductName"].FillWeight = 180; }
             if (_grid.Columns["Unit"] != null) { _grid.Columns["Unit"].HeaderText = "ĐVT"; _grid.Columns["Unit"].FillWeight = 50; }
             if (_grid.Columns["Quantity"] != null) { _grid.Columns["Quantity"].HeaderText = "SL Nhập"; _grid.Columns["Quantity"].DefaultCellStyle.Format = "N2"; _grid.Columns["Quantity"].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight; }

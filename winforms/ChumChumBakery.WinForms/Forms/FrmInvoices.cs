@@ -13,6 +13,8 @@ namespace ChumChumBakery.WinForms.Forms
         private DataGridView _gridInvoices;
         private DataGridView _gridDetails;
         private DateTimePicker _dtpFrom, _dtpTo;
+        private TextBox _txtSearch;
+        private ComboBox _cbTypeFilter;
         private Button _btnSearch, _btnAdd, _btnDelete, _btnPrint;
 
         public FrmInvoices()
@@ -37,23 +39,31 @@ namespace ChumChumBakery.WinForms.Forms
             var lblTo = new Label { Text = "Đến ngày:", AutoSize = true, Location = new Point(440, 20) };
             _dtpTo = new DateTimePicker { Format = DateTimePickerFormat.Short, Width = 110, Location = new Point(510, 17), Value = new DateTime(DateTime.Now.Year, DateTime.Now.Month, DateTime.DaysInMonth(DateTime.Now.Year, DateTime.Now.Month)) };
             
-            _btnSearch = new Button { Text = "Lọc", Width = 60, Height = 30, Location = new Point(630, 16), BackColor = Color.FromArgb(224, 224, 224), FlatStyle = FlatStyle.Flat };
+            _txtSearch = new TextBox { Width = 150, Location = new Point(630, 19), PlaceholderText = "Mã HĐ, đối tác, SP..." };
+            _txtSearch.KeyDown += (s, e) => { if (e.KeyCode == Keys.Enter) { e.Handled = true; e.SuppressKeyPress = true; LoadInvoices(); } };
+            
+            _cbTypeFilter = new ComboBox { Width = 90, Location = new Point(790, 19), DropDownStyle = ComboBoxStyle.DropDownList };
+            _cbTypeFilter.Items.AddRange(new[] { "Tất cả", "Nhập kho", "Xuất kho" });
+            _cbTypeFilter.SelectedIndex = 0;
+            _cbTypeFilter.SelectedIndexChanged += (s, e) => LoadInvoices();
+
+            _btnSearch = new Button { Text = "Lọc", Width = 50, Height = 30, Location = new Point(890, 16), BackColor = Color.FromArgb(224, 224, 224), FlatStyle = FlatStyle.Flat };
             _btnSearch.FlatAppearance.BorderSize = 0;
             _btnSearch.Click += (s, e) => LoadInvoices();
 
-            _btnAdd = new Button { Text = "Thêm Mới", Width = 90, Height = 35, BackColor = Color.FromArgb(76, 175, 80), ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Location = new Point(780, 12) };
+            _btnAdd = new Button { Text = "Thêm Mới", Width = 90, Height = 35, BackColor = Color.FromArgb(76, 175, 80), ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Location = new Point(950, 12) };
             _btnAdd.FlatAppearance.BorderSize = 0;
             _btnAdd.Click += BtnAdd_Click;
 
-            _btnDelete = new Button { Text = "Xóa HĐ", Width = 80, Height = 35, BackColor = Color.FromArgb(244, 67, 54), ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Location = new Point(880, 12) };
+            _btnDelete = new Button { Text = "Xóa", Width = 60, Height = 35, BackColor = Color.FromArgb(244, 67, 54), ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Location = new Point(1050, 12) };
             _btnDelete.FlatAppearance.BorderSize = 0;
             _btnDelete.Click += BtnDelete_Click;
 
-            _btnPrint = new Button { Text = "🖨️ In Hóa Đơn", Width = 100, Height = 35, BackColor = Color.FromArgb(33, 150, 243), ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Location = new Point(970, 12) };
+            _btnPrint = new Button { Text = "🖨️ In", Width = 60, Height = 35, BackColor = Color.FromArgb(33, 150, 243), ForeColor = Color.White, FlatStyle = FlatStyle.Flat, Location = new Point(1120, 12) };
             _btnPrint.FlatAppearance.BorderSize = 0;
             _btnPrint.Click += BtnPrint_Click;
 
-            pnlTop.Controls.AddRange(new Control[] { lblTitle, lblFrom, _dtpFrom, lblTo, _dtpTo, _btnSearch, _btnAdd, _btnDelete, _btnPrint });
+            pnlTop.Controls.AddRange(new Control[] { lblTitle, lblFrom, _dtpFrom, lblTo, _dtpTo, _txtSearch, _cbTypeFilter, _btnSearch, _btnAdd, _btnDelete, _btnPrint });
 
             // Split Container
             var splitContainer = new SplitContainer
@@ -111,7 +121,14 @@ namespace ChumChumBakery.WinForms.Forms
 
         private void LoadInvoices()
         {
-            var data = _service.GetAllInvoices(_dtpFrom.Value, _dtpTo.Value);
+            string type = "";
+            if (_cbTypeFilter != null) {
+                if (_cbTypeFilter.SelectedIndex == 1) type = "in";
+                else if (_cbTypeFilter.SelectedIndex == 2) type = "out";
+            }
+            string keyword = _txtSearch?.Text.Trim() ?? "";
+
+            var data = _service.GetAllInvoices(_dtpFrom.Value, _dtpTo.Value, keyword, type);
             _gridInvoices.DataSource = data;
 
             if (_gridInvoices.Columns["Id"] != null) _gridInvoices.Columns["Id"].Visible = false;
@@ -153,7 +170,8 @@ namespace ChumChumBakery.WinForms.Forms
             if (_gridDetails.Columns["InvoiceId"] != null) _gridDetails.Columns["InvoiceId"].Visible = false;
             if (_gridDetails.Columns["ProductId"] != null) _gridDetails.Columns["ProductId"].Visible = false;
 
-            if (_gridDetails.Columns["ProductName"] != null) { _gridDetails.Columns["ProductName"].HeaderText = "Tên Sản Phẩm"; _gridDetails.Columns["ProductName"].FillWeight = 200; }
+            if (_gridDetails.Columns["ProductCode"] != null) { _gridDetails.Columns["ProductCode"].HeaderText = "Mã Sản Phẩm"; _gridDetails.Columns["ProductCode"].FillWeight = 80; }
+            if (_gridDetails.Columns["ProductName"] != null) { _gridDetails.Columns["ProductName"].HeaderText = "Tên Sản Phẩm"; _gridDetails.Columns["ProductName"].FillWeight = 180; }
             if (_gridDetails.Columns["Unit"] != null) { _gridDetails.Columns["Unit"].HeaderText = "ĐVT"; _gridDetails.Columns["Unit"].FillWeight = 60; }
             if (_gridDetails.Columns["Amount"] != null) { _gridDetails.Columns["Amount"].HeaderText = "Số Lượng"; _gridDetails.Columns["Amount"].DefaultCellStyle.Format = "N2"; _gridDetails.Columns["Amount"].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter; }
             if (_gridDetails.Columns["Price"] != null) { _gridDetails.Columns["Price"].HeaderText = "Đơn Giá"; _gridDetails.Columns["Price"].DefaultCellStyle.Format = "N0"; _gridDetails.Columns["Price"].DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight; }
