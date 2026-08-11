@@ -70,6 +70,13 @@ namespace ChumChumBakery.WinForms.Forms
 
             pnlTop.Controls.AddRange(new Control[] { lblTitle, lblMonth, cbMonth, lblYear, cbYear, btnLoad, lblSearch, txtSearch, btnDownloadTemplate, btnImport, btnSave });
 
+            string role = Core.Session.CurrentUser?.Role ?? "staff";
+            if (role != "admin" && role != "manager" && role != "ketoan")
+            {
+                btnImport.Visible = false;
+                btnSave.Visible = false;
+            }
+
             // Grid
             grid = new DataGridView
             {

@@ -13,6 +13,7 @@ namespace ChumChumBakery.WinForms.Forms
     {
         private InvoiceService _invoiceService = new InvoiceService();
         private ProductService _productService = new ProductService();
+        private FifoBatchService _fifoService = new FifoBatchService();
         
         private ComboBox cbType;
         private DateTimePicker dtInvDate;
@@ -83,12 +84,20 @@ namespace ChumChumBakery.WinForms.Forms
             var grpAdd = new GroupBox { Text = "Thêm Sản Phẩm", Location = new Point(10, 120), Size = new Size(760, 70) };
             
             cbProducts = new ComboBox { Location = new Point(20, 30), Width = 300, DropDownStyle = ComboBoxStyle.DropDown };
-            cbProducts.AutoCompleteMode = AutoCompleteMode.SuggestAppend;
-            cbProducts.AutoCompleteSource = AutoCompleteSource.ListItems;
+            cbProducts.AutoCompleteMode = AutoCompleteMode.None;
+            cbProducts.TextUpdate += CbProducts_TextUpdate;
             cbProducts.SelectedIndexChanged += (s, e) => {
                 if (cbProducts.SelectedItem is Product p)
                 {
-                    txtPrice.Text = cbType.SelectedIndex == 0 ? p.CostPrice.ToString("0.##") : p.SellPrice.ToString("0.##");
+                    if (cbType.SelectedIndex == 0)
+                    {
+                        txtPrice.Text = p.CostPrice.ToString("0.##");
+                    }
+                    else
+                    {
+                        decimal fifoPrice = _fifoService.GetOldestBatchPrice(p.Name, p.SellPrice);
+                        txtPrice.Text = fifoPrice.ToString("0.##");
+                    }
                 }
             };
             grpAdd.Controls.Add(cbProducts);
@@ -136,9 +145,8 @@ namespace ChumChumBakery.WinForms.Forms
         private void LoadData()
         {
             _allProducts = _productService.GetAllProducts("");
-            cbProducts.DataSource = _allProducts;
-            cbProducts.DisplayMember = "DisplayCodeAndName";
-            cbProducts.ValueMember = "Id";
+            cbProducts.Items.Clear();
+            foreach (var p in _allProducts) { cbProducts.Items.Add(p); }
 
             var suppliers = _supplierService.GetAllSuppliers("");
             foreach (var s in suppliers)
@@ -173,8 +181,8 @@ namespace ChumChumBakery.WinForms.Forms
             else
             {
                 // Try matching by typed text if SelectedItem is null
-                string typedName = cbProducts.Text.Trim();
-                var matchedProduct = _allProducts.FirstOrDefault(x => x.Name.Equals(typedName, StringComparison.OrdinalIgnoreCase) || x.Code.Equals(typedName, StringComparison.OrdinalIgnoreCase));
+                string typedName = RemoveDiacritics(cbProducts.Text.Trim());
+                var matchedProduct = _allProducts.FirstOrDefault(x => RemoveDiacritics(x.Name).Equals(typedName, StringComparison.OrdinalIgnoreCase) || RemoveDiacritics(x.Code).Equals(typedName, StringComparison.OrdinalIgnoreCase));
                 if (matchedProduct != null)
                 {
                     if (decimal.TryParse(txtAmount.Text, out decimal amt) && decimal.TryParse(txtPrice.Text, out decimal price))
@@ -201,6 +209,60 @@ namespace ChumChumBakery.WinForms.Forms
                     MessageBox.Show("Vui lòng chọn hoặc nhập đúng tên sản phẩm có trong danh mục.");
                 }
             }
+        }
+
+        private string RemoveDiacritics(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text)) return text;
+            text = text.ToLowerInvariant().Replace('đ', 'd');
+            var formD = text.Normalize(System.Text.NormalizationForm.FormD);
+            var sb = new System.Text.StringBuilder();
+            foreach (char ch in formD)
+            {
+                var uc = System.Globalization.CharUnicodeInfo.GetUnicodeCategory(ch);
+                if (uc != System.Globalization.UnicodeCategory.NonSpacingMark)
+                {
+                    sb.Append(ch);
+                }
+            }
+            return sb.ToString().Normalize(System.Text.NormalizationForm.FormC);
+        }
+
+        private bool _isFiltering = false;
+
+        private void CbProducts_TextUpdate(object sender, EventArgs e)
+        {
+            if (_isFiltering) return;
+            
+            string keyword = cbProducts.Text;
+            string search = RemoveDiacritics(keyword);
+            
+            var filtered = string.IsNullOrWhiteSpace(search) 
+                ? _allProducts 
+                : _allProducts.Where(p => 
+                    RemoveDiacritics(p.Name).Contains(search) || 
+                    RemoveDiacritics(p.Code).Contains(search)).ToList();
+                    
+            _isFiltering = true;
+            
+            cbProducts.Items.Clear();
+            
+            if (filtered.Count > 0)
+            {
+                foreach (var p in filtered) { cbProducts.Items.Add(p); }
+                cbProducts.DroppedDown = true;
+            }
+            else
+            {
+                cbProducts.Items.Add("Không tìm thấy kết quả");
+                cbProducts.DroppedDown = true;
+            }
+            
+            cbProducts.Text = keyword;
+            cbProducts.SelectionStart = keyword.Length;
+            Cursor.Current = Cursors.Default;
+            
+            _isFiltering = false;
         }
 
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
@@ -232,12 +294,22 @@ namespace ChumChumBakery.WinForms.Forms
                 Type = cbType.SelectedIndex == 0 ? "in" : "out",
                 InvDate = dtInvDate.Value,
                 Code = "HD-" + DateTime.Now.ToString("yyMMddHHmm"), // Generate mock code
-                Partner = cbPartner.Text,
+                Partner = cbPartner.Text.Trim(),
                 Note = txtNote.Text
             };
 
             try
             {
+                string partnerName = inv.Partner;
+                if (!string.IsNullOrEmpty(partnerName))
+                {
+                    var suppliers = _supplierService.GetAllSuppliers("");
+                    if (!suppliers.Any(s => s.Name.Equals(partnerName, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        _supplierService.SaveSupplier(new Supplier { Name = partnerName });
+                    }
+                }
+
                 _invoiceService.SaveInvoice(inv, _details.ToList());
                 MessageBox.Show("Thêm hóa đơn thành công!", "Thông báo", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 this.DialogResult = DialogResult.OK;

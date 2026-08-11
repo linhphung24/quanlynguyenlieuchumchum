@@ -133,6 +133,21 @@ namespace ChumChumBakery.Core.Services
             return result;
         }
 
+        public decimal GetOldestBatchPrice(string productName, decimal fallbackPrice)
+        {
+            var dt = DatabaseHelper.ExecuteQuery(
+                @"SELECT TOP 1 Price FROM Batches 
+                  WHERE LOWER(TRIM(ProductName)) = LOWER(TRIM(@ProductName)) AND RemainingQty > 0 
+                  ORDER BY InvoiceDate ASC, Id ASC", 
+                new SqlParameter("@ProductName", productName.Trim()));
+                
+            if (dt.Rows.Count > 0)
+            {
+                return Convert.ToDecimal(dt.Rows[0]["Price"]);
+            }
+            return fallbackPrice;
+        }
+
         public void AddBatchesFromInvoice(int invoiceId)
         {
             string sql = @"

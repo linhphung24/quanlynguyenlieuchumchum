@@ -21,6 +21,8 @@ namespace ChumChumBakery.Core.Models
         public string UpdatedBy { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; } = DateTime.Now;
         public DateTime? UpdatedAt { get; set; }
+        
+        public override string ToString() => DisplayCodeAndName;
     }
 
     public class Invoice

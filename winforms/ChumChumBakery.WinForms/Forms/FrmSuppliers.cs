@@ -61,6 +61,12 @@ namespace ChumChumBakery.WinForms.Forms
             btnClear.Click += (s, e) => ClearForm();
             pnlLeft.Controls.Add(btnClear);
 
+            string role = Core.Session.CurrentUser?.Role ?? "staff";
+            if (role != "admin" && role != "manager" && role != "ketoan")
+            {
+                pnlLeft.Enabled = false;
+            }
+
             // Right panel - Grid
             var pnlRight = new Panel { Dock = DockStyle.Fill, Padding = new Padding(10) };
             

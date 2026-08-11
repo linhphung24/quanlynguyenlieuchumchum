@@ -23,10 +23,17 @@ namespace ChumChumBakery.WinForms.Forms
 
             int currentY = 60; // vị trí bắt đầu bên dưới Logo
 
+            string role = Core.Session.CurrentUser?.Role ?? "staff";
+
             // NHÓM 1: QUẢN LÝ NHẬP XUẤT KHO
             currentY = AddGroupHeader("📦 QUẢN LÝ NHẬP XUẤT", currentY);
             AddNavButton("🧾 Hóa đơn Nhập / Xuất", ref currentY, (s, e) => { lblTitle.Text = "🧾 Quản lý Hóa đơn Nhập / Xuất"; ShowPanel(new FrmInvoices(), (Button)s); });
-            AddNavButton("📝 Tồn đầu kỳ / Kiểm kê", ref currentY, (s, e) => { lblTitle.Text = "📝 Khai báo Tồn đầu kỳ"; ShowPanel(new FrmStockOpening(), (Button)s); });
+            
+            if (role == "admin" || role == "manager" || role == "ketoan")
+            {
+                AddNavButton("📝 Tồn đầu kỳ / Kiểm kê", ref currentY, (s, e) => { lblTitle.Text = "📝 Khai báo Tồn đầu kỳ"; ShowPanel(new FrmStockOpening(), (Button)s); });
+            }
+            
             AddNavButton("🏷️ Lô hàng & FIFO", ref currentY, (s, e) => { lblTitle.Text = "🏷️ Quản lý Lô hàng & Hạn sử dụng (FIFO)"; ShowPanel(new FrmBatches(), (Button)s); });
 
             currentY += 10;
@@ -34,15 +41,30 @@ namespace ChumChumBakery.WinForms.Forms
             // NHÓM 2: BÁO CÁO & ĐỊNH MỨC
             currentY = AddGroupHeader("📊 BÁO CÁO & THỐNG KÊ", currentY);
             var btnReport = AddNavButton("📊 Tổng hợp tồn kho", ref currentY, (s, e) => OpenSummaryReport((Button)s));
-            AddNavButton("🥖 Tính định mức (Công thức)", ref currentY, (s, e) => { lblTitle.Text = "🥖 Tính định mức (Công thức)"; ShowPanel(new FrmRecipes(), (Button)s); });
-
-            currentY += 10;
+            
+            if (role == "admin" || role == "manager")
+            {
+                AddNavButton("🥖 Tính định mức (Công thức)", ref currentY, (s, e) => { lblTitle.Text = "🥖 Tính định mức (Công thức)"; ShowPanel(new FrmRecipes(), (Button)s); });
+            }
 
             // NHÓM 3: DANH MỤC & HỆ THỐNG
-            currentY = AddGroupHeader("⚙️ DANH MỤC HỆ THỐNG", currentY);
-            AddNavButton("📦 Danh mục Sản phẩm", ref currentY, (s, e) => { lblTitle.Text = "📦 Quản lý Danh mục Sản phẩm / Kho"; ShowPanel(new FrmProducts(), (Button)s); });
-            AddNavButton("🏢 Danh sách Nhà Cung Cấp", ref currentY, (s, e) => { lblTitle.Text = "🏢 Danh sách Nhà Cung Cấp"; ShowPanel(new FrmSuppliers(), (Button)s); });
-            AddNavButton("🔐 Quản lý Tài khoản", ref currentY, (s, e) => { lblTitle.Text = "🔐 Quản lý Tài khoản"; ShowPanel(new FrmUsers(), (Button)s); });
+            if (role != "staff" && role != "thukho")
+            {
+                currentY += 10;
+                currentY = AddGroupHeader("⚙️ DANH MỤC HỆ THỐNG", currentY);
+                if (role == "admin" || role == "manager")
+                {
+                    AddNavButton("📦 Danh mục Sản phẩm", ref currentY, (s, e) => { lblTitle.Text = "📦 Quản lý Danh mục Sản phẩm / Kho"; ShowPanel(new FrmProducts(), (Button)s); });
+                }
+                if (role == "admin" || role == "manager" || role == "ketoan")
+                {
+                    AddNavButton("🏢 Danh sách Nhà Cung Cấp", ref currentY, (s, e) => { lblTitle.Text = "🏢 Danh sách Nhà Cung Cấp"; ShowPanel(new FrmSuppliers(), (Button)s); });
+                }
+                if (role == "admin")
+                {
+                    AddNavButton("🔐 Quản lý Tài khoản", ref currentY, (s, e) => { lblTitle.Text = "🔐 Quản lý Tài khoản"; ShowPanel(new FrmUsers(), (Button)s); });
+                }
+            }
 
             // Mặc định chọn Báo cáo tổng hợp
             OpenSummaryReport(btnReport);

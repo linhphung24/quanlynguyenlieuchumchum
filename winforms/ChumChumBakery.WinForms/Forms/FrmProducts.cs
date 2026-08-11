@@ -52,6 +52,14 @@ namespace ChumChumBakery.WinForms.Forms
             pnlTop.Controls.Add(_btnEdit);
             pnlTop.Controls.Add(_btnDelete);
 
+            string role = Core.Session.CurrentUser?.Role ?? "staff";
+            if (role != "admin" && role != "manager")
+            {
+                _btnAdd.Visible = false;
+                _btnEdit.Visible = false;
+                _btnDelete.Visible = false;
+            }
+
             _grid = new DataGridView
             {
                 Dock = DockStyle.Fill,
