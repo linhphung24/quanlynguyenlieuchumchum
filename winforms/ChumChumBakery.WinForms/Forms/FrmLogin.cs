@@ -11,6 +11,7 @@ namespace ChumChumBakery.WinForms.Forms
         private TextBox txtUser, txtPass;
         private Button btnLogin;
         private UserService _userService = new UserService();
+        private PermissionService _permissionService = new PermissionService();
 
         public FrmLogin()
         {
@@ -47,6 +48,7 @@ namespace ChumChumBakery.WinForms.Forms
             if (user != null)
             {
                 Session.CurrentUser = user;
+                Session.CurrentPermissions = _permissionService.GetPermissions(user.Role);
                 this.DialogResult = DialogResult.OK;
                 this.Close();
             }

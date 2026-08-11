@@ -27,47 +27,70 @@ namespace ChumChumBakery.WinForms.Forms
 
             // NHÓM 1: QUẢN LÝ NHẬP XUẤT KHO
             currentY = AddGroupHeader("📦 QUẢN LÝ NHẬP XUẤT", currentY);
-            AddNavButton("🧾 Hóa đơn Nhập / Xuất", ref currentY, (s, e) => { lblTitle.Text = "🧾 Quản lý Hóa đơn Nhập / Xuất"; ShowPanel(new FrmInvoices(), (Button)s); });
+            if (Core.Session.HasPermission("Menu_Invoices"))
+            {
+                AddNavButton("🧾 Hóa đơn Nhập / Xuất", ref currentY, (s, e) => { lblTitle.Text = "🧾 Quản lý Hóa đơn Nhập / Xuất"; ShowPanel(new FrmInvoices(), (Button)s); });
+            }
             
-            if (role == "admin" || role == "manager" || role == "ketoan")
+            if (Core.Session.HasPermission("Menu_StockOpening"))
             {
                 AddNavButton("📝 Tồn đầu kỳ / Kiểm kê", ref currentY, (s, e) => { lblTitle.Text = "📝 Khai báo Tồn đầu kỳ"; ShowPanel(new FrmStockOpening(), (Button)s); });
             }
             
-            AddNavButton("🏷️ Lô hàng & FIFO", ref currentY, (s, e) => { lblTitle.Text = "🏷️ Quản lý Lô hàng & Hạn sử dụng (FIFO)"; ShowPanel(new FrmBatches(), (Button)s); });
+            if (Core.Session.HasPermission("Menu_Batches"))
+            {
+                AddNavButton("🏷️ Lô hàng & FIFO", ref currentY, (s, e) => { lblTitle.Text = "🏷️ Quản lý Lô hàng & Hạn sử dụng (FIFO)"; ShowPanel(new FrmBatches(), (Button)s); });
+            }
 
             currentY += 10;
 
             // NHÓM 2: BÁO CÁO & ĐỊNH MỨC
             currentY = AddGroupHeader("📊 BÁO CÁO & THỐNG KÊ", currentY);
-            var btnReport = AddNavButton("📊 Tổng hợp tồn kho", ref currentY, (s, e) => OpenSummaryReport((Button)s));
             
-            if (role == "admin" || role == "manager")
+            Button btnReport = null;
+            if (Core.Session.HasPermission("Menu_SummaryReport"))
+            {
+                btnReport = AddNavButton("📊 Tổng hợp tồn kho", ref currentY, (s, e) => OpenSummaryReport((Button)s));
+            }
+            
+            if (Core.Session.HasPermission("Menu_Recipes"))
             {
                 AddNavButton("🥖 Tính định mức (Công thức)", ref currentY, (s, e) => { lblTitle.Text = "🥖 Tính định mức (Công thức)"; ShowPanel(new FrmRecipes(), (Button)s); });
             }
 
             // NHÓM 3: DANH MỤC & HỆ THỐNG
-            if (role != "staff" && role != "thukho")
+            bool hasProducts = Core.Session.HasPermission("Menu_Products");
+            bool hasSuppliers = Core.Session.HasPermission("Menu_Suppliers");
+            bool hasUsers = Core.Session.HasPermission("Menu_Users");
+            bool hasRoles = Core.Session.HasPermission("Menu_RolePermissions");
+
+            if (hasProducts || hasSuppliers || hasUsers || hasRoles)
             {
                 currentY += 10;
                 currentY = AddGroupHeader("⚙️ DANH MỤC HỆ THỐNG", currentY);
-                if (role == "admin" || role == "manager")
+                if (hasProducts)
                 {
                     AddNavButton("📦 Danh mục Sản phẩm", ref currentY, (s, e) => { lblTitle.Text = "📦 Quản lý Danh mục Sản phẩm / Kho"; ShowPanel(new FrmProducts(), (Button)s); });
                 }
-                if (role == "admin" || role == "manager" || role == "ketoan")
+                if (hasSuppliers)
                 {
                     AddNavButton("🏢 Danh sách Nhà Cung Cấp", ref currentY, (s, e) => { lblTitle.Text = "🏢 Danh sách Nhà Cung Cấp"; ShowPanel(new FrmSuppliers(), (Button)s); });
                 }
-                if (role == "admin")
+                if (hasUsers)
                 {
                     AddNavButton("🔐 Quản lý Tài khoản", ref currentY, (s, e) => { lblTitle.Text = "🔐 Quản lý Tài khoản"; ShowPanel(new FrmUsers(), (Button)s); });
                 }
+                if (hasRoles)
+                {
+                    AddNavButton("🔑 Ma trận Phân quyền", ref currentY, (s, e) => { lblTitle.Text = "🔑 Ma trận Phân quyền Chức năng"; ShowPanel(new FrmRolePermissions(), (Button)s); });
+                }
             }
 
-            // Mặc định chọn Báo cáo tổng hợp
-            OpenSummaryReport(btnReport);
+            // Mặc định chọn báo cáo tổng hợp nếu có quyền, nếu không chọn cái đầu tiên
+            if (btnReport != null)
+            {
+                OpenSummaryReport(btnReport);
+            }
         }
 
         private int AddGroupHeader(string text, int top)

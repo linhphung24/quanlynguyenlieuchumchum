@@ -103,6 +103,31 @@ namespace ChumChumBakery.Core.Services
                     {
                         AuditLogService.LogAction("DELETE", "Invoice", id.ToString(), $"Xóa hóa đơn ID: {id}", tx);
 
+                        // Xóa các liên kết khóa ngoại trước
+                        using (var cmd = new SqlCommand("DELETE FROM BatchDeductions WHERE InvoiceId = @Id", conn, tx))
+                        {
+                            cmd.Parameters.AddWithValue("@Id", id);
+                            cmd.ExecuteNonQuery();
+                        }
+                        
+                        using (var cmd = new SqlCommand("DELETE FROM BatchDeductions WHERE BatchId IN (SELECT Id FROM Batches WHERE InvoiceId = @Id)", conn, tx))
+                        {
+                            cmd.Parameters.AddWithValue("@Id", id);
+                            cmd.ExecuteNonQuery();
+                        }
+                        
+                        using (var cmd = new SqlCommand("DELETE FROM Batches WHERE InvoiceId = @Id", conn, tx))
+                        {
+                            cmd.Parameters.AddWithValue("@Id", id);
+                            cmd.ExecuteNonQuery();
+                        }
+                        
+                        using (var cmd = new SqlCommand("DELETE FROM InvoiceDetails WHERE InvoiceId = @Id", conn, tx))
+                        {
+                            cmd.Parameters.AddWithValue("@Id", id);
+                            cmd.ExecuteNonQuery();
+                        }
+
                         string sql = "DELETE FROM Invoices WHERE Id = @Id";
                         using (var cmd = new SqlCommand(sql, conn, tx))
                         {
