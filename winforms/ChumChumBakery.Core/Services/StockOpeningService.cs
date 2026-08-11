@@ -31,6 +31,8 @@ namespace ChumChumBakery.Core.Services
                             - ISNULL((SELECT SUM(d.Amount) FROM InvoiceDetails d INNER JOIN Invoices i ON d.InvoiceId = i.Id WHERE (d.ProductId = p.Id OR d.ProductName = p.Name) AND i.Type = 'out'), 0)
                         )
                     ) AS AdjQty,
+                    ISNULL(s.CreatedBy, '') AS CreatedBy,
+                    ISNULL(s.UpdatedBy, '') AS UpdatedBy,
                     @Year AS Year,
                     @Month AS Month
                 FROM Products p
@@ -96,6 +98,10 @@ namespace ChumChumBakery.Core.Services
                         }
 
                         tx.Commit();
+
+                        // Cập nhật lại danh sách Lô FIFO bao gồm Lô Tồn Đầu Kỳ
+                        var fifo = new FifoBatchService();
+                        fifo.RebuildAllFifoBatches();
                     }
                     catch
                     {

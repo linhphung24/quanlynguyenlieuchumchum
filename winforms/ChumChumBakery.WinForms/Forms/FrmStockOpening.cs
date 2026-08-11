@@ -13,9 +13,11 @@ namespace ChumChumBakery.WinForms.Forms
     public class FrmStockOpening : UserControl
     {
         private StockOpeningService _service = new StockOpeningService();
+        private List<StockOpeningAdj> _fullList = new List<StockOpeningAdj>();
         private BindingList<StockOpeningAdj> _data;
         
         private ComboBox cbMonth, cbYear;
+        private TextBox txtSearch;
         private DataGridView grid;
         private Button btnLoad, btnDownloadTemplate, btnImport, btnSave;
 
@@ -37,32 +39,36 @@ namespace ChumChumBakery.WinForms.Forms
             var lblTitle = new Label { Text = "📦 KHAI BÁO TỒN ĐẦU KỲ", Font = new Font("Segoe UI", 14F, FontStyle.Bold), AutoSize = true, Location = new Point(10, 15) };
             
             var lblMonth = new Label { Text = "Tháng:", AutoSize = true, Location = new Point(20, 60) };
-            cbMonth = new ComboBox { Location = new Point(80, 57), Width = 60, DropDownStyle = ComboBoxStyle.DropDownList };
+            cbMonth = new ComboBox { Location = new Point(75, 57), Width = 55, DropDownStyle = ComboBoxStyle.DropDownList };
             for (int i = 1; i <= 12; i++) cbMonth.Items.Add(i.ToString());
             cbMonth.SelectedItem = DateTime.Now.Month.ToString();
             
-            var lblYear = new Label { Text = "Năm:", AutoSize = true, Location = new Point(160, 60) };
-            cbYear = new ComboBox { Location = new Point(210, 57), Width = 80, DropDownStyle = ComboBoxStyle.DropDownList };
+            var lblYear = new Label { Text = "Năm:", AutoSize = true, Location = new Point(140, 60) };
+            cbYear = new ComboBox { Location = new Point(185, 57), Width = 70, DropDownStyle = ComboBoxStyle.DropDownList };
             for (int i = 2025; i <= 2030; i++) cbYear.Items.Add(i.ToString());
             cbYear.SelectedItem = DateTime.Now.Year.ToString();
 
-            btnLoad = new Button { Text = "Xem", Width = 70, Height = 30, Location = new Point(310, 55), BackColor = Color.LightGray, FlatStyle = FlatStyle.Flat };
+            btnLoad = new Button { Text = "Xem", Width = 60, Height = 30, Location = new Point(265, 55), BackColor = Color.LightGray, FlatStyle = FlatStyle.Flat };
             btnLoad.FlatAppearance.BorderSize = 0;
             btnLoad.Click += (s, e) => LoadData();
 
-            btnDownloadTemplate = new Button { Text = "Tải File Mẫu", Width = 110, Height = 35, Location = new Point(500, 52), BackColor = Color.FromArgb(33, 150, 243), ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
+            var lblSearch = new Label { Text = "Tìm:", AutoSize = true, Location = new Point(340, 60) };
+            txtSearch = new TextBox { Location = new Point(380, 57), Width = 200, PlaceholderText = "Tìm tên hoặc mã SP..." };
+            txtSearch.TextChanged += (s, e) => ApplySearchFilter();
+
+            btnDownloadTemplate = new Button { Text = "Tải File Mẫu", Width = 110, Height = 35, Location = new Point(600, 52), BackColor = Color.FromArgb(33, 150, 243), ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
             btnDownloadTemplate.FlatAppearance.BorderSize = 0;
             btnDownloadTemplate.Click += BtnDownloadTemplate_Click;
 
-            btnImport = new Button { Text = "Nhập từ Excel", Width = 130, Height = 35, Location = new Point(620, 52), BackColor = Color.FromArgb(255, 152, 0), ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
+            btnImport = new Button { Text = "Nhập từ Excel", Width = 120, Height = 35, Location = new Point(720, 52), BackColor = Color.FromArgb(255, 152, 0), ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
             btnImport.FlatAppearance.BorderSize = 0;
             btnImport.Click += BtnImport_Click;
 
-            btnSave = new Button { Text = "Lưu Thay Đổi", Width = 120, Height = 35, Location = new Point(760, 52), BackColor = Color.FromArgb(76, 175, 80), ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
+            btnSave = new Button { Text = "Lưu Thay Đổi", Width = 120, Height = 35, Location = new Point(850, 52), BackColor = Color.FromArgb(76, 175, 80), ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
             btnSave.FlatAppearance.BorderSize = 0;
             btnSave.Click += BtnSave_Click;
 
-            pnlTop.Controls.AddRange(new Control[] { lblTitle, lblMonth, cbMonth, lblYear, cbYear, btnLoad, btnDownloadTemplate, btnImport, btnSave });
+            pnlTop.Controls.AddRange(new Control[] { lblTitle, lblMonth, cbMonth, lblYear, cbYear, btnLoad, lblSearch, txtSearch, btnDownloadTemplate, btnImport, btnSave });
 
             // Grid
             grid = new DataGridView
@@ -113,8 +119,18 @@ namespace ChumChumBakery.WinForms.Forms
         {
             int m = int.Parse(cbMonth.SelectedItem.ToString());
             int y = int.Parse(cbYear.SelectedItem.ToString());
-            var list = _service.GetOpeningStocks(m, y);
-            _data = new BindingList<StockOpeningAdj>(list);
+            _fullList = _service.GetOpeningStocks(m, y);
+            ApplySearchFilter();
+        }
+
+        private void ApplySearchFilter()
+        {
+            string keyword = txtSearch?.Text?.Trim().ToLower() ?? "";
+            var filtered = string.IsNullOrEmpty(keyword)
+                ? _fullList
+                : _fullList.Where(x => (x.ProductName?.ToLower().Contains(keyword) == true) || (x.ProductCode?.ToLower().Contains(keyword) == true)).ToList();
+
+            _data = new BindingList<StockOpeningAdj>(filtered);
             grid.DataSource = _data;
         }
 
@@ -125,7 +141,7 @@ namespace ChumChumBakery.WinForms.Forms
             int y = int.Parse(cbYear.SelectedItem.ToString());
             try
             {
-                _service.SaveOpeningStocks(m, y, _data.ToList());
+                _service.SaveOpeningStocks(m, y, _fullList);
                 MessageBox.Show("Lưu dữ liệu tồn đầu kỳ thành công!", "Thông báo", MessageBoxButtons.OK, MessageBoxIcon.Information);
             }
             catch (Exception ex)
@@ -157,13 +173,13 @@ namespace ChumChumBakery.WinForms.Forms
 
                             ws.Cell(1, 5).Style.Fill.BackgroundColor = XLColor.LightYellow;
 
-                            for (int i = 0; i < _data.Count; i++)
+                            for (int i = 0; i < _fullList.Count; i++)
                             {
-                                ws.Cell(i + 2, 1).Value = _data[i].ProductCode;
-                                ws.Cell(i + 2, 2).Value = _data[i].ProductName;
-                                ws.Cell(i + 2, 3).Value = _data[i].Unit;
-                                ws.Cell(i + 2, 4).Value = _data[i].CurrentStock;
-                                ws.Cell(i + 2, 5).Value = _data[i].AdjQty;
+                                ws.Cell(i + 2, 1).Value = _fullList[i].ProductCode;
+                                ws.Cell(i + 2, 2).Value = _fullList[i].ProductName;
+                                ws.Cell(i + 2, 3).Value = _fullList[i].Unit;
+                                ws.Cell(i + 2, 4).Value = _fullList[i].CurrentStock;
+                                ws.Cell(i + 2, 5).Value = _fullList[i].AdjQty;
                                 ws.Cell(i + 2, 5).Style.Fill.BackgroundColor = XLColor.LightYellow;
                             }
                             
@@ -206,14 +222,14 @@ namespace ChumChumBakery.WinForms.Forms
                                 
                                 cellToRead.TryGetValue(out qty);
 
-                                var item = _data.FirstOrDefault(d => (!string.IsNullOrEmpty(code) && d.ProductCode == code) || d.ProductName == name);
+                                var item = _fullList.FirstOrDefault(d => (!string.IsNullOrEmpty(code) && d.ProductCode == code) || d.ProductName == name);
                                 if (item != null)
                                 {
                                     item.AdjQty = (decimal)qty;
                                     count++;
                                 }
                             }
-                            grid.Refresh();
+                            ApplySearchFilter();
                             MessageBox.Show($"Đã import thành công số liệu cho {count} mặt hàng!\nVui lòng bấm 'Lưu Thay Đổi' để xác nhận lưu vào CSDL.", "Thành công", MessageBoxButtons.OK, MessageBoxIcon.Information);
                         }
                     }
