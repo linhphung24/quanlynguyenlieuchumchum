@@ -166,4 +166,17 @@ namespace ChumChumBakery.Core.Models
         public DateTime CreatedAt { get; set; } = DateTime.Now;
         public DateTime? UpdatedAt { get; set; }
     }
+
+    public class RolePermission
+    {
+        public int Id { get; set; }
+        public string Role { get; set; } = string.Empty;
+        public string FeatureKey { get; set; } = string.Empty;
+        public string FeatureName { get; set; } = string.Empty;
+        public bool CanView { get; set; }
+        public bool CanCreate { get; set; }
+        public bool CanEdit { get; set; }
+        public bool CanDelete { get; set; }
+    }
 }
+

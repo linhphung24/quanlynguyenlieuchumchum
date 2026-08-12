@@ -6,7 +6,7 @@ namespace ChumChumBakery.Core.Services
 {
     public class AuditLogService
     {
-        public static void LogAction(string action, string entity, string entityId, string detail, SqlTransaction tx = null)
+        public static void LogAction(string action, string entity, string entityId, string detail, SqlTransaction? tx = null)
         {
             var user = Session.CurrentUser;
             string userId = user != null ? user.Id.ToString() : "0";

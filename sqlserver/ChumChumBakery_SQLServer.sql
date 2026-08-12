@@ -1,7 +1,7 @@
 -- ============================================================================
 -- CHUM CHUM BAKERY - DATABASE SCHEMA (MICROSOFT SQL SERVER)
 -- Database Name: ChumChumDB
--- Created Date : 2026-07-31
+-- Created Date : 2026-07-31 (Updated 2026-08-12: Added RolePermissions Matrix & Accountant Role)
 -- Description  : CSDL Quản lý Kho & Nguyên liệu cho tiệm bánh Chum Chum Bakery
 --                (Tối ưu hoá cho ứng dụng C# WinForms)
 -- ============================================================================
@@ -30,8 +30,24 @@ CREATE TABLE Users (
     Username NVARCHAR(50) NOT NULL UNIQUE,
     PasswordHash NVARCHAR(255) NOT NULL,
     FullName NVARCHAR(100) NOT NULL,
-    Role NVARCHAR(20) NOT NULL DEFAULT 'staff' CHECK (Role IN ('admin', 'manager', 'staff', 'ketoan', 'thukho')),
+    Role NVARCHAR(20) NOT NULL DEFAULT 'staff' CHECK (Role IN ('admin', 'manager', 'accountant', 'staff')),
     CreatedAt DATETIME2 NOT NULL DEFAULT GETDATE()
+);
+GO
+
+-- ============================================================================
+-- 1B. BẢNG MA TRẬN PHÂN QUYỀN (RolePermissions)
+-- ============================================================================
+CREATE TABLE RolePermissions (
+    Id INT IDENTITY(1,1) PRIMARY KEY,
+    Role NVARCHAR(20) NOT NULL,
+    FeatureKey NVARCHAR(50) NOT NULL,
+    FeatureName NVARCHAR(100) NOT NULL,
+    CanView BIT NOT NULL DEFAULT 1,
+    CanCreate BIT NOT NULL DEFAULT 0,
+    CanEdit BIT NOT NULL DEFAULT 0,
+    CanDelete BIT NOT NULL DEFAULT 0,
+    CONSTRAINT UQ_RoleFeature UNIQUE (Role, FeatureKey)
 );
 GO
 
@@ -85,7 +101,7 @@ CREATE INDEX IX_Invoices_Type ON Invoices(Type);
 GO
 
 -- ============================================================================
--- 4. BẢNG CHI TIẾT HOÁ ĐƠN (InvoiceDetails) - Chuẩn hoá thay JSONB
+-- 4. BẢNG CHI TIẾT HOÁ ĐƠN (InvoiceDetails)
 -- ============================================================================
 CREATE TABLE InvoiceDetails (
     Id INT IDENTITY(1,1) PRIMARY KEY,
@@ -245,13 +261,57 @@ GO
 -- SEED DATA MẶC ĐỊNH
 -- ============================================================================
 
--- Mật khẩu mặc định: admin123 (Hash PBKDF2/SHA256 hoặc Plain Text mã hoá nhẹ)
+-- Seed Người dùng mẫu
 INSERT INTO Users (Username, PasswordHash, FullName, Role)
 VALUES 
 (N'admin', N'admin123', N'Quản trị viên', N'admin'),
 (N'quanly', N'123456', N'Quản lý Kho', N'manager'),
+(N'ketoan', N'123456', N'Kế toán Kho', N'accountant'),
 (N'nhanvien', N'123456', N'Nhân viên Kho', N'staff');
 GO
 
-PRINT N'=== TẠO CƠ SỞ DỮ LIỆU ChumChumDB THÀNH CÔNG ===';
+-- Seed Ma trận phân quyền mặc định
+INSERT INTO RolePermissions (Role, FeatureKey, FeatureName, CanView, CanCreate, CanEdit, CanDelete) VALUES
+-- Admin (Toàn quyền)
+(N'admin', N'products', N'Sản phẩm / Kho', 1, 1, 1, 1),
+(N'admin', N'invoices_in', N'Hóa đơn Nhập kho', 1, 1, 1, 1),
+(N'admin', N'invoices_out', N'Hóa đơn Xuất kho', 1, 1, 1, 1),
+(N'admin', N'summary_report', N'Báo cáo Tồn kho', 1, 1, 1, 1),
+(N'admin', N'recipes', N'Công thức Bánh', 1, 1, 1, 1),
+(N'admin', N'personnel', N'Quản lý Nhân sự', 1, 1, 1, 1),
+(N'admin', N'users', N'Quản lý Tài khoản', 1, 1, 1, 1),
+(N'admin', N'permissions_matrix', N'Ma trận Phân quyền', 1, 1, 1, 1),
+
+-- Manager (Quản lý)
+(N'manager', N'products', N'Sản phẩm / Kho', 1, 1, 1, 1),
+(N'manager', N'invoices_in', N'Hóa đơn Nhập kho', 1, 1, 1, 1),
+(N'manager', N'invoices_out', N'Hóa đơn Xuất kho', 1, 1, 1, 1),
+(N'manager', N'summary_report', N'Báo cáo Tồn kho', 1, 1, 1, 1),
+(N'manager', N'recipes', N'Công thức Bánh', 1, 1, 1, 1),
+(N'manager', N'personnel', N'Quản lý Nhân sự', 1, 1, 1, 1),
+(N'manager', N'users', N'Quản lý Tài khoản', 1, 0, 0, 0),
+(N'manager', N'permissions_matrix', N'Ma trận Phân quyền', 1, 0, 0, 0),
+
+-- Accountant (Kế toán - Được phép CẢ Nhập và Xuất đầy đủ)
+(N'accountant', N'products', N'Sản phẩm / Kho', 1, 1, 1, 0),
+(N'accountant', N'invoices_in', N'Hóa đơn Nhập kho', 1, 1, 1, 1),
+(N'accountant', N'invoices_out', N'Hóa đơn Xuất kho', 1, 1, 1, 1),
+(N'accountant', N'summary_report', N'Báo cáo Tồn kho', 1, 1, 1, 0),
+(N'accountant', N'recipes', N'Công thức Bánh', 1, 0, 0, 0),
+(N'accountant', N'personnel', N'Quản lý Nhân sự', 1, 0, 0, 0),
+(N'accountant', N'users', N'Quản lý Tài khoản', 0, 0, 0, 0),
+(N'accountant', N'permissions_matrix', N'Ma trận Phân quyền', 0, 0, 0, 0),
+
+-- Staff (Nhân viên)
+(N'staff', N'products', N'Sản phẩm / Kho', 1, 0, 0, 0),
+(N'staff', N'invoices_in', N'Hóa đơn Nhập kho', 1, 1, 0, 0),
+(N'staff', N'invoices_out', N'Hóa đơn Xuất kho', 1, 1, 0, 0),
+(N'staff', N'summary_report', N'Báo cáo Tồn kho', 1, 0, 0, 0),
+(N'staff', N'recipes', N'Công thức Bánh', 1, 0, 0, 0),
+(N'staff', N'personnel', N'Quản lý Nhân sự', 0, 0, 0, 0),
+(N'staff', N'users', N'Quản lý Tài khoản', 0, 0, 0, 0),
+(N'staff', N'permissions_matrix', N'Ma trận Phân quyền', 0, 0, 0, 0);
+GO
+
+PRINT N'=== TẠO CƠ SỞ DỮ LIỆU ChumChumDB THÀNH CÔNG (Cập nhật Ma trận Phân quyền & Vai trò Kế toán) ===';
 GO

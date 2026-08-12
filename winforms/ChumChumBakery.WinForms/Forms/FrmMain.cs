@@ -82,7 +82,7 @@ namespace ChumChumBakery.WinForms.Forms
                 }
                 if (hasRoles)
                 {
-                    AddNavButton("🔑 Ma trận Phân quyền", ref currentY, (s, e) => { lblTitle.Text = "🔑 Ma trận Phân quyền Chức năng"; ShowPanel(new FrmRolePermissions(), (Button)s); });
+                    AddNavButton("🔑 Ma trận Phân quyền", ref currentY, (s, e) => { lblTitle.Text = "🔑 Ma trận Phân quyền Chức năng"; ShowPanel(new FrmPermissionMatrix(), (Button)s); });
                 }
             }
 

@@ -9,12 +9,25 @@ namespace ChumChumBakery.Core.Services
 {
     public class InvoiceService
     {
+        private void EnsureSubtotalsUpdated()
+        {
+            try
+            {
+                var sql = "UPDATE InvoiceDetails SET Subtotal = Amount * Price WHERE Subtotal = 0 OR Subtotal IS NULL;";
+                DatabaseHelper.ExecuteNonQuery(sql);
+            }
+            catch { }
+        }
+
         public List<Invoice> GetAllInvoices(DateTime fromDate, DateTime toDate, string keyword = "", string type = "")
         {
+            EnsureSubtotalsUpdated();
+
             var result = new List<Invoice>();
             string sql = @"
                 SELECT i.*, 
-                       ISNULL((SELECT SUM(d.Subtotal) FROM InvoiceDetails d WHERE d.InvoiceId = i.Id), 0) AS TotalAmount
+                       ISNULL((SELECT SUM(CASE WHEN d.Subtotal > 0 THEN d.Subtotal ELSE d.Amount * d.Price END) 
+                               FROM InvoiceDetails d WHERE d.InvoiceId = i.Id), 0) AS TotalAmount
                 FROM Invoices i
                 WHERE i.InvDate >= @FromDate AND i.InvDate <= @ToDate
             ";
@@ -177,8 +190,8 @@ namespace ChumChumBakery.Core.Services
                         }
 
                         string sqlDetail = @"
-                            INSERT INTO InvoiceDetails (InvoiceId, ProductId, ProductName, Unit, Amount, Price)
-                            VALUES (@InvoiceId, @ProductId, @ProductName, @Unit, @Amount, @Price)";
+                            INSERT INTO InvoiceDetails (InvoiceId, ProductId, ProductName, Unit, Amount, Price, Subtotal)
+                            VALUES (@InvoiceId, @ProductId, @ProductName, @Unit, @Amount, @Price, @Subtotal)";
 
                         foreach (var d in details)
                         {
@@ -190,6 +203,7 @@ namespace ChumChumBakery.Core.Services
                                 cmd.Parameters.AddWithValue("@Unit", d.Unit);
                                 cmd.Parameters.AddWithValue("@Amount", d.Amount);
                                 cmd.Parameters.AddWithValue("@Price", d.Price);
+                                cmd.Parameters.AddWithValue("@Subtotal", d.Amount * d.Price);
                                 cmd.ExecuteNonQuery();
                             }
                         }

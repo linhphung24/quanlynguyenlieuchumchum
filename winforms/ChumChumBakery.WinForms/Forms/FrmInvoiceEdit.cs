@@ -18,7 +18,7 @@ namespace ChumChumBakery.WinForms.Forms
         private ComboBox cbType;
         private DateTimePicker dtInvDate;
         private ComboBox cbPartner;
-        private TextBox txtPartner; // Keeping this reference temporarily if needed, but will replace functionality
+        private TextBox txtPartner; // Keeping reference for compatibility
         private TextBox txtNote;
         
         private ComboBox cbProducts;
@@ -52,17 +52,7 @@ namespace ChumChumBakery.WinForms.Forms
             cbType = new ComboBox { Location = new Point(90, 27), Width = 120, DropDownStyle = ComboBoxStyle.DropDownList };
             cbType.Items.AddRange(new[] { "Nhập kho", "Xuất kho" });
             cbType.SelectedIndex = 0;
-            
-            if (ChumChumBakery.Core.Session.CurrentUser?.Role == "ketoan")
-            {
-                cbType.SelectedIndex = 0;
-                cbType.Enabled = false;
-            }
-            else if (ChumChumBakery.Core.Session.CurrentUser?.Role == "thukho")
-            {
-                cbType.SelectedIndex = 1;
-                cbType.Enabled = false;
-            }
+            cbType.Enabled = true; // Kế toán, Quản lý và Admin được phép vừa Tạo Hóa đơn Nhập vừa Tạo Hóa đơn Xuất linh hoạt
             
             grpInfo.Controls.Add(cbType);
 
@@ -157,58 +147,55 @@ namespace ChumChumBakery.WinForms.Forms
 
         private void BtnAddItem_Click(object sender, EventArgs e)
         {
+            // Validate Số lượng
+            if (!decimal.TryParse(txtAmount.Text.Trim(), out decimal amt) || amt <= 0)
+            {
+                MessageBox.Show("Vui lòng nhập Số lượng hợp lệ (lớn hơn 0).", "Cảnh báo", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                txtAmount.Focus();
+                return;
+            }
+
+            // Validate Đơn giá
+            if (!decimal.TryParse(txtPrice.Text.Trim(), out decimal price) || price <= 0)
+            {
+                MessageBox.Show("Vui lòng nhập Đơn giá hợp lệ (lớn hơn 0).", "Cảnh báo", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                txtPrice.Focus();
+                return;
+            }
+
+            Product selectedProduct = null;
             if (cbProducts.SelectedItem is Product p)
             {
-                if (decimal.TryParse(txtAmount.Text, out decimal amt) && decimal.TryParse(txtPrice.Text, out decimal price))
-                {
-                    _details.Add(new InvoiceDetail
-                    {
-                        ProductId = p.Id,
-                        ProductCode = p.Code,
-                        ProductName = p.Name,
-                        Unit = p.Unit,
-                        Amount = amt,
-                        Price = price
-                    });
-                    txtAmount.Clear();
-                    cbProducts.Focus();
-                }
-                else
-                {
-                    MessageBox.Show("Vui lòng nhập số lượng và đơn giá hợp lệ.");
-                }
+                selectedProduct = p;
             }
             else
             {
-                // Try matching by typed text if SelectedItem is null
                 string typedName = RemoveDiacritics(cbProducts.Text.Trim());
-                var matchedProduct = _allProducts.FirstOrDefault(x => RemoveDiacritics(x.Name).Equals(typedName, StringComparison.OrdinalIgnoreCase) || RemoveDiacritics(x.Code).Equals(typedName, StringComparison.OrdinalIgnoreCase));
-                if (matchedProduct != null)
-                {
-                    if (decimal.TryParse(txtAmount.Text, out decimal amt) && decimal.TryParse(txtPrice.Text, out decimal price))
-                    {
-                        _details.Add(new InvoiceDetail
-                        {
-                            ProductId = matchedProduct.Id,
-                            ProductCode = matchedProduct.Code,
-                            ProductName = matchedProduct.Name,
-                            Unit = matchedProduct.Unit,
-                            Amount = amt,
-                            Price = price
-                        });
-                        txtAmount.Clear();
-                        cbProducts.Focus();
-                    }
-                    else
-                    {
-                        MessageBox.Show("Vui lòng nhập số lượng và đơn giá hợp lệ.");
-                    }
-                }
-                else
-                {
-                    MessageBox.Show("Vui lòng chọn hoặc nhập đúng tên sản phẩm có trong danh mục.");
-                }
+                selectedProduct = _allProducts.FirstOrDefault(x => 
+                    RemoveDiacritics(x.Name).Equals(typedName, StringComparison.OrdinalIgnoreCase) || 
+                    RemoveDiacritics(x.Code).Equals(typedName, StringComparison.OrdinalIgnoreCase));
             }
+
+            if (selectedProduct == null)
+            {
+                MessageBox.Show("Vui lòng chọn hoặc nhập đúng tên sản phẩm có trong danh mục.", "Cảnh báo", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                cbProducts.Focus();
+                return;
+            }
+
+            _details.Add(new InvoiceDetail
+            {
+                ProductId = selectedProduct.Id,
+                ProductCode = selectedProduct.Code,
+                ProductName = selectedProduct.Name,
+                Unit = selectedProduct.Unit,
+                Amount = amt,
+                Price = price
+            });
+
+            txtAmount.Clear();
+            txtPrice.Clear();
+            cbProducts.Focus();
         }
 
         private string RemoveDiacritics(string text)
@@ -285,8 +272,23 @@ namespace ChumChumBakery.WinForms.Forms
         {
             if (_details.Count == 0)
             {
-                MessageBox.Show("Vui lòng thêm ít nhất 1 sản phẩm vào hóa đơn.");
+                MessageBox.Show("Vui lòng thêm ít nhất 1 sản phẩm vào hóa đơn.", "Cảnh báo", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 return;
+            }
+
+            // Validate toàn bộ các dòng trước khi lưu
+            foreach (var d in _details)
+            {
+                if (d.Amount <= 0)
+                {
+                    MessageBox.Show($"Sản phẩm '{d.ProductName}' có số lượng không hợp lệ (bằng 0 hoặc nhỏ hơn 0). Vui lòng kiểm tra lại!", "Cảnh báo Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
+                if (d.Price <= 0)
+                {
+                    MessageBox.Show($"Sản phẩm '{d.ProductName}' có đơn giá không hợp lệ (bằng 0 hoặc nhỏ hơn 0). Vui lòng kiểm tra lại!", "Cảnh báo Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                    return;
+                }
             }
 
             var inv = new Invoice
