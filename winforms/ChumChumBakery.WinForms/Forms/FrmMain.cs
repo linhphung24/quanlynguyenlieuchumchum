@@ -27,9 +27,13 @@ namespace ChumChumBakery.WinForms.Forms
 
             // NHÓM 1: QUẢN LÝ NHẬP XUẤT KHO
             currentY = AddGroupHeader("📦 QUẢN LÝ NHẬP XUẤT", currentY);
-            if (Core.Session.HasPermission("Menu_Invoices"))
+            if (Core.Session.HasPermission("Menu_Invoices_Import"))
             {
-                AddNavButton("🧾 Hóa đơn Nhập / Xuất", ref currentY, (s, e) => { lblTitle.Text = "🧾 Quản lý Hóa đơn Nhập / Xuất"; ShowPanel(new FrmInvoices(), (Button)s); });
+                AddNavButton("📥 Hóa đơn Nhập kho", ref currentY, (s, e) => { lblTitle.Text = "📥 Quản lý Hóa đơn Nhập kho"; ShowPanel(new FrmInvoices("in"), (Button)s); });
+            }
+            if (Core.Session.HasPermission("Menu_Invoices_Export"))
+            {
+                AddNavButton("📤 Hóa đơn Xuất kho", ref currentY, (s, e) => { lblTitle.Text = "📤 Quản lý Hóa đơn Xuất kho"; ShowPanel(new FrmInvoices("out"), (Button)s); });
             }
             
             if (Core.Session.HasPermission("Menu_StockOpening"))

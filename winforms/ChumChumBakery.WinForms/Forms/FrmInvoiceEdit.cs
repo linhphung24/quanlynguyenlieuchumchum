@@ -31,8 +31,11 @@ namespace ChumChumBakery.WinForms.Forms
         private List<Product> _allProducts = new List<Product>();
         private SupplierService _supplierService = new SupplierService();
 
-        public FrmInvoiceEdit()
+        private string _fixedType;
+
+        public FrmInvoiceEdit(string fixedType = "")
         {
+            _fixedType = fixedType;
             InitializeUI();
             LoadData();
         }
@@ -51,9 +54,22 @@ namespace ChumChumBakery.WinForms.Forms
             grpInfo.Controls.Add(new Label { Text = "Loại HĐ:", Location = new Point(20, 30), AutoSize = true });
             cbType = new ComboBox { Location = new Point(90, 27), Width = 120, DropDownStyle = ComboBoxStyle.DropDownList };
             cbType.Items.AddRange(new[] { "Nhập kho", "Xuất kho" });
-            cbType.SelectedIndex = 0;
-            cbType.Enabled = true; // Kế toán, Quản lý và Admin được phép vừa Tạo Hóa đơn Nhập vừa Tạo Hóa đơn Xuất linh hoạt
             
+            if (_fixedType == "in")
+            {
+                cbType.SelectedIndex = 0;
+                cbType.Enabled = false;
+            }
+            else if (_fixedType == "out")
+            {
+                cbType.SelectedIndex = 1;
+                cbType.Enabled = false;
+            }
+            else
+            {
+                cbType.SelectedIndex = 0;
+                cbType.Enabled = true;
+            }
             grpInfo.Controls.Add(cbType);
 
             grpInfo.Controls.Add(new Label { Text = "Ngày:", Location = new Point(230, 30), AutoSize = true });

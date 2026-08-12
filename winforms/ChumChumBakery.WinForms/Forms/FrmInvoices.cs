@@ -16,9 +16,11 @@ namespace ChumChumBakery.WinForms.Forms
         private TextBox _txtSearch;
         private ComboBox _cbTypeFilter;
         private Button _btnSearch, _btnAdd, _btnDelete, _btnPrint;
+        private string _defaultType;
 
-        public FrmInvoices()
+        public FrmInvoices(string defaultType = "")
         {
+            _defaultType = defaultType;
             InitializeUI();
             LoadInvoices();
         }
@@ -44,7 +46,22 @@ namespace ChumChumBakery.WinForms.Forms
             
             _cbTypeFilter = new ComboBox { Width = 90, Location = new Point(790, 19), DropDownStyle = ComboBoxStyle.DropDownList };
             _cbTypeFilter.Items.AddRange(new[] { "Tất cả", "Nhập kho", "Xuất kho" });
-            _cbTypeFilter.SelectedIndex = 0;
+            
+            if (_defaultType == "in")
+            {
+                _cbTypeFilter.SelectedIndex = 1;
+                _cbTypeFilter.Enabled = false; // Khóa filter nếu xem chuyên Nhập
+            }
+            else if (_defaultType == "out")
+            {
+                _cbTypeFilter.SelectedIndex = 2;
+                _cbTypeFilter.Enabled = false; // Khóa filter nếu xem chuyên Xuất
+            }
+            else
+            {
+                _cbTypeFilter.SelectedIndex = 0;
+            }
+
             _cbTypeFilter.SelectedIndexChanged += (s, e) => LoadInvoices();
 
             _btnSearch = new Button { Text = "Lọc", Width = 50, Height = 30, Location = new Point(890, 16), BackColor = Color.FromArgb(224, 224, 224), FlatStyle = FlatStyle.Flat };
@@ -182,7 +199,18 @@ namespace ChumChumBakery.WinForms.Forms
 
         private void BtnAdd_Click(object sender, EventArgs e)
         {
-            using (var dlg = new FrmInvoiceEdit())
+            // Kiểm tra quyền thêm (nếu admin thì được thêm bất kỳ, nếu vào màn hình cụ thể thì truyền type)
+            string featureKey = _defaultType == "in" ? "Menu_Invoices_Import" : 
+                                _defaultType == "out" ? "Menu_Invoices_Export" : 
+                                "Menu_Invoices_Import"; // default check
+            
+            if (_defaultType != "" && !Session.HasPermission(featureKey, "create"))
+            {
+                MessageBox.Show("Bạn không có quyền thêm mới hóa đơn loại này!", "Từ chối", MessageBoxButtons.OK, MessageBoxIcon.Stop);
+                return;
+            }
+
+            using (var dlg = new FrmInvoiceEdit(_defaultType))
             {
                 if (dlg.ShowDialog() == DialogResult.OK)
                 {

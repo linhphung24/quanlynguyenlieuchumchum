@@ -12,7 +12,8 @@ namespace ChumChumBakery.Core.Services
         public static List<string> AllAvailablePermissions => new List<string>
         {
             "Menu_Products",
-            "Menu_Invoices",
+            "Menu_Invoices_Import",
+            "Menu_Invoices_Export",
             "Menu_StockOpening",
             "Menu_Batches",
             "Menu_SummaryReport",
@@ -25,7 +26,8 @@ namespace ChumChumBakery.Core.Services
         public static string GetPermissionName(string key) => key switch
         {
             "Menu_Products" => "📦 Danh mục Sản phẩm / Kho",
-            "Menu_Invoices" => "🧾 Hóa đơn Nhập / Xuất kho (Đầy đủ cả Nhập & Xuất)",
+            "Menu_Invoices_Import" => "📥 Hóa đơn Nhập kho",
+            "Menu_Invoices_Export" => "📤 Hóa đơn Xuất kho",
             "Menu_StockOpening" => "📝 Tồn đầu kỳ / Kiểm kê",
             "Menu_Batches" => "🏷️ Quản lý Lô hàng FIFO",
             "Menu_SummaryReport" => "📊 Báo cáo Tổng hợp tồn kho",
@@ -40,6 +42,14 @@ namespace ChumChumBakery.Core.Services
         {
             try
             {
+                // Fix schema mismatch if previous agent created the old table
+                var sqlCheckCol = "SELECT COL_LENGTH('RolePermissions', 'CanView')";
+                var colObj = DatabaseHelper.ExecuteScalar(sqlCheckCol);
+                if (colObj == null || colObj == DBNull.Value)
+                {
+                    DatabaseHelper.ExecuteNonQuery("IF EXISTS (SELECT * FROM sys.tables WHERE name = 'RolePermissions') DROP TABLE RolePermissions");
+                }
+
                 var sqlCreate = @"
 IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'RolePermissions')
 BEGIN
@@ -64,6 +74,38 @@ END";
                 {
                     SeedDefaultPermissions();
                 }
+                else
+                {
+                    var ketoanCount = DatabaseHelper.ExecuteScalar("SELECT COUNT(*) FROM RolePermissions WHERE Role = 'ketoan' AND FeatureKey = 'Menu_Invoices_Import'");
+                    if (ketoanCount != null && Convert.ToInt32(ketoanCount) == 0)
+                    {
+                        DatabaseHelper.ExecuteNonQuery("DELETE FROM RolePermissions");
+                        var sqlMigrate = @"
+                        INSERT INTO RolePermissions (Role, FeatureKey, FeatureName, CanView, CanCreate, CanEdit, CanDelete) VALUES
+                        (N'ketoan', N'Menu_Products', N'📦 Danh mục Sản phẩm / Kho', 1, 1, 1, 0),
+                        (N'ketoan', N'Menu_Invoices_Import', N'📥 Hóa đơn Nhập kho', 1, 1, 1, 1),
+                        (N'ketoan', N'Menu_Invoices_Export', N'📤 Hóa đơn Xuất kho', 1, 1, 1, 1),
+                        (N'ketoan', N'Menu_StockOpening', N'📝 Tồn đầu kỳ / Kiểm kê', 1, 1, 1, 1),
+                        (N'ketoan', N'Menu_Batches', N'🏷️ Quản lý Lô hàng FIFO', 1, 1, 1, 1),
+                        (N'ketoan', N'Menu_SummaryReport', N'📊 Báo cáo Tổng hợp tồn kho', 1, 1, 1, 0),
+                        (N'ketoan', N'Menu_Recipes', N'🥖 Công thức Bánh & Định mức', 1, 0, 0, 0),
+                        (N'ketoan', N'Menu_Suppliers', N'🏢 Danh sách Nhà cung cấp', 1, 0, 0, 0),
+                        (N'ketoan', N'Menu_Users', N'🔐 Quản lý Tài khoản', 0, 0, 0, 0),
+                        (N'ketoan', N'Menu_RolePermissions', N'🔑 Ma trận Phân quyền', 0, 0, 0, 0),
+
+                        (N'thukho', N'Menu_Products', N'📦 Danh mục Sản phẩm / Kho', 1, 0, 0, 0),
+                        (N'thukho', N'Menu_Invoices_Import', N'📥 Hóa đơn Nhập kho', 1, 1, 0, 0),
+                        (N'thukho', N'Menu_Invoices_Export', N'📤 Hóa đơn Xuất kho', 1, 1, 0, 0),
+                        (N'thukho', N'Menu_StockOpening', N'📝 Tồn đầu kỳ / Kiểm kê', 1, 0, 0, 0),
+                        (N'thukho', N'Menu_Batches', N'🏷️ Quản lý Lô hàng FIFO', 1, 0, 0, 0),
+                        (N'thukho', N'Menu_SummaryReport', N'📊 Báo cáo Tổng hợp tồn kho', 1, 0, 0, 0),
+                        (N'thukho', N'Menu_Recipes', N'🥖 Công thức Bánh & Định mức', 0, 0, 0, 0),
+                        (N'thukho', N'Menu_Suppliers', N'🏢 Danh sách Nhà cung cấp', 0, 0, 0, 0),
+                        (N'thukho', N'Menu_Users', N'🔐 Quản lý Tài khoản', 0, 0, 0, 0),
+                        (N'thukho', N'Menu_RolePermissions', N'🔑 Ma trận Phân quyền', 0, 0, 0, 0);";
+                        DatabaseHelper.ExecuteNonQuery(sqlMigrate);
+                    }
+                }
             }
             catch { }
         }
@@ -74,7 +116,8 @@ END";
 -- Admin
 INSERT INTO RolePermissions (Role, FeatureKey, FeatureName, CanView, CanCreate, CanEdit, CanDelete) VALUES
 (N'admin', N'Menu_Products', N'📦 Danh mục Sản phẩm / Kho', 1, 1, 1, 1),
-(N'admin', N'Menu_Invoices', N'🧾 Hóa đơn Nhập / Xuất kho', 1, 1, 1, 1),
+(N'admin', N'Menu_Invoices_Import', N'📥 Hóa đơn Nhập kho', 1, 1, 1, 1),
+(N'admin', N'Menu_Invoices_Export', N'📤 Hóa đơn Xuất kho', 1, 1, 1, 1),
 (N'admin', N'Menu_StockOpening', N'📝 Tồn đầu kỳ / Kiểm kê', 1, 1, 1, 1),
 (N'admin', N'Menu_Batches', N'🏷️ Quản lý Lô hàng FIFO', 1, 1, 1, 1),
 (N'admin', N'Menu_SummaryReport', N'📊 Báo cáo Tổng hợp tồn kho', 1, 1, 1, 1),
@@ -85,7 +128,8 @@ INSERT INTO RolePermissions (Role, FeatureKey, FeatureName, CanView, CanCreate, 
 
 -- Manager
 (N'manager', N'Menu_Products', N'📦 Danh mục Sản phẩm / Kho', 1, 1, 1, 1),
-(N'manager', N'Menu_Invoices', N'🧾 Hóa đơn Nhập / Xuất kho', 1, 1, 1, 1),
+(N'manager', N'Menu_Invoices_Import', N'📥 Hóa đơn Nhập kho', 1, 1, 1, 1),
+(N'manager', N'Menu_Invoices_Export', N'📤 Hóa đơn Xuất kho', 1, 1, 1, 1),
 (N'manager', N'Menu_StockOpening', N'📝 Tồn đầu kỳ / Kiểm kê', 1, 1, 1, 1),
 (N'manager', N'Menu_Batches', N'🏷️ Quản lý Lô hàng FIFO', 1, 1, 1, 1),
 (N'manager', N'Menu_SummaryReport', N'📊 Báo cáo Tổng hợp tồn kho', 1, 1, 1, 1),
@@ -94,20 +138,34 @@ INSERT INTO RolePermissions (Role, FeatureKey, FeatureName, CanView, CanCreate, 
 (N'manager', N'Menu_Users', N'🔐 Quản lý Tài khoản', 1, 0, 0, 0),
 (N'manager', N'Menu_RolePermissions', N'🔑 Ma trận Phân quyền', 1, 0, 0, 0),
 
--- Accountant (Kế toán - Có toàn quyền Nhập & Xuất)
-(N'accountant', N'Menu_Products', N'📦 Danh mục Sản phẩm / Kho', 1, 1, 1, 0),
-(N'accountant', N'Menu_Invoices', N'🧾 Hóa đơn Nhập / Xuất kho', 1, 1, 1, 1),
-(N'accountant', N'Menu_StockOpening', N'📝 Tồn đầu kỳ / Kiểm kê', 1, 1, 1, 1),
-(N'accountant', N'Menu_Batches', N'🏷️ Quản lý Lô hàng FIFO', 1, 1, 1, 1),
-(N'accountant', N'Menu_SummaryReport', N'📊 Báo cáo Tổng hợp tồn kho', 1, 1, 1, 0),
-(N'accountant', N'Menu_Recipes', N'🥖 Công thức Bánh & Định mức', 1, 0, 0, 0),
-(N'accountant', N'Menu_Suppliers', N'🏢 Danh sách Nhà cung cấp', 1, 0, 0, 0),
-(N'accountant', N'Menu_Users', N'🔐 Quản lý Tài khoản', 0, 0, 0, 0),
-(N'accountant', N'Menu_RolePermissions', N'🔑 Ma trận Phân quyền', 0, 0, 0, 0),
+-- Kế toán (ketoan) - Có toàn quyền Nhập & Xuất
+(N'ketoan', N'Menu_Products', N'📦 Danh mục Sản phẩm / Kho', 1, 1, 1, 0),
+(N'ketoan', N'Menu_Invoices_Import', N'📥 Hóa đơn Nhập kho', 1, 1, 1, 1),
+(N'ketoan', N'Menu_Invoices_Export', N'📤 Hóa đơn Xuất kho', 1, 1, 1, 1),
+(N'ketoan', N'Menu_StockOpening', N'📝 Tồn đầu kỳ / Kiểm kê', 1, 1, 1, 1),
+(N'ketoan', N'Menu_Batches', N'🏷️ Quản lý Lô hàng FIFO', 1, 1, 1, 1),
+(N'ketoan', N'Menu_SummaryReport', N'📊 Báo cáo Tổng hợp tồn kho', 1, 1, 1, 0),
+(N'ketoan', N'Menu_Recipes', N'🥖 Công thức Bánh & Định mức', 1, 0, 0, 0),
+(N'ketoan', N'Menu_Suppliers', N'🏢 Danh sách Nhà cung cấp', 1, 0, 0, 0),
+(N'ketoan', N'Menu_Users', N'🔐 Quản lý Tài khoản', 0, 0, 0, 0),
+(N'ketoan', N'Menu_RolePermissions', N'🔑 Ma trận Phân quyền', 0, 0, 0, 0),
+
+-- Thủ kho (thukho) - Chỉ xem và nhập xuất kho
+(N'thukho', N'Menu_Products', N'📦 Danh mục Sản phẩm / Kho', 1, 0, 0, 0),
+(N'thukho', N'Menu_Invoices_Import', N'📥 Hóa đơn Nhập kho', 1, 1, 0, 0),
+(N'thukho', N'Menu_Invoices_Export', N'📤 Hóa đơn Xuất kho', 1, 1, 0, 0),
+(N'thukho', N'Menu_StockOpening', N'📝 Tồn đầu kỳ / Kiểm kê', 1, 0, 0, 0),
+(N'thukho', N'Menu_Batches', N'🏷️ Quản lý Lô hàng FIFO', 1, 0, 0, 0),
+(N'thukho', N'Menu_SummaryReport', N'📊 Báo cáo Tổng hợp tồn kho', 1, 0, 0, 0),
+(N'thukho', N'Menu_Recipes', N'🥖 Công thức Bánh & Định mức', 0, 0, 0, 0),
+(N'thukho', N'Menu_Suppliers', N'🏢 Danh sách Nhà cung cấp', 0, 0, 0, 0),
+(N'thukho', N'Menu_Users', N'🔐 Quản lý Tài khoản', 0, 0, 0, 0),
+(N'thukho', N'Menu_RolePermissions', N'🔑 Ma trận Phân quyền', 0, 0, 0, 0),
 
 -- Staff
 (N'staff', N'Menu_Products', N'📦 Danh mục Sản phẩm / Kho', 1, 0, 0, 0),
-(N'staff', N'Menu_Invoices', N'🧾 Hóa đơn Nhập / Xuất kho', 1, 1, 0, 0),
+(N'staff', N'Menu_Invoices_Import', N'📥 Hóa đơn Nhập kho', 1, 1, 0, 0),
+(N'staff', N'Menu_Invoices_Export', N'📤 Hóa đơn Xuất kho', 1, 1, 0, 0),
 (N'staff', N'Menu_StockOpening', N'📝 Tồn đầu kỳ / Kiểm kê', 1, 0, 0, 0),
 (N'staff', N'Menu_Batches', N'🏷️ Quản lý Lô hàng FIFO', 1, 0, 0, 0),
 (N'staff', N'Menu_SummaryReport', N'📊 Báo cáo Tổng hợp tồn kho', 1, 0, 0, 0),
@@ -124,18 +182,6 @@ INSERT INTO RolePermissions (Role, FeatureKey, FeatureName, CanView, CanCreate, 
 
             if (string.Equals(role, "admin", StringComparison.OrdinalIgnoreCase))
                 return AllAvailablePermissions;
-
-            bool isAccountant = string.Equals(role, "accountant", StringComparison.OrdinalIgnoreCase) ||
-                                string.Equals(role, "ketoan", StringComparison.OrdinalIgnoreCase);
-
-            if (isAccountant)
-            {
-                return new List<string>
-                {
-                    "Menu_Products", "Menu_Invoices", "Menu_StockOpening", 
-                    "Menu_Batches", "Menu_SummaryReport", "Menu_Recipes", "Menu_Suppliers"
-                };
-            }
 
             var list = new List<string>();
             try
@@ -197,7 +243,7 @@ INSERT INTO RolePermissions (Role, FeatureKey, FeatureName, CanView, CanCreate, 
 
             if (list.Count == 0)
             {
-                var roles = new[] { "admin", "manager", "accountant", "staff" };
+                var roles = new[] { "admin", "manager", "ketoan", "thukho", "staff" };
                 int autoId = 1;
                 foreach (var r in roles)
                 {
@@ -207,9 +253,9 @@ INSERT INTO RolePermissions (Role, FeatureKey, FeatureName, CanView, CanCreate, 
                     foreach (var key in AllAvailablePermissions)
                     {
                         bool isView = true;
-                        bool isCreate = (r == "admin" || r == "manager" || (r == "accountant" && (key.Contains("Invoice") || key.Contains("Product"))) || (r == "staff" && key.Contains("Invoice")));
-                        bool isEdit = (r == "admin" || r == "manager" || (r == "accountant" && (key.Contains("Invoice") || key.Contains("Product"))));
-                        bool isDelete = (r == "admin" || r == "manager" || (r == "accountant" && key.Contains("Invoice")));
+                        bool isCreate = (r == "admin" || r == "manager" || (r == "ketoan" && (key.Contains("Invoice") || key.Contains("Product"))) || ((r == "staff" || r == "thukho") && key.Contains("Invoice")));
+                        bool isEdit = (r == "admin" || r == "manager" || (r == "ketoan" && (key.Contains("Invoice") || key.Contains("Product"))));
+                        bool isDelete = (r == "admin" || r == "manager" || (r == "ketoan" && key.Contains("Invoice")));
 
                         list.Add(new RolePermission
                         {
@@ -236,18 +282,11 @@ INSERT INTO RolePermissions (Role, FeatureKey, FeatureName, CanView, CanCreate, 
             if (string.Equals(role, "admin", StringComparison.OrdinalIgnoreCase))
                 return true;
 
-            bool isAccountant = string.Equals(role, "accountant", StringComparison.OrdinalIgnoreCase) ||
-                                string.Equals(role, "ketoan", StringComparison.OrdinalIgnoreCase);
-
-            if (isAccountant && featureKey != "Menu_Users" && featureKey != "Menu_RolePermissions")
-                return true;
-
             try
             {
-                var sql = "SELECT CanView, CanCreate, CanEdit, CanDelete FROM RolePermissions WHERE (Role = @Role OR (Role = 'accountant' AND @IsAccountant = 1)) AND FeatureKey = @FeatureKey";
+                var sql = "SELECT CanView, CanCreate, CanEdit, CanDelete FROM RolePermissions WHERE Role = @Role AND FeatureKey = @FeatureKey";
                 var dt = DatabaseHelper.ExecuteQuery(sql,
                     new SqlParameter("@Role", role),
-                    new SqlParameter("@IsAccountant", isAccountant ? 1 : 0),
                     new SqlParameter("@FeatureKey", featureKey));
 
                 if (dt.Rows.Count > 0)
@@ -264,9 +303,6 @@ INSERT INTO RolePermissions (Role, FeatureKey, FeatureName, CanView, CanCreate, 
                 }
             }
             catch { }
-
-            if (isAccountant && featureKey != "Menu_Users" && featureKey != "Menu_RolePermissions")
-                return true;
 
             return false;
         }

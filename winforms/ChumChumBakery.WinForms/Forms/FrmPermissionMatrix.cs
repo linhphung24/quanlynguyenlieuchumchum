@@ -26,7 +26,8 @@ namespace ChumChumBakery.WinForms.Forms
             cbRoleFilter.Items.Add("-- Tất cả các vai trò --");
             cbRoleFilter.Items.Add("admin");
             cbRoleFilter.Items.Add("manager");
-            cbRoleFilter.Items.Add("accountant");
+            cbRoleFilter.Items.Add("ketoan");
+            cbRoleFilter.Items.Add("thukho");
             cbRoleFilter.Items.Add("staff");
             cbRoleFilter.SelectedIndex = 0;
             cbRoleFilter.SelectedIndexChanged += (s, e) => FilterData();
@@ -81,7 +82,8 @@ namespace ChumChumBakery.WinForms.Forms
                 {
                     "admin" => "👑 Admin (Quản trị)",
                     "manager" => "💼 Manager (Quản lý)",
-                    "accountant" => "📊 Accountant (Kế toán)",
+                    "ketoan" => "📊 Kế toán (Accountant)",
+                    "thukho" => "📦 Thủ kho (Storekeeper)",
                     "staff" => "👥 Staff (Nhân viên)",
                     _ => p.Role
                 };
