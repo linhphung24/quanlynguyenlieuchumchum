@@ -23,7 +23,7 @@ namespace ChumChumBakery.Core.Services
                 var dtBatches = DatabaseHelper.ExecuteQuery(
                     @"SELECT Id, InvoiceCode, InvoiceDate, Quantity, RemainingQty, Price, Unit 
                       FROM Batches 
-                      WHERE LOWER(TRIM(ProductName)) = LOWER(TRIM(@ProductName)) AND RemainingQty > 0 
+                      WHERE LOWER(LTRIM(RTRIM(ProductName))) = LOWER(LTRIM(RTRIM(@ProductName))) AND RemainingQty > 0 
                       ORDER BY InvoiceDate ASC, Id ASC",
                     new SqlParameter("@ProductName", pName));
 
@@ -137,7 +137,7 @@ namespace ChumChumBakery.Core.Services
         {
             var dt = DatabaseHelper.ExecuteQuery(
                 @"SELECT TOP 1 Price FROM Batches 
-                  WHERE LOWER(TRIM(ProductName)) = LOWER(TRIM(@ProductName)) AND RemainingQty > 0 
+                  WHERE LOWER(LTRIM(RTRIM(ProductName))) = LOWER(LTRIM(RTRIM(@ProductName))) AND RemainingQty > 0 
                   ORDER BY InvoiceDate ASC, Id ASC", 
                 new SqlParameter("@ProductName", productName.Trim()));
                 

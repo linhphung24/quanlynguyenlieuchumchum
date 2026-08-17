@@ -221,9 +221,13 @@ namespace ChumChumBakery.WinForms.Forms
 
         private void BtnDelete_Click(object sender, EventArgs e)
         {
-            if (Session.CurrentUser?.Role != "admin")
+            string featureKey = _defaultType == "in" ? "Menu_Invoices_Import" : 
+                                _defaultType == "out" ? "Menu_Invoices_Export" : 
+                                "Menu_Invoices_Import"; // default check
+
+            if (!Session.HasPermission(featureKey, "delete"))
             {
-                MessageBox.Show("Chỉ tài khoản Admin mới có quyền xóa hóa đơn!", "Từ chối truy cập", MessageBoxButtons.OK, MessageBoxIcon.Stop);
+                MessageBox.Show("Bạn không có quyền xóa hóa đơn loại này!", "Từ chối truy cập", MessageBoxButtons.OK, MessageBoxIcon.Stop);
                 return;
             }
 

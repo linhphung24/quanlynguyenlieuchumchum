@@ -52,13 +52,9 @@ namespace ChumChumBakery.WinForms.Forms
             pnlTop.Controls.Add(_btnEdit);
             pnlTop.Controls.Add(_btnDelete);
 
-            string role = Core.Session.CurrentUser?.Role ?? "staff";
-            if (role != "admin" && role != "manager")
-            {
-                _btnAdd.Visible = false;
-                _btnEdit.Visible = false;
-                _btnDelete.Visible = false;
-            }
+            if (!Core.Session.HasPermission("Menu_Products", "create")) _btnAdd.Visible = false;
+            if (!Core.Session.HasPermission("Menu_Products", "edit")) _btnEdit.Visible = false;
+            if (!Core.Session.HasPermission("Menu_Products", "delete")) _btnDelete.Visible = false;
 
             _grid = new DataGridView
             {

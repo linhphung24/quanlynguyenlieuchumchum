@@ -70,8 +70,7 @@ namespace ChumChumBakery.WinForms.Forms
 
             pnlTop.Controls.AddRange(new Control[] { lblTitle, lblMonth, cbMonth, lblYear, cbYear, btnLoad, lblSearch, txtSearch, btnDownloadTemplate, btnImport, btnSave });
 
-            string role = Core.Session.CurrentUser?.Role ?? "staff";
-            if (role != "admin" && role != "manager" && role != "ketoan")
+            if (!Core.Session.HasPermission("Menu_StockOpening", "create") && !Core.Session.HasPermission("Menu_StockOpening", "edit"))
             {
                 btnImport.Visible = false;
                 btnSave.Visible = false;

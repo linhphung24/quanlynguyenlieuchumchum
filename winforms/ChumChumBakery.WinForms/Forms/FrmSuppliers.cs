@@ -61,10 +61,13 @@ namespace ChumChumBakery.WinForms.Forms
             btnClear.Click += (s, e) => ClearForm();
             pnlLeft.Controls.Add(btnClear);
 
-            string role = Core.Session.CurrentUser?.Role ?? "staff";
-            if (role != "admin" && role != "manager" && role != "ketoan")
+            if (!Core.Session.HasPermission("Menu_Suppliers", "create") && !Core.Session.HasPermission("Menu_Suppliers", "edit"))
             {
-                pnlLeft.Enabled = false;
+                _btnSave.Visible = false;
+            }
+            if (!Core.Session.HasPermission("Menu_Suppliers", "delete"))
+            {
+                _btnDelete.Visible = false;
             }
 
             // Right panel - Grid

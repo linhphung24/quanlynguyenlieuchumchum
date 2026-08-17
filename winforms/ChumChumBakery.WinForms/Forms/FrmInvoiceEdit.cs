@@ -311,7 +311,7 @@ namespace ChumChumBakery.WinForms.Forms
             {
                 Type = cbType.SelectedIndex == 0 ? "in" : "out",
                 InvDate = dtInvDate.Value,
-                Code = "HD-" + DateTime.Now.ToString("yyMMddHHmm"), // Generate mock code
+                Code = "HD-" + DateTime.Now.ToString("yyMMddHHmmss"), // Include seconds to prevent unique key violation
                 Partner = cbPartner.Text.Trim(),
                 Note = txtNote.Text
             };

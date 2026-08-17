@@ -45,13 +45,9 @@ namespace ChumChumBakery.WinForms.Forms
 
             pnlTop.Controls.AddRange(new Control[] { lblTitle, _btnAdd, _btnEdit, _btnDelete });
 
-            string role = Core.Session.CurrentUser?.Role ?? "staff";
-            if (role != "admin" && role != "manager")
-            {
-                _btnAdd.Visible = false;
-                _btnEdit.Visible = false;
-                _btnDelete.Visible = false;
-            }
+            if (!Core.Session.HasPermission("Menu_Recipes", "create")) _btnAdd.Visible = false;
+            if (!Core.Session.HasPermission("Menu_Recipes", "edit")) _btnEdit.Visible = false;
+            if (!Core.Session.HasPermission("Menu_Recipes", "delete")) _btnDelete.Visible = false;
 
             // Split Container
             var splitContainer = new SplitContainer
