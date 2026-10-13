@@ -1,345 +1,489 @@
-'use client'
+'use client';
 
-import { useState, useEffect } from 'react'
-import { useApp } from '@/contexts/AppContext'
-import { Recipe, RecipeIngredient } from '@/types'
-import { UNITS } from '@/lib/constants'
-import { fmtPrice } from '@/lib/utils'
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Recipe, RecipeIngredient, Product } from '@/types';
+import { useApp } from '@/contexts/AppContext';
+import { DecimalInput } from '@/components/shared/DecimalInput';
 
 export default function RecipesPage() {
-  const { sb, user, profile, recipes, setRecipes, currentRecipeId, setCurrentRecipeId, allUnits, toast, startLoading, stopLoading, writeAudit } = useApp()
+  const { hasPermission, toast } = useApp();
+  const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [selectedRecipe, setSelectedRecipe] = useState<Recipe | null>(null);
+  const [ingredients, setIngredients] = useState<RecipeIngredient[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
 
-  const [editName, setEditName] = useState('')
-  const [editYield, setEditYield] = useState(1)
-  const [editIngredients, setEditIngredients] = useState<RecipeIngredient[]>([])
-  const [dirty, setDirty] = useState(false)
-  const [showNewForm, setShowNewForm] = useState(false)
-  const [newName, setNewName] = useState('')
-  const [newYield, setNewYield] = useState(1)
+  // Modal
+  const [modalOpen, setModalOpen] = useState(false);
+  const [recipeName, setRecipeName] = useState('');
+  const [baseYield, setBaseYield] = useState(1);
+  const [formIngredients, setFormIngredients] = useState<RecipeIngredient[]>([]);
+  const [saving, setSaving] = useState(false);
 
-  const currentRecipe = recipes.find(r => r.id === currentRecipeId) || null
+  const loadRecipes = useCallback(async () => {
+    try {
+      const res = await fetch('/api/recipes');
+      const data = await res.json();
+      if (data.recipes) {
+        setRecipes(data.recipes);
+        if (data.recipes.length > 0) {
+          const cur = data.recipes.find((r: Recipe) => r.Id === selectedRecipe?.Id);
+          setSelectedRecipe(cur || data.recipes[0]);
+        } else {
+          setSelectedRecipe(null);
+          setIngredients([]);
+        }
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  }, [selectedRecipe?.Id]);
 
   useEffect(() => {
-    if (currentRecipe) {
-      setEditName(currentRecipe.name)
-      setEditYield(currentRecipe.base_yield)
-      setEditIngredients(currentRecipe.ingredients ? [...currentRecipe.ingredients] : [])
-      setDirty(false)
+    loadRecipes();
+    fetch('/api/products')
+      .then((r) => r.json())
+      .then((d) => setProducts(d.products || []));
+  }, [loadRecipes]);
+
+  useEffect(() => {
+    if (!selectedRecipe) {
+      setIngredients([]);
+      return;
     }
-  }, [currentRecipeId, recipes])
+    fetch(`/api/recipes/${selectedRecipe.Id}/ingredients`)
+      .then((r) => r.json())
+      .then((d) => setIngredients(d.ingredients || []));
+  }, [selectedRecipe]);
 
-  const handleIngChange = (idx: number, field: keyof RecipeIngredient, val: string | number) => {
-    const updated = editIngredients.map((ing, i) => {
-      if (i !== idx) return ing
-      return { ...ing, [field]: val }
-    })
-    setEditIngredients(updated)
-    setDirty(true)
-  }
+  const handleOpenAdd = () => {
+    setSelectedRecipe(null);
+    setRecipeName('');
+    setBaseYield(1);
+    setFormIngredients([{ RecipeId: 0, ProductName: '', Amount: 100, Unit: 'g', Price: 0 }]);
+    setModalOpen(true);
+  };
 
-  const addIngredient = () => {
-    setEditIngredients([...editIngredients, { name: '', amount: 0, unit: allUnits[0] || UNITS[0], price: 0 }])
-    setDirty(true)
-  }
-
-  const removeIngredient = (idx: number) => {
-    setEditIngredients(editIngredients.filter((_, i) => i !== idx))
-    setDirty(true)
-  }
-
-  const handleSave = async () => {
-    if (!currentRecipe) return
-    if (!user) { toast('Chưa đăng nhập — vui lòng tải lại trang', 'error'); return }
-    const validIngs = editIngredients.filter(i => i.name.trim())
-    startLoading()
+  const handleOpenEdit = async (r: Recipe) => {
+    setRecipeName(r.Name);
+    setBaseYield(r.BaseYield);
     try {
-      const { data: updated, error } = await sb.from('recipes').update({
-        name: editName.trim(),
-        base_yield: editYield,
-        ingredients: validIngs,
-        updated_by: user.id,
-        updated_at: new Date().toISOString(),
-      }).eq('id', currentRecipe.id).select().single()
-      if (error) {
-        toast('Lỗi lưu: ' + error.message, 'error')
-      } else if (!updated) {
-        toast('Không thể lưu — kiểm tra quyền truy cập trong Supabase', 'error')
-      } else {
-        setRecipes(prev => prev.map(r => r.id === currentRecipe.id
-          ? { ...r, name: editName.trim(), base_yield: editYield, ingredients: validIngs }
-          : r
-        ))
-        await writeAudit('update', 'recipes', String(currentRecipe.id), `Cập nhật công thức: ${editName}`)
-        toast('Đã lưu công thức')
-        setDirty(false)
-      }
-    } catch (e) {
-      toast('Lỗi: ' + (e as Error).message, 'error')
-    } finally {
-      stopLoading()
+      const res = await fetch(`/api/recipes/${r.Id}/ingredients`);
+      const d = await res.json();
+      setFormIngredients(
+        d.ingredients && d.ingredients.length > 0
+          ? d.ingredients
+          : [{ RecipeId: r.Id, ProductName: '', Amount: 100, Unit: 'g', Price: 0 }]
+      );
+    } catch {
+      setFormIngredients([{ RecipeId: r.Id, ProductName: '', Amount: 100, Unit: 'g', Price: 0 }]);
     }
-  }
+    setModalOpen(true);
+  };
 
-  const handleDelete = async () => {
-    if (!currentRecipe) return
-    if (!window.confirm(`Xoá công thức "${currentRecipe.name}"?`)) return
-    startLoading()
-    try {
-      const { error } = await sb.from('recipes').delete().eq('id', currentRecipe.id)
-      if (!error) {
-        await writeAudit('delete', 'recipes', String(currentRecipe.id), `Xoá công thức: ${currentRecipe.name}`)
-        toast('Đã xoá công thức')
-        const remaining = recipes.filter(r => r.id !== currentRecipe.id)
-        setRecipes(remaining)
-        setCurrentRecipeId(remaining.length > 0 ? remaining[0].id : null)
-      } else {
-        toast('Lỗi xoá: ' + error.message, 'error')
-      }
-    } catch (e) {
-      toast('Lỗi: ' + (e as Error).message, 'error')
-    } finally {
-      stopLoading()
-    }
-  }
+  const handleAddIngredientRow = () => {
+    setFormIngredients([
+      ...formIngredients,
+      { RecipeId: selectedRecipe?.Id || 0, ProductName: '', Amount: 100, Unit: 'g', Price: 0 },
+    ]);
+  };
 
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!newName.trim() || !user) return
-    startLoading()
-    try {
-      const { data, error } = await sb.from('recipes').insert({
-        name: newName.trim(),
-        base_yield: newYield,
-        ingredients: [],
-        created_by: user.id,
-        created_at: new Date().toISOString(),
-      }).select().single()
-      if (!error && data) {
-        await writeAudit('create', 'recipes', String(data.id), `Tạo công thức: ${newName}`)
-        setRecipes(prev => [...prev, data as Recipe].sort((a, b) => a.name.localeCompare(b.name)))
-        setCurrentRecipeId((data as Recipe).id)
-        toast('Đã tạo công thức mới')
-        setShowNewForm(false)
-        setNewName('')
-        setNewYield(1)
-      } else if (error) {
-        toast('Lỗi tạo: ' + error.message, 'error')
-      } else {
-        toast('Không thể tạo công thức — kiểm tra quyền truy cập', 'error')
-      }
-    } catch (e) {
-      toast('Lỗi: ' + (e as Error).message, 'error')
-    } finally {
-      stopLoading()
+  const handleRemoveIngredientRow = (idx: number) => {
+    if (formIngredients.length <= 1) return;
+    setFormIngredients(formIngredients.filter((_, i) => i !== idx));
+  };
+
+  const handleProductSelect = (idx: number, name: string) => {
+    const prod = products.find((p) => p.Name.toLowerCase() === name.toLowerCase());
+    const next = [...formIngredients];
+    next[idx] = {
+      ...next[idx],
+      ProductName: name,
+      Unit: prod?.Unit || next[idx].Unit || 'kg',
+      Price: prod?.CostPrice || 0,
+    };
+    setFormIngredients(next);
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!recipeName.trim()) {
+      alert('Tên công thức không được để trống.');
+      return;
     }
-  }
+
+    const valid = formIngredients
+      .filter((i) => i.ProductName.trim() && i.Amount > 0)
+      .map((i) => {
+        const prod = products.find(
+          (p) => p.Name.toLowerCase() === i.ProductName.trim().toLowerCase()
+        );
+        return {
+          ...i,
+          Unit: prod?.Unit || i.Unit || 'kg',
+        };
+      });
+    if (valid.length === 0) {
+      alert('Vui lòng thêm ít nhất 1 nguyên liệu hợp lệ.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const res = await fetch('/api/recipes', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recipe: {
+            Id: selectedRecipe?.Id || 0,
+            Name: recipeName,
+            BaseYield: baseYield,
+          },
+          ingredients: valid,
+        }),
+      });
+
+      if (res.ok) {
+        toast('Đã lưu công thức bánh thành công', 'success');
+        setModalOpen(false);
+        loadRecipes();
+      } else {
+        const d = await res.json();
+        alert(d.error || 'Lỗi khi lưu');
+      }
+    } catch (err: any) {
+      alert(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async (r: Recipe) => {
+    if (!hasPermission('Menu_Recipes', 'delete')) {
+      alert('Bạn không có quyền xóa công thức.');
+      return;
+    }
+    const ok = confirm(`Bạn có chắc muốn xóa công thức '${r.Name}'?`);
+    if (!ok) return;
+
+    try {
+      const res = await fetch(`/api/recipes?id=${r.Id}`, { method: 'DELETE' });
+      if (res.ok) {
+        toast('Đã xóa công thức thành công', 'success');
+        loadRecipes();
+      }
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  const totalCost = useMemo(() => {
+    return ingredients.reduce((sum, ing) => sum + ing.Amount * ing.Price, 0);
+  }, [ingredients]);
 
   return (
-    <div className="p-4 max-w-2xl mx-auto">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="font-['Playfair_Display'] text-xl font-bold text-[#3d1f0a]">📖 Công thức bánh</h2>
-        <button
-          onClick={() => setShowNewForm(!showNewForm)}
-          className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-gradient-to-br from-[#c8773a] to-[#e8a44a] text-white text-xs font-medium cursor-pointer hover:opacity-90 hover:-translate-y-px transition-all"
-        >
-          + Thêm công thức
-        </button>
+    <div className="flex flex-col h-[calc(100vh-4rem)] bg-slate-50 text-slate-800 overflow-hidden select-none">
+      {/* Toolbar */}
+      <div className="p-3 bg-white border-b border-slate-200 flex items-center justify-between shadow-xs">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleOpenAdd}
+            className="px-3.5 py-1.5 bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold rounded-lg shadow-sm flex items-center gap-1.5 transition-all"
+          >
+            <span>➕</span>
+            <span>Thêm công thức</span>
+          </button>
+
+          {selectedRecipe && (
+            <>
+              <button
+                onClick={() => handleOpenEdit(selectedRecipe)}
+                className="px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 text-xs font-medium rounded-lg transition-colors flex items-center gap-1 shadow-xs"
+              >
+                <span>✏️</span>
+                <span>Sửa</span>
+              </button>
+              <button
+                onClick={() => handleDelete(selectedRecipe)}
+                className="px-3 py-1.5 bg-white hover:bg-rose-50 text-rose-600 hover:text-rose-700 border border-rose-200 text-xs font-medium rounded-lg transition-colors flex items-center gap-1 shadow-xs"
+              >
+                <span>🗑️</span>
+                <span>Xóa</span>
+              </button>
+            </>
+          )}
+
+          <button
+            onClick={loadRecipes}
+            className="px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 text-xs font-medium rounded-lg transition-colors flex items-center gap-1 shadow-xs"
+          >
+            <span>🔄</span>
+            <span>Nạp lại</span>
+          </button>
+        </div>
+        <div className="text-xs text-slate-500">
+          Tổng số công thức: <strong className="text-slate-800">{recipes.length}</strong>
+        </div>
       </div>
 
-      {/* New recipe form */}
-      {showNewForm && (
-        <div className="bg-[#fffaf4] rounded-2xl p-5 mb-4 border border-[#f5e6cc] shadow-[0_4px_20px_rgba(200,119,58,0.06)] animate-fadeIn">
-          <h3 className="text-sm font-semibold text-[#3d1f0a] mb-3">Tạo công thức mới</h3>
-          <form onSubmit={handleCreate} className="flex gap-2 flex-wrap">
-            <input
-              value={newName}
-              onChange={e => setNewName(e.target.value)}
-              onBlur={e => setNewName(e.target.value.trim())}
-              placeholder="Tên công thức..."
-              className="flex-1 min-w-[160px] px-3 py-2.5 border-[1.5px] border-[#f5e6cc] rounded-lg text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors"
-              required
-            />
-            <div className="flex items-center gap-2">
-              <label className="text-xs text-[#8b5e3c] whitespace-nowrap">Số lượng gốc:</label>
-              <input
-                type="number"
-                min={1}
-                value={newYield}
-                onChange={e => setNewYield(Number(e.target.value))}
-                className="w-20 px-3 py-2.5 border-[1.5px] border-[#f5e6cc] rounded-lg text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors"
-              />
-            </div>
-            <button type="submit" className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-gradient-to-br from-[#c8773a] to-[#e8a44a] text-white text-xs font-medium cursor-pointer hover:opacity-90 transition-all">
-              Tạo
-            </button>
-            <button type="button" onClick={() => setShowNewForm(false)} className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-white border-[1.5px] border-[#f5e6cc] text-[#8b5e3c] text-xs font-medium cursor-pointer hover:border-[#c8773a] hover:text-[#c8773a] transition-all">
-              Hủy
-            </button>
-          </form>
+      {/* Main Split: Left Recipes List (40%) & Right Ingredients Detail (60%) */}
+      <div className="flex-1 flex min-h-0 overflow-hidden">
+        {/* Left List */}
+        <div className="w-2/5 border-r border-slate-200 overflow-y-auto custom-scrollbar bg-white">
+          <div className="p-3 bg-slate-100 text-slate-700 text-xs font-semibold uppercase tracking-wider border-b border-slate-200">
+            Danh sách Công thức bánh ({recipes.length})
+          </div>
+          <div className="divide-y divide-slate-100">
+            {recipes.map((r) => {
+              const isSelected = selectedRecipe?.Id === r.Id;
+              return (
+                <div
+                  key={r.Id}
+                  onClick={() => setSelectedRecipe(r)}
+                  className={`p-3.5 cursor-pointer transition-colors ${
+                    isSelected ? 'bg-amber-50/80 text-amber-950 border-l-4 border-amber-500 pl-3' : 'hover:bg-slate-50 text-slate-700'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-semibold text-sm text-slate-800">{r.Name}</span>
+                    <span className="text-[11px] px-2 py-0.5 rounded bg-amber-100 text-amber-800 font-mono font-medium">
+                      Cơ sở: {r.BaseYield} mẻ
+                    </span>
+                  </div>
+                  <div className="text-[11px] text-slate-400">
+                    Cập nhật: {r.UpdatedAt ? r.UpdatedAt.split('T')[0] : '—'}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
         </div>
-      )}
 
-      {/* Recipe tabs */}
-      {recipes.length === 0 ? (
-        <div className="bg-[#fffaf4] rounded-2xl p-8 text-center border border-[#f5e6cc]">
-          <div className="text-4xl mb-2">🍞</div>
-          <p className="text-sm text-[#8b5e3c]">Chưa có công thức nào. Hãy tạo công thức đầu tiên!</p>
-        </div>
-      ) : (
-        <>
-          {/* Tab bar */}
-          <div className="flex gap-1 flex-wrap mb-4">
-            {recipes.map(r => (
-              <button
-                key={r.id}
-                onClick={() => { if (dirty) { if (!window.confirm('Bạn có thay đổi chưa lưu. Tiếp tục?')) return } setCurrentRecipeId(r.id) }}
-                className={`px-3 py-1.5 rounded-lg text-xs font-medium cursor-pointer transition-all border ${
-                  r.id === currentRecipeId
-                    ? 'bg-[#c8773a] text-white border-[#c8773a]'
-                    : 'bg-white text-[#8b5e3c] border-[#f5e6cc] hover:border-[#c8773a] hover:text-[#c8773a]'
-                }`}
-              >
-                {r.name}
-              </button>
-            ))}
+        {/* Right Ingredients Table */}
+        <div className="w-3/5 flex flex-col bg-slate-50 overflow-hidden">
+          <div className="p-3 bg-white border-b border-slate-200 flex items-center justify-between shadow-xs">
+            <span className="text-xs font-bold text-amber-800">
+              Định mức Nguyên vật liệu (BOM) — {selectedRecipe?.Name || 'Chưa chọn công thức'}
+            </span>
+            {selectedRecipe && (
+              <span className="text-xs text-slate-600">
+                Ước tính giá thành: <strong className="font-mono text-emerald-700 font-bold">{totalCost.toLocaleString('vi-VN')} ₫</strong> / {selectedRecipe.BaseYield} mẻ
+              </span>
+            )}
           </div>
 
-          {/* Recipe editor */}
-          {currentRecipe && (
-            <div className="bg-[#fffaf4] rounded-2xl p-5 border border-[#f5e6cc] shadow-[0_4px_20px_rgba(200,119,58,0.06)]">
-              <div className="flex gap-3 mb-4 flex-wrap">
-                <div className="flex-1 min-w-[160px]">
-                  <label className="block text-xs font-medium text-[#8b5e3c] mb-1">Tên công thức</label>
+          <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+            <div className="border border-slate-200 rounded-xl overflow-hidden shadow-xs bg-white">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-slate-100 text-slate-600 border-b border-slate-200 font-semibold">
+                    <th className="p-2.5 w-12 text-center">#</th>
+                    <th className="p-2.5">Tên nguyên liệu</th>
+                    <th className="p-2.5 w-28 text-right">Định mức</th>
+                    <th className="p-2.5 w-20 text-center">ĐVT</th>
+                    <th className="p-2.5 w-32 text-right">Đơn giá vốn (₫)</th>
+                    <th className="p-2.5 w-36 text-right">Thành tiền (₫)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {ingredients.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="p-8 text-center text-slate-400 italic">
+                        Công thức này chưa có nguyên liệu nào.
+                      </td>
+                    </tr>
+                  ) : (
+                    ingredients.map((ing, i) => (
+                      <tr key={i} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="p-2.5 text-center text-slate-400">{i + 1}</td>
+                        <td className="p-2.5 font-medium text-slate-800">{ing.ProductName}</td>
+                        <td className="p-2.5 text-right font-mono font-semibold text-amber-700">
+                          {Number(ing.Amount).toLocaleString('vi-VN', { maximumFractionDigits: 4 })}
+                        </td>
+                        <td className="p-2.5 text-center text-slate-600">{ing.Unit}</td>
+                        <td className="p-2.5 text-right font-mono text-slate-600">
+                          {Number(ing.Price).toLocaleString('vi-VN')}
+                        </td>
+                        <td className="p-2.5 text-right font-mono font-semibold text-slate-900">
+                          {(Number(ing.Amount) * Number(ing.Price)).toLocaleString('vi-VN')}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Recipe Add / Edit Modal */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-4">
+          <div className="bg-white border border-slate-200 text-slate-800 w-full max-w-3xl max-h-[92vh] flex flex-col rounded-2xl shadow-2xl overflow-hidden animate-in fade-in duration-150">
+            <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+              <h2 className="text-base font-bold text-slate-800">
+                {selectedRecipe ? 'Sửa Công Thức Bánh' : 'Thêm Công Thức Mới'}
+              </h2>
+              <button
+                onClick={() => setModalOpen(false)}
+                className="p-1.5 rounded-lg bg-slate-200/60 hover:bg-slate-200 text-slate-600 transition-colors"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSave} className="flex-1 overflow-y-auto p-6 space-y-5 custom-scrollbar">
+              <div className="grid grid-cols-3 gap-4">
+                <div className="col-span-2">
+                  <label className="block text-[11px] font-semibold text-slate-600 uppercase mb-1">
+                    Tên bánh / Sản phẩm *
+                  </label>
                   <input
-                    value={editName}
-                    onChange={e => { setEditName(e.target.value); setDirty(true) }}
-                    onBlur={e => setEditName(e.target.value.trim())}
-                    className="w-full px-3 py-2.5 border-[1.5px] border-[#f5e6cc] rounded-lg text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors"
+                    type="text"
+                    required
+                    value={recipeName}
+                    onChange={(e) => setRecipeName(e.target.value)}
+                    placeholder="VD: Bánh mì hoa cúc 500g"
+                    className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs text-slate-800 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
                   />
                 </div>
-                <div className="w-32">
-                  <label className="block text-xs font-medium text-[#8b5e3c] mb-1">Số lượng gốc</label>
-                  <input
-                    type="number"
-                    min={1}
-                    value={editYield}
-                    onChange={e => { setEditYield(Number(e.target.value)); setDirty(true) }}
-                    className="w-full px-3 py-2.5 border-[1.5px] border-[#f5e6cc] rounded-lg text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors"
+                <div>
+                  <label className="block text-[11px] font-semibold text-slate-600 uppercase mb-1">
+                    Cơ sở (mẻ/chiếc)
+                  </label>
+                  <DecimalInput
+                    min={0.01}
+                    step={1}
+                    value={baseYield}
+                    onChange={(val) => setBaseYield(val || 1)}
+                    className="w-full bg-white border border-slate-300 rounded-lg px-3 py-2 text-xs text-center text-slate-800 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                    placeholder="1"
                   />
                 </div>
               </div>
 
-              {/* Ingredients table */}
-              <div className="mb-3">
-                <h4 className="text-xs font-semibold text-[#8b5e3c] uppercase tracking-wider mb-2">Nguyên liệu</h4>
-                <div className="overflow-visible rounded-lg border border-[#f0e8d8]">
-                  <table className="w-full border-collapse">
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+                    Định mức Nguyên vật liệu (BOM)
+                  </h3>
+                  <button
+                    type="button"
+                    onClick={handleAddIngredientRow}
+                    className="px-3 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-lg text-xs font-semibold flex items-center gap-1 transition-colors"
+                  >
+                    <span>➕</span>
+                    <span>Thêm nguyên liệu</span>
+                  </button>
+                </div>
+
+                <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-xs">
+                  <table className="w-full text-left text-xs">
                     <thead>
-                      <tr>
-                        <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc]">Nguyên liệu</th>
-                        <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-24">Số lượng</th>
-                        <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-28">Đơn vị</th>
-                        <th className="text-right text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-28">Đơn giá</th>
-                        <th className="text-right text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-28">Thành tiền</th>
-                        <th className="bg-[#f5e6cc] w-8"></th>
+                      <tr className="bg-slate-100 text-slate-600 border-b border-slate-200 font-semibold">
+                        <th className="p-2 text-center w-10">#</th>
+                        <th className="p-2">Nguyên liệu</th>
+                        <th className="p-2 w-28 text-right">Định mức</th>
+                        <th className="p-2 w-24 text-center" title="Đơn vị tính mặc định theo sản phẩm (không sửa)">
+                          ĐVT mặc định
+                        </th>
+                        <th className="p-2 w-28 text-right">Đơn giá (₫)</th>
+                        <th className="p-2 w-10 text-center"></th>
                       </tr>
                     </thead>
-                    <tbody>
-                      {editIngredients.map((ing, idx) => {
-                        const subtotal = (ing.amount || 0) * (ing.price || 0)
-                        return (
-                        <tr key={idx}>
-                          <td className="px-3 py-2.5 border-b border-[#f0e8d8]">
+                    <tbody className="divide-y divide-slate-100">
+                      {formIngredients.map((ing, idx) => (
+                        <tr key={idx} className="hover:bg-slate-50">
+                          <td className="p-2 text-center text-slate-400">{idx + 1}</td>
+                          <td className="p-2">
                             <input
-                              value={ing.name}
-                              onChange={e => handleIngChange(idx, 'name', e.target.value)}
-                              onBlur={e => handleIngChange(idx, 'name', e.target.value.trim())}
-                              placeholder="Tên nguyên liệu..."
-                              className="w-full px-2 py-1 border-[1.5px] border-[#f5e6cc] rounded text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors"
+                              type="text"
+                              list="prodRecipeList"
+                              value={ing.ProductName}
+                              onChange={(e) => handleProductSelect(idx, e.target.value)}
+                              placeholder="Tên nguyên liệu"
+                              className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-800 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
                             />
                           </td>
-                          <td className="px-3 py-2.5 border-b border-[#f0e8d8]">
-                            <input
-                              type="number" min={0} step="any"
-                              value={ing.amount}
-                              onChange={e => handleIngChange(idx, 'amount', parseFloat(e.target.value) || 0)}
-                              className="w-full px-2 py-1 border-[1.5px] border-[#f5e6cc] rounded text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors"
+                          <td className="p-2 text-right">
+                            <DecimalInput
+                              min={0}
+                              value={ing.Amount}
+                              onChange={(val) => {
+                                const next = [...formIngredients];
+                                next[idx].Amount = val;
+                                setFormIngredients(next);
+                              }}
+                              className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs text-right text-slate-800 font-semibold focus:outline-none focus:border-amber-500"
+                              placeholder="0"
                             />
                           </td>
-                          <td className="px-3 py-2.5 border-b border-[#f0e8d8]">
-                            <select
-                              value={ing.unit}
-                              onChange={e => handleIngChange(idx, 'unit', e.target.value)}
-                              className="w-full px-2 py-1 border-[1.5px] border-[#f5e6cc] rounded text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors appearance-none"
-                            >
-                              {allUnits.map(u => <option key={u} value={u}>{u}</option>)}
-                            </select>
-                          </td>
-                          <td className="px-3 py-2.5 border-b border-[#f0e8d8]">
+                          <td className="p-2 text-center">
                             <input
-                              type="number" min={0} step="any"
-                              value={ing.price || 0}
-                              onChange={e => handleIngChange(idx, 'price', parseFloat(e.target.value) || 0)}
-                              className="w-full px-2 py-1 border-[1.5px] border-[#f5e6cc] rounded text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors text-right"
+                              type="text"
+                              readOnly
+                              tabIndex={-1}
+                              value={ing.Unit || '—'}
+                              title="Đơn vị tính mặc định theo danh mục (không thể sửa)"
+                              className="w-full bg-slate-100 border border-slate-200 rounded-lg px-2 py-1.5 text-xs text-center text-slate-700 font-semibold cursor-not-allowed select-none focus:outline-none shadow-xs"
                             />
                           </td>
-                          <td className="px-3 py-2.5 border-b border-[#f0e8d8] text-right text-xs font-medium text-[#c8773a] whitespace-nowrap">
-                            {subtotal > 0 ? fmtPrice(subtotal) : <span className="text-gray-300">—</span>}
+                          <td className="p-2 text-right">
+                            <DecimalInput
+                              min={0}
+                              value={ing.Price}
+                              onChange={(val) => {
+                                const next = [...formIngredients];
+                                next[idx].Price = val;
+                                setFormIngredients(next);
+                              }}
+                              className="w-full bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs text-right text-slate-800 focus:outline-none focus:border-amber-500"
+                              placeholder="0"
+                            />
                           </td>
-                          <td className="px-3 py-2.5 border-b border-[#f0e8d8] text-center">
+                          <td className="p-2 text-center">
                             <button
-                              onClick={() => removeIngredient(idx)}
-                              className="bg-transparent border-none text-[#e0a090] text-base cursor-pointer px-1.5 py-0.5 rounded hover:bg-[#fdecea] hover:text-[#c0392b] transition-all"
+                              type="button"
+                              onClick={() => handleRemoveIngredientRow(idx)}
+                              className="text-rose-500 hover:text-rose-700 p-1 font-bold"
                             >
-                              ×
+                              ✕
                             </button>
                           </td>
                         </tr>
-                        )
-                      })}
+                      ))}
                     </tbody>
-                    {editIngredients.some(i => (i.price || 0) > 0) && (
-                      <tfoot>
-                        <tr>
-                          <td colSpan={4} className="px-3 py-2 text-right text-xs font-semibold text-[#3d1f0a]">Tổng chi phí</td>
-                          <td className="px-3 py-2 text-right text-xs font-bold text-[#c8773a]">
-                            {fmtPrice(editIngredients.reduce((s, i) => s + (i.amount || 0) * (i.price || 0), 0))}
-                          </td>
-                          <td className="bg-white" />
-                        </tr>
-                      </tfoot>
-                    )}
                   </table>
+                  <datalist id="prodRecipeList">
+                    {products.map((p) => (
+                      <option key={p.Id} value={p.Name}>
+                        {p.Code ? `[${p.Code}] ` : ''}{p.Name} (ĐVT: {p.Unit || 'kg'})
+                      </option>
+                    ))}
+                  </datalist>
                 </div>
-                <button
-                  onClick={addIngredient}
-                  className="mt-2 inline-flex items-center gap-1 px-3 py-1.5 bg-transparent border-[1.5px] border-dashed border-[#c8773a] rounded-lg text-[#c8773a] text-xs cursor-pointer hover:bg-[#fef4e8] transition-all"
-                >
-                  + Thêm nguyên liệu
-                </button>
               </div>
 
-              {/* Actions */}
-              <div className="flex gap-2 flex-wrap pt-2 border-t border-[#f0e8d8]">
+              <div className="pt-4 border-t border-slate-200 flex items-center justify-end gap-3">
                 <button
-                  onClick={handleSave}
-                  disabled={!dirty}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-gradient-to-br from-[#c8773a] to-[#e8a44a] text-white text-xs font-medium cursor-pointer hover:opacity-90 hover:-translate-y-px transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  type="button"
+                  onClick={() => setModalOpen(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-medium transition-colors"
                 >
-                  💾 Lưu
+                  Hủy
                 </button>
                 <button
-                  onClick={handleDelete}
-                  className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-white border-[1.5px] border-[#e0a090] text-[#d94f3d] text-xs font-medium cursor-pointer hover:bg-[#fdecea] transition-all"
+                  type="submit"
+                  disabled={saving}
+                  className="px-5 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl text-xs font-semibold shadow-sm transition-all disabled:opacity-50"
                 >
-                  🗑 Xoá
+                  {saving ? 'Đang lưu...' : 'Lưu công thức'}
                 </button>
               </div>
-            </div>
-          )}
-        </>
+            </form>
+          </div>
+        </div>
       )}
     </div>
-  )
+  );
 }

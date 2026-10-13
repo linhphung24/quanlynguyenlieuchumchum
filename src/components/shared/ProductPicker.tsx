@@ -40,9 +40,9 @@ export default function ProductPicker({
     return () => window.removeEventListener('scroll', close, true)
   }, [open])
 
-  const active = products.filter((p) => p.is_active)
+  const active = products.filter((p: any) => p.IsActive !== false && p.is_active !== false)
   const filtered = query
-    ? active.filter((p) => p.name.toLowerCase().includes(query.toLowerCase())).slice(0, 40)
+    ? active.filter((p: any) => (p.Name || p.name || '').toLowerCase().includes(query.toLowerCase())).slice(0, 40)
     : active.slice(0, 40)
 
   // Tính vị trí fixed — thoát khỏi mọi overflow:hidden/auto
@@ -62,9 +62,11 @@ export default function ProductPicker({
     blurTimer.current = setTimeout(() => setOpen(false), 160)
   }
 
-  const handleSelect = (p: Product) => {
-    setQuery(p.name)
-    onChange(p.name, p.unit)
+  const handleSelect = (p: any) => {
+    const pName = p.Name || p.name || ''
+    const pUnit = p.Unit || p.unit || ''
+    setQuery(pName)
+    onChange(pName, pUnit)
     setOpen(false)
   }
 
@@ -108,14 +110,14 @@ export default function ProductPicker({
           {filtered.length === 0 ? (
             <div className="px-3 py-2.5 text-sm text-[#8b5e3c] italic">Không tìm thấy sản phẩm</div>
           ) : (
-            filtered.map((p) => (
+            filtered.map((p: any) => (
               <div
-                key={p.id}
+                key={p.Id || p.id}
                 onMouseDown={() => handleSelect(p)}
                 className="flex items-center justify-between px-3 py-2.5 text-sm cursor-pointer hover:bg-[#fef4e8] text-[#3d1f0a] border-b border-[#f5e6cc] last:border-0"
               >
-                <span className="font-medium">{p.name}</span>
-                <span className="text-xs text-[#8b5e3c] ml-2 flex-shrink-0">{p.unit}</span>
+                <span className="font-medium">{p.Name || p.name}</span>
+                <span className="text-xs text-[#8b5e3c] ml-2 flex-shrink-0">{p.Unit || p.unit}</span>
               </div>
             ))
           )}

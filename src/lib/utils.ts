@@ -5,8 +5,36 @@ export const fmtDate = (d: string) => {
   return `${dd}/${m}/${y}`
 }
 
-export const fmtNum = (n: number) =>
-  (+parseFloat(String(n)).toFixed(2)).toLocaleString('vi-VN')
+export function parseDecimal(val: unknown, fallback: number = 0): number {
+  if (val === null || val === undefined || val === '') return fallback;
+  if (typeof val === 'number') return isNaN(val) ? fallback : val;
+  let s = String(val).trim();
+  if (!s) return fallback;
+
+  // Xử lý chuỗi có chứa cả '.' và ','
+  if (s.includes('.') && s.includes(',')) {
+    const lastDot = s.lastIndexOf('.');
+    const lastComma = s.lastIndexOf(',');
+    if (lastComma > lastDot) {
+      // Định dạng Việt Nam (1.250,5 -> 1250.5)
+      s = s.replace(/\./g, '').replace(',', '.');
+    } else {
+      // Định dạng Quốc tế (1,250.5 -> 1250.5)
+      s = s.replace(/,/g, '');
+    }
+  } else {
+    // Chỉ có ',' hoặc chỉ có '.' -> đổi ',' thành '.'
+    s = s.replace(',', '.');
+  }
+
+  const num = parseFloat(s);
+  return isNaN(num) ? fallback : num;
+}
+
+export const fmtNum = (n: number | string | null | undefined, maxDecimals: number = 4) => {
+  const num = parseDecimal(n, 0);
+  return num.toLocaleString('vi-VN', { maximumFractionDigits: maxDecimals });
+};
 
 export const fmtTs = (ts: string) =>
   new Date(ts).toLocaleString('vi-VN', { dateStyle: 'short', timeStyle: 'short' })
@@ -44,4 +72,13 @@ export function xlsxDateToStr(val: unknown): string | null {
     return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
   }
   return null
+}
+
+export function safeHeaderValue(val: string | null | undefined, fallback: string = ''): string {
+  if (!val) return fallback;
+  try {
+    return encodeURIComponent(String(val).trim());
+  } catch {
+    return fallback;
+  }
 }

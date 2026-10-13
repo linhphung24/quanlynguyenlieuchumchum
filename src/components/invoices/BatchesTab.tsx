@@ -13,8 +13,8 @@ function daysUntil(dateStr?: string): number | null {
   return Math.ceil(diff / (1000 * 60 * 60 * 24))
 }
 
-// Làm tròn 2 chữ số thập phân để tránh floating-point dư nhỏ
-const eff = (qty: number) => parseFloat(qty.toFixed(2))
+// Làm tròn 4 chữ số thập phân để tránh floating-point dư nhỏ
+const eff = (qty: number) => parseFloat(qty.toFixed(4))
 
 export default function BatchesTab() {
   const { sb, toast, allProducts } = useApp()
@@ -93,7 +93,7 @@ export default function BatchesTab() {
       const computed = allBatches.map(b => ({
         ...b,
         remaining_qty: parseFloat(
-          Math.max(0, b.quantity - (deductMap[b.id] || 0)).toFixed(2)
+          Math.max(0, b.quantity - (deductMap[b.id] || 0)).toFixed(4)
         ),
       }))
       setBatches(computed)

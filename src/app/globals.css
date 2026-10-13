@@ -46,10 +46,13 @@ html {
 }
 
 body {
-  font-family: 'DM Sans', sans-serif;
-  background: linear-gradient(135deg, #fdf6ec 0%, #fef8f0 50%, #fdf6ec 100%);
+  font-family: var(--font-be-vietnam-pro), var(--font-inter), -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  background-color: #f8fafc;
   min-height: 100vh;
-  color: #3d1f0a;
+  color: #1e293b;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 }
 
 ::-webkit-scrollbar {
@@ -58,14 +61,146 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #fdf6ec;
+  background: #f1f5f9;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #f5e6cc;
+  background: #cbd5e1;
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #c8773a;
+  background: #f59e0b;
 }
+
+/* ==========================================================================
+   CSS IN ẤN CHUYÊN DỤNG (PRINTING OPTIMIZATION)
+   - Loại bỏ hoàn toàn Header, Nav, Toolbar, Footer của website
+   - Hiển thị trực tiếp nội dung phiếu in A4 sắc nét, font Times New Roman chuẩn BTC
+   - Chống trang trắng bằng cách hiển thị flow thông thường thay vì absolute/visibility
+   ========================================================================== */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 8mm 12mm 8mm 12mm;
+  }
+
+  html, body {
+    background: #ffffff !important;
+    color: #000000 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    height: auto !important;
+    min-height: auto !important;
+    width: 100% !important;
+    overflow: visible !important;
+  }
+
+  /* Ẩn triệt để mọi thành phần giao diện web */
+  header,
+  nav,
+  aside,
+  footer,
+  button,
+  .no-print,
+  .print\:hidden {
+    display: none !important;
+  }
+
+  /* Reset modal containers để nội dung phiếu in dàn trang A4 tự nhiên */
+  .print-modal-overlay {
+    position: static !important;
+    display: block !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    height: auto !important;
+    min-height: auto !important;
+    overflow: visible !important;
+    inset: auto !important;
+    z-index: auto !important;
+  }
+
+  .print-modal-box {
+    position: static !important;
+    display: block !important;
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+
+  #printable-document {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    box-shadow: none !important;
+    border: none !important;
+    font-family: "Times New Roman", Times, serif !important;
+    font-size: 13px !important;
+    line-height: 1.5 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  #printable-document table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    margin-top: 8px !important;
+    margin-bottom: 8px !important;
+  }
+
+  #printable-document th,
+  #printable-document td {
+    border: 1px solid #000000 !important;
+    color: #000000 !important;
+    padding: 4px 6px !important;
+  }
+
+  #printable-document th {
+    background-color: #f3f4f6 !important;
+    font-weight: bold !important;
+    text-align: center !important;
+  }
+
+  #printable-document tr {
+    page-break-inside: avoid !important;
+  }
+
+  .signature-section {
+    page-break-inside: avoid !important;
+    margin-top: 24px !important;
+  }
+
+  /* Thermal Receipt Print (K80 / K57) */
+  #receipt-print-area,
+  #z-report-area {
+    display: block !important;
+    position: static !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    border: none !important;
+    box-shadow: none !important;
+    font-family: monospace, -apple-system, BlinkMacSystemFont, sans-serif !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+}
+

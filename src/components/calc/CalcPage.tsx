@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useApp } from '@/contexts/AppContext'
 import { fmtNum } from '@/lib/utils'
+import { DecimalInput } from '@/components/shared/DecimalInput'
 
 export default function CalcPage() {
   const { recipes } = useApp()
@@ -39,12 +40,13 @@ export default function CalcPage() {
           </div>
           <div className="w-32">
             <label className="block text-xs font-medium text-[#8b5e3c] mb-1">Số lượng cần làm</label>
-            <input
-              type="number"
-              min={1}
+            <DecimalInput
+              min={0.01}
+              step={1}
               value={qty}
-              onChange={e => setQty(Math.max(1, Number(e.target.value)))}
+              onChange={(val) => setQty(val || 1)}
               className="w-full px-3 py-2.5 border-[1.5px] border-[#f5e6cc] rounded-lg text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors"
+              placeholder="1"
             />
           </div>
         </div>

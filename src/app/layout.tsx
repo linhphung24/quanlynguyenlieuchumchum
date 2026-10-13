@@ -1,17 +1,18 @@
 import type { Metadata } from 'next'
-import { Playfair_Display, DM_Sans } from 'next/font/google'
+import { Be_Vietnam_Pro, Inter } from 'next/font/google'
 import './globals.css'
 import { AppProvider } from '@/contexts/AppContext'
 
-const playfairDisplay = Playfair_Display({
-  subsets: ['latin'],
-  variable: '--font-playfair',
+const beVietnamPro = Be_Vietnam_Pro({
+  weight: ['300', '400', '500', '600', '700'],
+  subsets: ['latin', 'vietnamese'],
+  variable: '--font-be-vietnam-pro',
   display: 'swap',
 })
 
-const dmSans = DM_Sans({
-  subsets: ['latin'],
-  variable: '--font-dm-sans',
+const inter = Inter({
+  subsets: ['latin', 'vietnamese'],
+  variable: '--font-inter',
   display: 'swap',
 })
 
@@ -30,8 +31,8 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="vi" className={`${playfairDisplay.variable} ${dmSans.variable}`}>
-      <body>
+    <html lang="vi" className={`${beVietnamPro.variable} ${inter.variable}`}>
+      <body className="antialiased font-sans">
         <AppProvider>
           {children}
         </AppProvider>

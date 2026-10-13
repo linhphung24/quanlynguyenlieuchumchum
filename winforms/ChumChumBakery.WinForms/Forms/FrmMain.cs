@@ -48,6 +48,19 @@ namespace ChumChumBakery.WinForms.Forms
 
             currentY += 10;
 
+            // NHÓM 2: QUẢN LÝ THU CHI (phiếu thu / phiếu chi kiểu MISA)
+            currentY = AddGroupHeader("💰 QUẢN LÝ THU CHI", currentY);
+            if (Core.Session.HasPermission("Menu_Vouchers_Thu"))
+            {
+                AddNavButton("💵 Phiếu Thu", ref currentY, (s, e) => { lblTitle.Text = "💵 Quản lý Phiếu Thu"; ShowPanel(new FrmCashVouchers("thu"), (Button)s); });
+            }
+            if (Core.Session.HasPermission("Menu_Vouchers_Chi"))
+            {
+                AddNavButton("💸 Phiếu Chi", ref currentY, (s, e) => { lblTitle.Text = "💸 Quản lý Phiếu Chi"; ShowPanel(new FrmCashVouchers("chi"), (Button)s); });
+            }
+
+            currentY += 10;
+
             // NHÓM 2: BÁO CÁO & ĐỊNH MỨC
             currentY = AddGroupHeader("📊 BÁO CÁO & THỐNG KÊ", currentY);
             

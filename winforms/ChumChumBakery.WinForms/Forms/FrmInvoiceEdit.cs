@@ -33,6 +33,12 @@ namespace ChumChumBakery.WinForms.Forms
 
         private string _fixedType;
 
+        // Hóa đơn đang sửa (null = đang ở chế độ tạo mới)
+        private Invoice _editingInvoice;
+
+        // Form bị chặn mở do không đủ quyền sửa
+        private bool _editBlocked;
+
         public FrmInvoiceEdit(string fixedType = "")
         {
             _fixedType = fixedType;
@@ -40,9 +46,39 @@ namespace ChumChumBakery.WinForms.Forms
             LoadData();
         }
 
+        public FrmInvoiceEdit(Invoice invoiceToEdit)
+        {
+            _fixedType = invoiceToEdit.Type;
+            _editingInvoice = invoiceToEdit;
+
+            // Chỉ admin hoặc NGƯỜI TẠO hóa đơn (khi hóa đơn xuất còn chờ duyệt/từ chối) được sửa
+            bool isAdmin = string.Equals(Core.Session.CurrentUser?.Role ?? "", "admin", StringComparison.OrdinalIgnoreCase);
+            bool isCreatorPending = invoiceToEdit.Type == "out"
+                && (invoiceToEdit.ApprovalStatus == "pending" || invoiceToEdit.ApprovalStatus == "rejected")
+                && string.Equals(invoiceToEdit.CreatedBy ?? "", Core.Session.CurrentUser?.Username ?? "", StringComparison.OrdinalIgnoreCase);
+
+            if (!isAdmin && !isCreatorPending)
+            {
+                _editBlocked = true;
+                this.Shown += (s, e) =>
+                {
+                    MessageBox.Show(
+                        "Bạn chỉ được sửa hóa đơn XUẤT do chính mình tạo và đang CHỜ DUYỆT / TỪ CHỐI.\nHóa đơn đã duyệt chỉ QUẢN TRỊ VIÊN được sửa.",
+                        "Từ chối truy cập", MessageBoxButtons.OK, MessageBoxIcon.Stop);
+                    this.DialogResult = DialogResult.Cancel;
+                    this.Close();
+                };
+                return;
+            }
+
+            InitializeUI();
+            LoadData();
+            LoadForEdit();
+        }
+
         private void InitializeUI()
         {
-            this.Text = "Tạo Hóa Đơn Mới";
+            this.Text = _editingInvoice != null ? $"Sửa Hóa Đơn {_editingInvoice.Code}" : "Tạo Hóa Đơn Mới";
             this.Size = new Size(800, 600);
             this.StartPosition = FormStartPosition.CenterParent;
             this.BackColor = Color.White;
@@ -70,10 +106,12 @@ namespace ChumChumBakery.WinForms.Forms
                 cbType.SelectedIndex = 0;
                 cbType.Enabled = true;
             }
+            // Chế độ sửa: khóa luôn loại hóa đơn (đổi loại tương đương xóa + tạo mới)
+            if (_editingInvoice != null) cbType.Enabled = false;
             grpInfo.Controls.Add(cbType);
 
             grpInfo.Controls.Add(new Label { Text = "Ngày:", Location = new Point(230, 30), AutoSize = true });
-            dtInvDate = new DateTimePicker { Location = new Point(280, 27), Width = 120, Format = DateTimePickerFormat.Short };
+            dtInvDate = new DateTimePicker { Location = new Point(280, 27), Width = 120, Format = DateTimePickerFormat.Custom, CustomFormat = "dd/MM/yyyy" };
             grpInfo.Controls.Add(dtInvDate);
 
             grpInfo.Controls.Add(new Label { Text = "Đối tác:", Location = new Point(420, 30), AutoSize = true });
@@ -134,18 +172,89 @@ namespace ChumChumBakery.WinForms.Forms
             };
             gridDetails.Columns.Add(new DataGridViewTextBoxColumn { DataPropertyName = "ProductCode", HeaderText = "Mã SP", Width = 100 });
             gridDetails.Columns.Add(new DataGridViewTextBoxColumn { DataPropertyName = "ProductName", HeaderText = "Sản phẩm", Width = 250 });
-            gridDetails.Columns.Add(new DataGridViewTextBoxColumn { DataPropertyName = "Unit", HeaderText = "ĐVT", Width = 80 });
+            gridDetails.Columns.Add(new DataGridViewTextBoxColumn { DataPropertyName = "Unit", HeaderText = "ĐVT Mặc định", Width = 90, ReadOnly = true });
             gridDetails.Columns.Add(new DataGridViewTextBoxColumn { DataPropertyName = "Amount", HeaderText = "Số lượng", Width = 100 });
             gridDetails.Columns.Add(new DataGridViewTextBoxColumn { DataPropertyName = "Price", HeaderText = "Đơn giá", Width = 120 });
             gridDetails.Columns.Add(new DataGridViewTextBoxColumn { DataPropertyName = "Subtotal", HeaderText = "Thành tiền", Width = 120 });
             gridDetails.DataSource = _details;
+            gridDetails.KeyDown += (s, e) =>
+            {
+                if (e.KeyCode == Keys.Delete) { RemoveSelectedItem(); e.Handled = true; }
+            };
 
             // Buttons
+            var btnReloadUnits = new Button { Text = "🔄 Nạp Lại ĐVT", Location = new Point(360, 510), Width = 150, Height = 40, BackColor = Color.FromArgb(0, 150, 136), ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
+            btnReloadUnits.FlatAppearance.BorderSize = 0;
+            btnReloadUnits.Click += (s, e) => ReloadUnitsFromCatalog();
+
+            var btnRemoveItem = new Button { Text = "Xóa Dòng", Location = new Point(520, 510), Width = 120, Height = 40, BackColor = Color.FromArgb(255, 152, 0), ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
+            btnRemoveItem.FlatAppearance.BorderSize = 0;
+            btnRemoveItem.Click += (s, e) => RemoveSelectedItem();
+
             var btnSave = new Button { Text = "Lưu Hóa Đơn", Location = new Point(650, 510), Width = 120, Height = 40, BackColor = Color.FromArgb(76, 175, 80), ForeColor = Color.White, FlatStyle = FlatStyle.Flat };
             btnSave.FlatAppearance.BorderSize = 0;
             btnSave.Click += BtnSave_Click;
 
-            this.Controls.AddRange(new Control[] { grpInfo, grpAdd, gridDetails, btnSave });
+            this.Controls.AddRange(new Control[] { grpInfo, grpAdd, gridDetails, btnReloadUnits, btnRemoveItem, btnSave });
+        }
+
+        private void ReloadUnitsFromCatalog()
+        {
+            try
+            {
+                _allProducts = _productService.GetAllProducts("");
+                cbProducts.Items.Clear();
+                foreach (var p in _allProducts) { cbProducts.Items.Add(p); }
+
+                int count = 0;
+                for (int i = 0; i < _details.Count; i++)
+                {
+                    var d = _details[i];
+                    var p = _allProducts.FirstOrDefault(prod =>
+                        (d.ProductId > 0 && prod.Id == d.ProductId) ||
+                        string.Equals(RemoveDiacritics(prod.Name).Trim(), RemoveDiacritics(d.ProductName ?? "").Trim(), StringComparison.OrdinalIgnoreCase));
+
+                    if (p != null)
+                    {
+                        if (d.Unit != p.Unit || d.ProductId != p.Id)
+                        {
+                            count++;
+                            d.Unit = p.Unit;
+                            d.ProductId = p.Id;
+                            d.ProductCode = p.Code;
+                            _details[i] = d;
+                        }
+                    }
+                }
+                gridDetails.Refresh();
+
+                MessageBox.Show($"Đã đồng bộ lại ĐVT từ danh mục sản phẩm!\n- Cập nhật: {count} dòng thay đổi ĐVT.\n- Danh mục: {_allProducts.Count} sản phẩm.",
+                    "Thông báo", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            catch (Exception ex)
+            {
+                MessageBox.Show("Lỗi khi nạp lại đơn vị tính: " + ex.Message, "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+        }
+
+        private void RemoveSelectedItem()
+        {
+            if (gridDetails.CurrentRow != null && gridDetails.CurrentRow.DataBoundItem is InvoiceDetail d)
+            {
+                _details.Remove(d);
+            }
+        }
+
+        private void LoadForEdit()
+        {
+            dtInvDate.Value = _editingInvoice.InvDate;
+            cbPartner.Text = _editingInvoice.Partner ?? "";
+            txtNote.Text = _editingInvoice.Note ?? "";
+
+            foreach (var d in _invoiceService.GetInvoiceDetails(_editingInvoice.Id))
+            {
+                _details.Add(d);
+            }
         }
 
         private void LoadData()
@@ -197,6 +306,33 @@ namespace ChumChumBakery.WinForms.Forms
                 MessageBox.Show("Vui lòng chọn hoặc nhập đúng tên sản phẩm có trong danh mục.", "Cảnh báo", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                 cbProducts.Focus();
                 return;
+            }
+
+            // Chống thêm trùng sản phẩm: hỏi gộp số lượng vào dòng cũ hay thêm dòng riêng
+            var existing = _details.FirstOrDefault(d =>
+                d.ProductId == selectedProduct.Id ||
+                string.Equals((d.ProductName ?? "").Trim(), selectedProduct.Name.Trim(), StringComparison.OrdinalIgnoreCase));
+
+            if (existing != null)
+            {
+                bool samePrice = existing.Price == price;
+                var choice = MessageBox.Show(
+                    $"Sản phẩm '{selectedProduct.Name}' đã có trong hóa đơn (SL hiện có: {existing.Amount:0.##}, đơn giá: {existing.Price:0.##}).\n\n" +
+                    (samePrice
+                        ? $"Yes: gộp thêm {amt:0.##} vào dòng hiện có\nNo: vẫn thêm thành dòng riêng"
+                        : $"Đơn giá vừa nhập ({price:0.##}) khác dòng hiện có.\nYes: gộp số lượng và GIỮ nguyên đơn giá cũ\nNo: thêm dòng riêng (hợp lệ khi nhập 2 lô khác giá)"),
+                    "Sản phẩm đã có trong hóa đơn", MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+
+                if (choice == DialogResult.Yes)
+                {
+                    existing.Amount += amt;
+                    // Gán lại để BindingList báo lưới refresh (Subtotal là property tính toán)
+                    _details[_details.IndexOf(existing)] = existing;
+                    txtAmount.Clear();
+                    txtPrice.Clear();
+                    cbProducts.Focus();
+                    return;
+                }
             }
 
             _details.Add(new InvoiceDetail
@@ -302,8 +438,13 @@ namespace ChumChumBakery.WinForms.Forms
                 }
                 if (d.Price <= 0)
                 {
-                    MessageBox.Show($"Sản phẩm '{d.ProductName}' có đơn giá không hợp lệ (bằng 0 hoặc nhỏ hơn 0). Vui lòng kiểm tra lại!", "Cảnh báo Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    return;
+                    // Tạo mới: yêu cầu giá > 0. Sửa: cho giữ nguyên dòng giá 0 lịch sử
+                    // để không chặn việc sửa toàn bộ hóa đơn cũ (vd HĐ18 có dòng tặng kèm giá 0)
+                    if (_editingInvoice == null || d.Price < 0)
+                    {
+                        MessageBox.Show($"Sản phẩm '{d.ProductName}' có đơn giá không hợp lệ (bằng 0 hoặc nhỏ hơn 0). Vui lòng kiểm tra lại!", "Cảnh báo Validation", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        return;
+                    }
                 }
             }
 
@@ -311,7 +452,8 @@ namespace ChumChumBakery.WinForms.Forms
             {
                 Type = cbType.SelectedIndex == 0 ? "in" : "out",
                 InvDate = dtInvDate.Value,
-                Code = "HD-" + DateTime.Now.ToString("yyMMddHHmmss"), // Include seconds to prevent unique key violation
+                // Giữ nguyên mã khi sửa; mã mới chỉ sinh khi tạo
+                Code = _editingInvoice != null ? _editingInvoice.Code : "HD-" + DateTime.Now.ToString("yyMMddHHmmss"),
                 Partner = cbPartner.Text.Trim(),
                 Note = txtNote.Text
             };
@@ -328,8 +470,64 @@ namespace ChumChumBakery.WinForms.Forms
                     }
                 }
 
-                _invoiceService.SaveInvoice(inv, _details.ToList());
-                MessageBox.Show("Thêm hóa đơn thành công!", "Thông báo", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                // Chặn xuất vượt tồn (FIFO không đủ hàng để trừ).
+                // Hóa đơn xuất CHƯA DUYỆT thì chưa tính vào kho nên bỏ qua kiểm tra ở đây —
+                // sẽ được kiểm tra đầy đủ ở bước kế toán duyệt (PreviewApprovalViolations).
+                List<string> warnings;
+                bool editingUnapprovedOut = _editingInvoice != null
+                    && _editingInvoice.Type == "out"
+                    && _editingInvoice.ApprovalStatus != "approved";
+                bool willBeCounted = inv.Type != "out"
+                    || Core.Session.HasPermission("Menu_Invoices_Export", "edit");
+
+                if (_editingInvoice != null && !editingUnapprovedOut)
+                {
+                    warnings = _invoiceService.ValidateFifoTimeline(_editingInvoice.Id, inv.InvDate, inv.Type, _details.ToList());
+                }
+                else if (_editingInvoice == null && inv.Type == "out" && willBeCounted)
+                {
+                    warnings = _invoiceService.ValidateFifoTimeline(0, inv.InvDate, inv.Type, _details.ToList());
+                }
+                else
+                {
+                    warnings = new List<string>();
+                }
+
+                if (warnings.Count > 0)
+                {
+                    var proceed = MessageBox.Show(
+                        "Hóa đơn này khiến các sản phẩm sau bị âm kho:\n\n• " + string.Join("\n• ", warnings) +
+                        "\n\nLưu ý: một số sản phẩm có thể đã âm sẵn từ dữ liệu lịch sử (chưa khai tồn đầu kỳ).\n\n" +
+                        "Nhấn [CÓ] để LƯU hóa đơn ngay.\nNhấn [KHÔNG] để quay lại chỉnh sửa tiếp (chưa lưu gì).",
+                        "Cảnh báo tồn kho", MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
+                        MessageBoxDefaultButton.Button1);
+                    if (proceed != DialogResult.Yes)
+                    {
+                        return;
+                    }
+                }
+
+                if (_editingInvoice != null)
+                {
+                    _invoiceService.UpdateInvoice(_editingInvoice.Id, inv, _details.ToList());
+                    string doneMsg = editingUnapprovedOut
+                        ? "Đã cập nhật hóa đơn — hóa đơn VẪN CHỜ DUYỆT (chưa tính vào tồn kho)."
+                        : "Cập nhật hóa đơn thành công! Lô hàng đã được tính lại theo FIFO.";
+                    MessageBox.Show(doneMsg, "Thông báo", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                }
+                else
+                {
+                    string status = _invoiceService.SaveInvoice(inv, _details.ToList());
+                    if (status == "pending")
+                    {
+                        MessageBox.Show("Đã lưu hóa đơn xuất — CHỜ KẾ TOÁN DUYỆT.\nHóa đơn CHƯA được tính vào tồn kho cho đến khi được duyệt.", "Thông báo", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    }
+                    else
+                    {
+                        MessageBox.Show("Thêm hóa đơn thành công!", "Thông báo", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                    }
+                }
+
                 this.DialogResult = DialogResult.OK;
                 this.Close();
             }

@@ -37,6 +37,18 @@ namespace ChumChumBakery.WinForms.Forms
             grpHeader.Controls.Add(new Label { Text = $"Loại: {(_invoice.Type == "in" ? "Nhập kho" : "Xuất kho")}", Location = new Point(250, 25), AutoSize = true });
             grpHeader.Controls.Add(new Label { Text = $"Ngày: {_invoice.InvDate:dd/MM/yyyy}", Location = new Point(450, 25), AutoSize = true });
 
+            if (!string.IsNullOrEmpty(_invoice.StatusDisplay))
+            {
+                grpHeader.Controls.Add(new Label
+                {
+                    Text = $"Trạng thái: {_invoice.StatusDisplay}",
+                    Font = new Font("Segoe UI", 10F, FontStyle.Bold),
+                    ForeColor = _invoice.ApprovalStatus == "approved" ? Color.Green : Color.Red,
+                    Location = new Point(450, 45),
+                    AutoSize = true
+                });
+            }
+
             grpHeader.Controls.Add(new Label { Text = $"Đối tác: {_invoice.Partner}", Location = new Point(20, 60), AutoSize = true });
             grpHeader.Controls.Add(new Label { Text = $"Ghi chú: {_invoice.Note}", Location = new Point(350, 60), AutoSize = true });
 

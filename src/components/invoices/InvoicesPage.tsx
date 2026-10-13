@@ -1,1617 +1,802 @@
-'use client'
+'use client';
 
-import { useState, useEffect, useMemo, useCallback } from 'react'
-import { useApp } from '@/contexts/AppContext'
-import { Invoice, InvoiceItem, Batch, BatchDeduction } from '@/types'
-import { todayStr, fmtDate, fmtNum, fmtPrice, genCode } from '@/lib/utils'
-import { UNITS } from '@/lib/constants'
-import ProductPicker from '@/components/shared/ProductPicker'
-import DateInput from '@/components/shared/DateInput'
-import TextPicker from '@/components/shared/TextPicker'
-import ImageUpload from '@/components/shared/ImageUpload'
-import BatchesTab from './BatchesTab'
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { Invoice, InvoiceDetail, Product, Recipe, CompanyInfo } from '@/types';
+import { safeHeaderValue } from '@/lib/utils';
+import { useApp } from '@/contexts/AppContext';
+import InvoiceVoucherModal from './InvoiceVoucherModal';
+import InvoicePrintModal from './InvoicePrintModal';
 
-// ─── helpers ────────────────────────────────────────────────
-function calcTotal(items: { amount: number; price?: number }[]) {
-  return items.reduce((sum, it) => sum + (it.amount || 0) * (it.price || 0), 0)
-}
-
-type CastItem = { name: string; amount: number; unit: string; price?: number; mfg_date?: string; exp_date?: string }
-
-interface BatchAlloc {
-  batch_id: number
-  inv_code: string
-  inv_date: string
-  qty: number
-  price: number
-  unit: string
-  insufficient?: boolean   // không còn lô nào trong kho
-  exceedsBatch?: boolean   // số lượng vượt quá lô hiện tại, phải tách HĐ
-  maxQty?: number          // tối đa được xuất từ lô này
-}
-
-interface FormItem {
-  name: string
-  amount: number
-  unit: string
-  price: number
-  mfg_date: string
-  exp_date: string
-  recipeId: number
-  qty: number
-}
-
-// ─── in-browser print ────────────────────────────────────────
-function doPrint(inv: Invoice, recipes: { id: number; name: string }[]) {
-  if (inv.type === 'out') { doPrintXuatKho(inv); return }
-  doPrintNhap(inv, recipes)
-}
-
-/** Phiếu nhập hàng — giữ nguyên format cũ */
-function doPrintNhap(inv: Invoice, _recipes: { id: number; name: string }[]) {
-  const castItems = inv.items as CastItem[]
-  const total = calcTotal(castItems)
-  const rows = castItems
-    .map((it, i) => {
-      const subtotal = (it.amount || 0) * (it.price || 0)
-      return `<tr>
-        <td style="padding:6px 8px;border-bottom:1px solid #eee">${i + 1}</td>
-        <td style="padding:6px 8px;border-bottom:1px solid #eee">${it.name}</td>
-        <td style="text-align:right;padding:6px 8px;border-bottom:1px solid #eee">${fmtNum(it.amount)} ${it.unit}</td>
-        <td style="text-align:right;padding:6px 8px;border-bottom:1px solid #eee">${it.price ? fmtPrice(it.price) : '—'}</td>
-        <td style="text-align:right;padding:6px 8px;border-bottom:1px solid #eee">${subtotal ? fmtPrice(subtotal) : '—'}</td>
-        <td style="padding:6px 8px;border-bottom:1px solid #eee">${it.mfg_date ? fmtDate(it.mfg_date) : '—'}</td>
-        <td style="padding:6px 8px;border-bottom:1px solid #eee">${it.exp_date ? fmtDate(it.exp_date) : '—'}</td>
-      </tr>`
-    })
-    .join('')
-  const w = window.open('', '_blank')!
-  w.document.write(`<html><head><title>Hoá đơn nhập ${inv.code}</title>
-<style>body{font-family:Arial,sans-serif;padding:24px;color:#222}h2{color:#c8773a}table{width:100%;border-collapse:collapse}th{background:#f5e6cc;text-align:left;padding:6px 8px}td{padding:6px 8px;border-bottom:1px solid #eee}.meta{display:flex;gap:24px;margin-bottom:16px;font-size:13px}.total{text-align:right;font-weight:bold;margin-top:8px;font-size:14px}</style>
-</head><body>
-<h2>HOÁ ĐƠN NHẬP HÀNG</h2>
-<div class="meta">
-  <div><b>Mã:</b> ${inv.code}</div>
-  <div><b>Ngày:</b> ${fmtDate(inv.inv_date)}</div>
-  ${inv.partner ? `<div><b>NCC:</b> ${inv.partner}</div>` : ''}
-</div>
-${inv.note ? `<div style="font-size:12px;color:#888;margin-bottom:12px">Ghi chú: ${inv.note}</div>` : ''}
-<table>
-  <thead><tr><th>#</th><th>Nguyên liệu</th><th style="text-align:right">Số lượng</th><th style="text-align:right">Giá nhập</th><th style="text-align:right">Thành tiền</th><th>NSX</th><th>HSD</th></tr></thead>
-  <tbody>${rows}</tbody>
-</table>
-${total ? `<div class="total">Tổng cộng: ${fmtPrice(total)}</div>` : ''}
-<div style="margin-top:20px;font-size:12px;color:#aaa">In lúc: ${new Date().toLocaleString('vi-VN')}</div>
-</body></html>`)
-  w.document.close()
-  w.print()
-}
-
-/** Phiếu xuất kho — Mẫu số 02-VT theo TT 99/2025/TT-BTC */
-function doPrintXuatKho(inv: Invoice) {
-  const castItems = inv.items as CastItem[]
-  const total = calcTotal(castItems)
-
-  // Tách ngày/tháng/năm từ inv_date (YYYY-MM-DD)
-  const [yyyy, mm, dd] = (inv.inv_date || '').split('-')
-
-  // Hàng bảng: STT | Tên | Mã số | ĐVT | Yêu cầu | Thực xuất | Đơn giá | Thành tiền
-  const rows = castItems.map((it, i) => {
-    const subtotal = (it.amount || 0) * (it.price || 0)
-    return `<tr>
-      <td style="text-align:center">${i + 1}</td>
-      <td>${it.name}</td>
-      <td style="text-align:center">—</td>
-      <td style="text-align:center">${it.unit || ''}</td>
-      <td style="text-align:right">${fmtNum(it.amount)}</td>
-      <td style="text-align:right">${fmtNum(it.amount)}</td>
-      <td style="text-align:right">${it.price ? fmtPrice(it.price) : ''}</td>
-      <td style="text-align:right">${subtotal ? fmtPrice(subtotal) : ''}</td>
-    </tr>`
-  }).join('')
-
-  const w = window.open('', '_blank')!
-  w.document.write(`<!DOCTYPE html><html lang="vi"><head>
-<meta charset="UTF-8">
-<title>Phiếu xuất kho ${inv.code}</title>
-<style>
-  * { box-sizing: border-box; }
-  body { font-family: "Times New Roman", Times, serif; font-size: 13px; color: #000; margin: 15mm 20mm; }
-  .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px; }
-  .header-left { font-size: 13px; line-height: 1.8; }
-  .header-right { text-align: center; font-size: 12px; max-width: 260px; }
-  .header-right .mau { font-weight: bold; font-size: 13px; }
-  .title-block { text-align: center; margin: 10px 0 4px; }
-  .title-block h1 { font-size: 18px; font-weight: bold; margin: 0; letter-spacing: 1px; }
-  .title-block .ngay { font-size: 13px; margin-top: 4px; }
-  .so-block { float: right; text-align: left; font-size: 13px; line-height: 1.8; margin-top: -48px; }
-  .clearfix::after { content:""; display:table; clear:both; }
-  .info-line { margin: 6px 0; font-size: 13px; border-bottom: 1px dotted #999; padding-bottom: 2px; }
-  table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-  table, th, td { border: 1px solid #000; }
-  th { text-align: center; padding: 5px 4px; font-size: 12px; line-height: 1.4; font-weight: bold; }
-  td { padding: 5px 6px; font-size: 12px; }
-  .row-ab td { text-align: center; font-style: italic; }
-  .row-cong td { font-weight: bold; text-align: center; }
-  .footer-text { margin-top: 8px; font-size: 13px; border-bottom: 1px dotted #999; padding-bottom: 2px; }
-  .sig-row { display: flex; margin-top: 32px; text-align: center; }
-  .sig-box { flex: 1; padding: 0 4px; font-size: 12px; line-height: 1.5; }
-  .sig-box .role { font-weight: bold; }
-  .sig-box .note { font-size: 11px; color: #333; }
-  .sig-box .space { height: 60px; }
-  @media print {
-    body { margin: 10mm 15mm; }
-    @page { size: A4; margin: 0; }
-  }
-</style>
-</head><body>
-<!-- HEADER -->
-<div class="header">
-  <div class="header-left">
-    Đơn vị: <u>Chum Chum Bakery</u><br>
-    Bộ phận: ......................................
-  </div>
-  <div class="header-right">
-    <div class="mau">Mẫu số 02 - VT</div>
-    <div><em>(Kèm theo Thông tư số 99/2025/TT-BTC<br>ngày 27 tháng 10 năm 2025<br>của Bộ trưởng Bộ Tài chính)</em></div>
-  </div>
-</div>
-
-<!-- TITLE -->
-<div class="title-block clearfix">
-  <h1>PHIẾU XUẤT KHO</h1>
-  <div class="ngay">Ngày&nbsp;<u>&nbsp;${dd || '.....'}&nbsp;</u>&nbsp;tháng&nbsp;<u>&nbsp;${mm || '.....'}&nbsp;</u>&nbsp;năm&nbsp;<u>&nbsp;${yyyy || '.....'}&nbsp;</u></div>
-  <div class="so-block">
-    Số: <u>&nbsp;${inv.code}&nbsp;</u><br>
-    Nợ: ..............................<br>
-    Có: ..............................
-  </div>
-</div>
-
-<!-- INFO LINES -->
-<div style="margin-top:12px">
-  <div class="info-line">- Họ và tên người nhận hàng: <strong>${inv.partner || '........................................'}</strong>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Địa chỉ (bộ phận): ......................................................................</div>
-  <div class="info-line">- Lý do xuất kho: ${inv.note || '......................................................................................................'}</div>
-  <div class="info-line">- Xuất tại kho (ngăn lô): ................................................................&nbsp;&nbsp;Địa điểm: .....................................................................</div>
-</div>
-
-<!-- TABLE -->
-<table>
-  <thead>
-    <tr>
-      <th rowspan="2" style="width:36px">STT</th>
-      <th rowspan="2">Tên, nhãn hiệu, quy cách, phẩm chất vật tư,<br>dụng cụ, sản phẩm, hàng hoá</th>
-      <th rowspan="2" style="width:54px">Mã số</th>
-      <th rowspan="2" style="width:54px">Đơn vị tính</th>
-      <th colspan="2">Số lượng</th>
-      <th rowspan="2" style="width:80px">Đơn giá</th>
-      <th rowspan="2" style="width:90px">Thành tiền</th>
-    </tr>
-    <tr>
-      <th style="width:60px">Yêu cầu</th>
-      <th style="width:60px">Thực xuất</th>
-    </tr>
-    <tr class="row-ab">
-      <td>A</td><td>B</td><td>C</td><td>D</td><td>1</td><td>2</td><td>3</td><td>4</td>
-    </tr>
-  </thead>
-  <tbody>
-    ${rows}
-    <tr class="row-cong">
-      <td colspan="4">Cộng</td>
-      <td>x</td>
-      <td style="text-align:right">&nbsp;</td>
-      <td>x</td>
-      <td style="text-align:right">${total ? fmtPrice(total) : ''}</td>
-    </tr>
-  </tbody>
-</table>
-
-<!-- FOOTER TEXT -->
-<div class="footer-text">- Tổng số tiền (viết bằng chữ): ...................................................................................................................</div>
-<div class="footer-text" style="margin-top:6px">- Số chứng từ gốc kèm theo: .........................................................................................</div>
-
-<!-- SIGNATURES -->
-<div style="text-align:right;font-size:12px;margin-top:8px;font-style:italic">Ngày&nbsp;${dd || '.....'}&nbsp;tháng&nbsp;${mm || '.....'}&nbsp;năm&nbsp;${yyyy || '.....'}</div>
-<div class="sig-row">
-  <div class="sig-box">
-    <div class="role">Người lập phiếu</div>
-    <div class="note">(Ký, họ tên)</div>
-    <div class="space"></div>
-  </div>
-  <div class="sig-box">
-    <div class="role">Người nhận hàng</div>
-    <div class="note">(Ký, họ tên)</div>
-    <div class="space"></div>
-  </div>
-  <div class="sig-box">
-    <div class="role">Thủ kho</div>
-    <div class="note">(Ký, họ tên)</div>
-    <div class="space"></div>
-  </div>
-  <div class="sig-box">
-    <div class="role">Kế toán trưởng</div>
-    <div class="note">(Hoặc bộ phận có nhu cầu nhập)</div>
-    <div class="note">(Ký, họ tên)</div>
-    <div class="space"></div>
-  </div>
-  <div class="sig-box">
-    <div class="role">Giám đốc</div>
-    <div class="note">(Ký, họ tên)</div>
-    <div class="space"></div>
-  </div>
-</div>
-</body></html>`)
-  w.document.close()
-  w.print()
-}
-
-// ─── main component ──────────────────────────────────────────
 export default function InvoicesPage() {
-  const { sb, user, recipes, allProducts, setAllProducts, allUnits, toast, startLoading, stopLoading, writeAudit } = useApp()
+  const { user, hasPermission, toast, currentModule } = useApp();
+  const canApprove = ['admin', 'manager', 'ketoan', 'accountant'].includes((user?.Role || '').toLowerCase());
 
-  // form state
-  const [invType, setInvType] = useState<'in' | 'out'>('in')
-  const [invDate, setInvDate] = useState(todayStr())
-  const [code, setCode] = useState(genCode())
-  const [partner, setPartner] = useState('')
-  const [note, setNote] = useState('')
-  const [items, setItems] = useState<FormItem[]>([{ name: '', amount: 0, unit: allUnits[0] || UNITS[0], price: 0, mfg_date: '', exp_date: '', recipeId: 0, qty: 0 }])
-  const [invoices, setInvoices] = useState<Invoice[]>([])
-  const [openInvs, setOpenInvs] = useState<Set<number>>(new Set())
-  const [imageUrl, setImageUrl] = useState('')
-  const [search, setSearch] = useState('')
-  const [loadingInvList, setLoadingInvList] = useState(false)
+  // Data states
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
+  const [selectedDetails, setSelectedDetails] = useState<InvoiceDetail[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [recipes, setRecipes] = useState<Recipe[]>([]);
+  const [companyInfo, setCompanyInfo] = useState<CompanyInfo | null>(null);
 
-  // batch state
-  const [tab, setTab] = useState<'invoices' | 'batches'>('invoices')
-  const [batchPreviews, setBatchPreviews] = useState<Record<number, BatchAlloc[]>>({})
-  const [invBatchUsage, setInvBatchUsage] = useState<Record<number, BatchDeduction[]>>({})
-  const [uploadingImgFor, setUploadingImgFor] = useState<number | null>(null)
-  const [saving, setSaving] = useState(false)
+  // Filter states
+  const [period, setPeriod] = useState<string>('this_month');
+  const [fromDate, setFromDate] = useState<string>('');
+  const [toDate, setToDate] = useState<string>('');
+  const [filterType, setFilterType] = useState<string>('');
+  const [filterStatus, setFilterStatus] = useState<string>('');
+  const [keyword, setKeyword] = useState<string>('');
 
-  // manual batch allocation state (Giải pháp 2)
-  type BatchRow = { id: number; inv_code: string; inv_date: string; remaining_qty: number; price: number; unit: string }
-  const [itemBatchData, setItemBatchData] = useState<Record<string, BatchRow[]>>({})  // key = product name lowercase
-  const [manualAlloc, setManualAlloc] = useState<Record<number, Record<number, string>>>({})  // itemIdx → {batchId: qty string}
-  const [showAllocFor, setShowAllocFor] = useState<Set<number>>(new Set())
+  // Modals
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalType, setModalType] = useState<'in' | 'out'>('in');
+  const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null);
+  const [printModalOpen, setPrintModalOpen] = useState(false);
 
-  // ─── filter state (khai báo trước loadInvoices vì dùng làm default params) ──
-  const [filterType,     setFilterType]     = useState<'all' | 'in' | 'out'>('all')
-  const [filterDateFrom, setFilterDateFrom] = useState('')
-  const [filterDateTo,   setFilterDateTo]   = useState('')
+  // Detail panel tab
+  const [detailTab, setDetailTab] = useState<'items' | 'image'>('items');
 
-  // ─── load invoices (server-side filter: type + date) ────────
-  // filterType / filterDateFrom / filterDateTo được push xuống DB
-  // search + filterProduct vẫn client-side (dataset đã nhỏ hơn nhiều)
-  const loadInvoices = useCallback(async (
-    type: 'all' | 'in' | 'out' = filterType,
-    from_date: string = filterDateFrom,
-    to_date:   string = filterDateTo,
-  ) => {
-    setLoadingInvList(true)
+  // Initialize dates based on period
+  useEffect(() => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = now.getMonth();
+
+    if (period === 'today') {
+      const today = now.toISOString().split('T')[0];
+      setFromDate(today);
+      setToDate(today);
+    } else if (period === 'this_month') {
+      const start = new Date(y, m, 1).toISOString().split('T')[0];
+      const end = new Date(y, m + 1, 0).toISOString().split('T')[0];
+      setFromDate(start);
+      setToDate(end);
+    } else if (period === 'last_month') {
+      const start = new Date(y, m - 1, 1).toISOString().split('T')[0];
+      const end = new Date(y, m, 0).toISOString().split('T')[0];
+      setFromDate(start);
+      setToDate(end);
+    } else if (period === 'this_year') {
+      const start = new Date(y, 0, 1).toISOString().split('T')[0];
+      const end = new Date(y, 11, 31).toISOString().split('T')[0];
+      setFromDate(start);
+      setToDate(end);
+    }
+  }, [period]);
+
+  // Load invoices
+  const loadInvoices = useCallback(async () => {
     try {
-      let q = sb.from('invoices').select('*')
-        .order('inv_date', { ascending: false })
-        .order('id',       { ascending: false })
+      const params = new URLSearchParams();
+      if (fromDate) params.set('fromDate', fromDate);
+      if (toDate) params.set('toDate', toDate);
+      if (keyword) params.set('keyword', keyword);
+      if (filterType) params.set('type', filterType);
 
-      // Server-side filter type
-      if (type !== 'all') q = q.eq('type', type)
-
-      // Server-side filter date
-      if (from_date) q = q.gte('inv_date', from_date)
-      if (to_date)   q = q.lte('inv_date', to_date)
-
-      // Mặc định không có date filter → chỉ lấy 3 tháng gần nhất
-      if (!from_date && !to_date) {
-        const d = new Date()
-        d.setMonth(d.getMonth() - 3)
-        q = q.gte('inv_date', d.toISOString().slice(0, 10))
-      }
-
-      const PAGE = 500; const all: Invoice[] = []; let offset = 0
-      while (true) {
-        const { data, error } = await q.range(offset, offset + PAGE - 1)
-        if (error) { toast('Lỗi tải danh sách hoá đơn: ' + error.message, 'error'); break }
-        if (!data || data.length === 0) break
-        all.push(...(data as Invoice[]))
-        if (data.length < PAGE) break
-        offset += PAGE
-      }
-      setInvoices(all)
-    } catch (e) {
-      toast('Lỗi tải hoá đơn: ' + (e as Error).message, 'error')
-    } finally {
-      setLoadingInvList(false)
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filterType, filterDateFrom, filterDateTo])
-
-  // Load lần đầu
-  useEffect(() => { loadInvoices() }, [])  // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Debounce reload khi type/date filter thay đổi
-  useEffect(() => {
-    const t = setTimeout(() => loadInvoices(filterType, filterDateFrom, filterDateTo), 400)
-    return () => clearTimeout(t)
-  }, [filterType, filterDateFrom, filterDateTo]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ─── FIFO batch preview (chỉ cho xuất) ───────────────────
-  useEffect(() => {
-    if (invType !== 'out') {
-      setBatchPreviews({})
-      setManualAlloc({})
-      setShowAllocFor(new Set())
-      return
-    }
-    const timer = setTimeout(() => { computeBatchPreviews() }, 400)
-    return () => clearTimeout(timer)
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [invType, items, invDate])
-
-  const computeBatchPreviews = useCallback(async () => {
-    const relevant = items.filter(it => it.name.trim() && (it.amount || it.qty) > 0)
-    if (relevant.length === 0) { setBatchPreviews({}); return }
-
-    const names = [...new Set(relevant.map(it => it.name.trim()))]
-    // Match case-insensitively bằng cách query song song với ilike (1 query / name)
-    const queries = names.map(n =>
-      sb.from('batches')
-        .select('id, product_name, inv_code, inv_date, remaining_qty, price, unit')
-        .ilike('product_name', n)
-        .gt('remaining_qty', 0)
-        .lte('inv_date', invDate)        // chỉ lô nhập ≤ ngày xuất (không ăn lô tương lai)
-        .order('inv_date', { ascending: true })
-        .order('id', { ascending: true })
-    )
-    const results = await Promise.all(queries)
-    const data = results.flatMap(r => r.data || [])
-
-    // group by product_name (key = lowercase) — bỏ qua batch gần 0 (floating-point dư)
-    const byProduct: Record<string, typeof data> = {}
-    for (const b of data) {
-      if (parseFloat(b.remaining_qty.toFixed(2)) <= 0) continue
-      const key = b.product_name.toLowerCase().trim()
-      if (!byProduct[key]) byProduct[key] = []
-      byProduct[key]!.push(b)
-    }
-
-    // Store batch data for manual allocation panel
-    const newItemBatchData: Record<string, typeof data> = {}
-    for (const key of Object.keys(byProduct)) {
-      newItemBatchData[key] = byProduct[key]!
-    }
-    setItemBatchData(newItemBatchData)
-
-    const previews: Record<number, BatchAlloc[]> = {}
-    items.forEach((item, idx) => {
-      if (!item.name.trim() || !(item.amount || item.qty)) return
-      const qty = item.amount || item.qty
-      const batchList = (byProduct[item.name.trim().toLowerCase()] || [])
-
-      if (batchList.length === 0) {
-        // Không có lô nào trong kho
-        previews[idx] = [{ batch_id: -1, inv_code: '', inv_date: '', qty, price: 0, unit: item.unit, insufficient: true }]
-        return
-      }
-
-      // Span nhiều lô FIFO cho đến khi đủ số lượng
-      const allocs: BatchAlloc[] = []
-      let rem = qty
-      for (const b of batchList) {
-        if (rem <= 0) break
-        const avail = parseFloat(b.remaining_qty.toFixed(2))
-        if (avail <= 0) continue
-        const take = Math.min(rem, avail)
-        allocs.push({ batch_id: b.id, inv_code: b.inv_code, inv_date: b.inv_date, qty: take, price: b.price, unit: b.unit })
-        rem = parseFloat((rem - take).toFixed(6))
-      }
-      if (rem > 0.001) {
-        // Vẫn còn thiếu sau khi hết tất cả lô — báo insufficient
-        allocs.push({ batch_id: -1, inv_code: '', inv_date: '', qty: rem, price: 0, unit: item.unit, insufficient: true })
-      }
-      previews[idx] = allocs
-    })
-    setBatchPreviews(previews)
-  }, [sb, items, invDate])
-
-  // ─── load batch usage for a specific export invoice ───────
-  const loadBatchUsageForInv = useCallback(async (invId: number) => {
-    if (invBatchUsage[invId] !== undefined) return
-    const { data } = await sb
-      .from('batch_deductions')
-      .select('*')
-      .eq('inv_id', invId)
-      .order('batch_inv_date', { ascending: true })
-    setInvBatchUsage(prev => ({ ...prev, [invId]: (data || []) as BatchDeduction[] }))
-  }, [sb, invBatchUsage])
-
-  // ─── create batch records when saving nhập invoice ────────
-  const createBatchesForImport = async (
-    invId: number, invCode: string, invDateStr: string,
-    invItems: { name: string; amount: number; unit: string; price?: number; mfg_date?: string; exp_date?: string }[]
-  ): Promise<string | null> => {
-    const records = invItems
-      .filter(it => it.name && it.amount > 0)
-      .map(it => {
-        // Chuẩn hoá tên về tên gốc trong products table (tránh "Cam" vs "cam")
-        const canonical = allProducts.find(
-          p => p.name.trim().toLowerCase() === it.name.trim().toLowerCase()
-        )
-        return {
-          product_name: (canonical?.name || it.name).trim(),
-          inv_id: invId,
-          inv_code: invCode,
-          inv_date: invDateStr,
-          quantity: it.amount,
-          remaining_qty: it.amount,
-          price: it.price || 0,
-          unit: it.unit,
-          mfg_date: it.mfg_date || null,
-          exp_date: it.exp_date || null,
+      const res = await fetch(`/api/invoices?${params.toString()}`);
+      const data = await res.json();
+      if (data.invoices) {
+        setInvoices(data.invoices);
+        if (data.invoices.length > 0) {
+          // Keep current selection or default to first
+          const existing = data.invoices.find((i: Invoice) => i.Id === selectedInvoice?.Id);
+          setSelectedInvoice(existing || data.invoices[0]);
+        } else {
+          setSelectedInvoice(null);
+          setSelectedDetails([]);
         }
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  }, [fromDate, toDate, keyword, filterType, selectedInvoice?.Id]);
+
+  // Load details when selected invoice changes
+  const loadSelectedDetails = useCallback((invoiceId: number) => {
+    fetch(`/api/invoices/${invoiceId}/details`)
+      .then((res) => res.json())
+      .then((data) => {
+        setSelectedDetails(data.details || []);
       })
-    if (records.length === 0) return null
-    const { error } = await sb.from('batches').insert(records)
-    return error ? error.message : null
-  }
+      .catch((err) => console.error(err));
+  }, []);
 
-  // ─── FIFO deduction when saving xuất invoice ─────────────
-  const deductBatchesFifo = async (invItems: { name: string; amount: number; unit: string }[], exportInvId: number, exportDate: string) => {
-    const names = [...new Set(invItems.filter(it => it.name && it.amount > 0).map(it => it.name.trim()))]
-    if (names.length === 0) return
-
-    // Case-insensitive: 1 ilike query per name, chạy song song
-    const queries = names.map(n =>
-      sb.from('batches')
-        .select('*')
-        .ilike('product_name', n)
-        .gt('remaining_qty', 0)
-        .lte('inv_date', exportDate)     // chỉ lô nhập ≤ ngày xuất
-        .order('inv_date', { ascending: true })
-        .order('id', { ascending: true })
-    )
-    const results = await Promise.all(queries)
-    const allBatches = results.flatMap(r => r.data || []) as Batch[]
-
-    const byProduct: Record<string, Batch[]> = {}
-    for (const b of allBatches) {
-      const key = b.product_name.toLowerCase().trim()
-      if (!byProduct[key]) byProduct[key] = []
-      byProduct[key]!.push(b)
+  useEffect(() => {
+    if (!selectedInvoice) {
+      setSelectedDetails([]);
+      return;
     }
+    loadSelectedDetails(selectedInvoice.Id);
+  }, [selectedInvoice, loadSelectedDetails]);
 
-    const deductionRows: Omit<BatchDeduction, 'id' | 'created_at'>[] = []
-    const batchUpdates: PromiseLike<unknown>[] = []
+  // Load products & recipes & company info
+  useEffect(() => {
+    fetch('/api/products')
+      .then((res) => res.json())
+      .then((d) => setProducts(d.products || []));
 
-    for (const item of invItems) {
-      if (!item.name || !item.amount) continue
-      const batchList = byProduct[item.name.trim().toLowerCase()] || []
-      let rem = item.amount
+    fetch('/api/recipes')
+      .then((res) => res.json())
+      .then((d) => setRecipes(d.recipes || []));
 
-      for (const batch of batchList) {
-        if (rem <= 0) break
-        const take = Math.min(rem, batch.remaining_qty)
-        const newRemaining = Math.max(0, +(batch.remaining_qty - take).toFixed(2))
-        batchUpdates.push(sb.from('batches').update({ remaining_qty: newRemaining }).eq('id', batch.id))
-        deductionRows.push({
-          batch_id: batch.id,
-          inv_id: exportInvId,
-          qty_used: take,
-          batch_inv_code: batch.inv_code,
-          batch_inv_date: batch.inv_date,
-          batch_price: batch.price,
-          batch_unit: batch.unit,
-        })
-        batch.remaining_qty = newRemaining
-        rem -= take
-      }
+    fetch('/api/company-info')
+      .then((res) => res.json())
+      .then((d) => setCompanyInfo(d.info || null));
+  }, []);
+
+  useEffect(() => {
+    if (fromDate && toDate) {
+      loadInvoices();
     }
+  }, [fromDate, toDate, loadInvoices]);
 
-    // Chạy tất cả batch updates + insert deductions song song
-    await Promise.all([
-      ...batchUpdates,
-      deductionRows.length > 0 ? sb.from('batch_deductions').insert(deductionRows) : Promise.resolve(),
-    ])
-  }
-
-  // ─── manual batch deduction (Giải pháp 2) ────────────────
-  const deductBatchesManual = async (
-    allInvItems: { name: string; amount: number; unit: string }[],
-    allocMap: Record<number, Record<number, string>>,
-    exportInvId: number
-  ) => {
-    const deductionRows: Omit<BatchDeduction, 'id' | 'created_at'>[] = []
-    const batchUpdates: PromiseLike<unknown>[] = []
-
-    for (let idx = 0; idx < allInvItems.length; idx++) {
-      const alloc = allocMap[idx]
-      if (!alloc) continue
-      const item = allInvItems[idx]!
-      const batches = itemBatchData[item.name.toLowerCase().trim()] || []
-
-      for (const [bIdStr, qStr] of Object.entries(alloc)) {
-        const batchId = parseInt(bIdStr)
-        const qty = parseFloat(qStr) || 0
-        if (qty <= 0) continue
-        const batch = batches.find(b => b.id === batchId)
-        if (!batch) continue
-
-        const newRemaining = Math.max(0, +(batch.remaining_qty - qty).toFixed(2))
-        batchUpdates.push(sb.from('batches').update({ remaining_qty: newRemaining }).eq('id', batchId))
-        deductionRows.push({
-          batch_id: batchId,
-          inv_id: exportInvId,
-          qty_used: qty,
-          batch_inv_code: batch.inv_code,
-          batch_inv_date: batch.inv_date,
-          batch_price: batch.price,
-          batch_unit: batch.unit,
-        })
-      }
-    }
-
-    await Promise.all([
-      ...batchUpdates,
-      deductionRows.length > 0 ? sb.from('batch_deductions').insert(deductionRows) : Promise.resolve(),
-    ])
-  }
-
-  // ─── restore batches when deleting xuất invoice ──────────
-  const restoreBatchDeductions = async (invId: number) => {
-    const { data: deductions } = await sb
-      .from('batch_deductions')
-      .select('batch_id, qty_used')
-      .eq('inv_id', invId)
-
-    if (!deductions || deductions.length === 0) return
-
-    for (const d of deductions as { batch_id: number; qty_used: number }[]) {
-      const { data: batch } = await sb
-        .from('batches')
-        .select('quantity, remaining_qty')
-        .eq('id', d.batch_id)
-        .single()
-      if (batch) {
-        const restored = Math.min(batch.quantity, +(batch.remaining_qty + d.qty_used).toFixed(2))
-        await sb.from('batches').update({ remaining_qty: restored }).eq('id', d.batch_id)
-      }
-    }
-
-    await sb.from('batch_deductions').delete().eq('inv_id', invId)
-  }
-
-  // ─── delete batch records when deleting nhập invoice ─────
-  const deleteBatchRecords = async (invId: number) => {
-    await sb.from('batches').delete().eq('inv_id', invId)
-  }
-
-  // ─── stock update ─────────────────────────────────────────
-  const updateStock = async (invItems: { name: string; amount: number }[], type: 'in' | 'out', multiplier: 1 | -1) => {
-    const sign = (type === 'in' ? 1 : -1) * multiplier
-    const deltas = new Map<number, number>()
-    for (const item of invItems) {
-      if (!item.name || !item.amount) continue
-      const product = allProducts.find(p => p.name.trim().toLowerCase() === item.name.trim().toLowerCase())
-      if (!product) continue
-      deltas.set(product.id, (deltas.get(product.id) ?? 0) + item.amount * sign)
-    }
-    if (deltas.size === 0) return
-    await Promise.all(Array.from(deltas.entries()).map(([id, delta]) => {
-      const product = allProducts.find(p => p.id === id)!
-      return sb.from('products').update({ stock_qty: (product.stock_qty || 0) + delta }).eq('id', id)
-    }))
-    // Cập nhật local state thay vì re-fetch toàn bộ sản phẩm
-    setAllProducts(prev => prev.map(p => {
-      const delta = deltas.get(p.id)
-      return delta !== undefined ? { ...p, stock_qty: (p.stock_qty || 0) + delta } : p
-    }))
-  }
-
-  // ─── item form helpers ────────────────────────────────────
-  const addItem = () => setItems([...items, { name: '', amount: 0, unit: allUnits[0] || UNITS[0], price: 0, mfg_date: '', exp_date: '', recipeId: 0, qty: 0 }])
-  const removeItem = (idx: number) => setItems(items.filter((_, i) => i !== idx))
-  const updateItem = (idx: number, field: string, val: unknown) => {
-    setItems(prev => prev.map((it, i) => i === idx ? { ...it, [field]: val } : it))
-  }
-
-  // ─── auto-fill khi chọn sản phẩm ─────────────────────────
-  // Nhập: điền giá vốn + đvt từ danh mục sản phẩm
-  // Xuất: điền giá nhập lô + đvt + NSX/HSD từ lô FIFO cũ nhất
-  const handleProductSelect = async (idx: number, name: string, unit: string) => {
-    updateItem(idx, 'name', name)
-    if (unit) updateItem(idx, 'unit', unit)
-    // Xoá manual alloc khi đổi sản phẩm
-    setManualAlloc(prev => { const n = { ...prev }; delete n[idx]; return n })
-    setShowAllocFor(prev => { const n = new Set(prev); n.delete(idx); return n })
-    if (!name.trim()) return
-
-    if (invType === 'in') {
-      // Nhập: lấy giá vốn từ danh mục sản phẩm
-      const product = allProducts.find(
-        p => p.name.trim().toLowerCase() === name.trim().toLowerCase()
-      )
-      if (product) {
-        if (product.cost_price > 0) updateItem(idx, 'price', product.cost_price)
-        if (!unit && product.unit) updateItem(idx, 'unit', product.unit)
-      }
-    } else {
-      // Xuất: fill giá bán từ danh mục + ĐVT/NSX/HSD từ lô FIFO cũ nhất
-      const product = allProducts.find(
-        p => p.name.trim().toLowerCase() === name.trim().toLowerCase()
-      )
-      if (product) {
-        if (product.sell_price > 0) updateItem(idx, 'price', product.sell_price)
-        if (!unit && product.unit) updateItem(idx, 'unit', product.unit)
-      }
-      const { data } = await sb
-        .from('batches')
-        .select('unit, mfg_date, exp_date')
-        .ilike('product_name', name.trim())
-        .gt('remaining_qty', 0)
-        .order('inv_date', { ascending: true })
-        .order('id', { ascending: true })
-        .limit(1)
-      if (data && data.length > 0) {
-        const b = data[0] as { unit: string; mfg_date: string | null; exp_date: string | null }
-        if (b.unit) updateItem(idx, 'unit', b.unit)
-        if (b.mfg_date) updateItem(idx, 'mfg_date', b.mfg_date)
-        if (b.exp_date)  updateItem(idx, 'exp_date',  b.exp_date)
-      }
-    }
-  }
-
-  // ─── save invoice ─────────────────────────────────────────
-  const handleSave = async () => {
-    if (saving) return   // chặn double-click / concurrent save
-    if (!user) { toast('Chưa đăng nhập — vui lòng tải lại trang', 'error'); return }
-    const invItems = items
-      .filter(it => it.name && (it.amount > 0 || it.qty > 0))
-      .map(it => ({
-        name: it.name.trim(),
-        amount: it.amount || it.qty,
-        unit: it.unit,
-        ...(it.price > 0 ? { price: it.price } : {}),
-        ...(it.mfg_date ? { mfg_date: it.mfg_date } : {}),
-        ...(it.exp_date ? { exp_date: it.exp_date } : {}),
-      }))
-
-    if (invItems.length === 0) { toast('Thêm ít nhất một mặt hàng hợp lệ', 'error'); return }
-
-    // ── Validate: chỉ cho nhập/xuất sản phẩm CÓ trong Kho hàng ──
-    const productNameSet = new Set(allProducts.map(p => p.name.trim().toLowerCase()))
-    const unknownItems = invItems.filter(it => !productNameSet.has(it.name.trim().toLowerCase()))
-    if (unknownItems.length > 0) {
-      const names = [...new Set(unknownItems.map(it => it.name))].join(', ')
-      toast(`Sản phẩm không có trong Kho hàng: ${names}. Hãy thêm vào Kho hàng trước (hoặc chọn đúng tên sản phẩm từ gợi ý).`, 'error')
-      return
-    }
-
-    setSaving(true)
-    startLoading()
-    try {
-      // ── Kiểm tra FIFO: mỗi dòng xuất chỉ được lấy từ 1 lô ──
-      if (invType === 'out') {
-        const names = [...new Set(invItems.map(it => it.name))]
-        // Case-insensitive: 1 ilike query per name, song song
-        const checkQueries = names.map(n =>
-          sb.from('batches')
-            .select('id, product_name, inv_code, remaining_qty, unit')
-            .ilike('product_name', n)
-            .gt('remaining_qty', 0)
-            .lte('inv_date', invDate)    // chỉ tính lô nhập ≤ ngày xuất
-            .order('inv_date', { ascending: true })
-            .order('id', { ascending: true })
-        )
-        const checkResults = await Promise.all(checkQueries)
-        const batchCheck = checkResults.flatMap(r => r.data || [])
-
-        // Tổng tồn kho khả dụng cho từng sản phẩm (tất cả lô cộng lại)
-        const totalAvail: Record<string, { total: number; unit: string }> = {}
-        for (const b of batchCheck as { id: number; product_name: string; inv_code: string; remaining_qty: number; unit: string }[]) {
-          const eff = parseFloat(b.remaining_qty.toFixed(2))
-          if (eff <= 0) continue
-          const key = b.product_name.toLowerCase().trim()
-          if (!totalAvail[key]) totalAvail[key] = { total: 0, unit: b.unit }
-          totalAvail[key]!.total += eff
-        }
-
-        const violations: string[] = []
-        for (let idx = 0; idx < invItems.length; idx++) {
-          const item = invItems[idx]!
-          const key = item.name.toLowerCase().trim()
-
-          // Kiểm tra manual alloc nếu user đã chọn lô thủ công
-          if (showAllocFor.has(idx)) {
-            const alloc = manualAlloc[idx] || {}
-            const totalAllocated = Object.values(alloc).reduce((s, v) => s + (parseFloat(v) || 0), 0)
-            if (totalAllocated > 0 && Math.abs(totalAllocated - item.amount) > 0.001) {
-              violations.push(
-                `"${item.name}": phân bổ thủ công ${fmtNum(totalAllocated)} nhưng số lượng xuất là ${fmtNum(item.amount)}. Vui lòng điều chỉnh cho khớp.`
-              )
-            }
-            // Kiểm tra từng lô không vượt tồn
-            const batches = itemBatchData[key] || []
-            for (const [bIdStr, qStr] of Object.entries(alloc)) {
-              const qty = parseFloat(qStr) || 0
-              if (qty <= 0) continue
-              const batch = batches.find(b => b.id === parseInt(bIdStr))
-              if (batch) {
-                const avail = parseFloat(batch.remaining_qty.toFixed(2))
-                if (qty > avail) {
-                  violations.push(`"${item.name}": lô ${batch.inv_code} chỉ còn ${fmtNum(avail)}, bạn phân bổ ${fmtNum(qty)}.`)
-                }
-              }
-            }
-            continue  // đã kiểm tra manual, skip FIFO check
-          }
-
-          // FIFO: kiểm tra tổng tồn kho
-          const avail = totalAvail[key]
-          if (!avail) {
-            violations.push(
-              `"${item.name}": không có lô nào nhập trước/bằng ngày xuất ${fmtDate(invDate)}. ` +
-              `Kiểm tra lại NGÀY hoá đơn (không thể xuất hàng trước khi nhập), tạo hoá đơn nhập trước, ` +
-              `hoặc liên hệ admin chạy SQL khởi tạo lô (init_batches_for_existing_stock.sql).`
-            )
-            continue
-          }
-          const totalEff = parseFloat(avail.total.toFixed(2))
-          if (item.amount > totalEff) {
-            violations.push(
-              `"${item.name}": tổng tồn kho chỉ còn ${fmtNum(totalEff)} ${avail.unit}, bạn muốn xuất ${fmtNum(item.amount)} ${avail.unit}.`
-            )
-          }
-        }
-
-        if (violations.length > 0) {
-          toast('Kiểm tra lại số lượng:\n' + violations.join('\n'), 'error')
-          return
-        }
-      }
-
-      const { data, error } = await sb.from('invoices').insert({
-        type: invType,
-        inv_date: invDate,
-        code,
-        partner,
-        note,
-        items: invItems,
-        image_url: imageUrl,
-        created_by: user.id,
-        created_at: new Date().toISOString(),
-      }).select().single()
-
-      if (!error && data) {
-        // Chạy song song: audit log + cập nhật stock
-        await Promise.all([
-          writeAudit('create', 'invoices', String(data.id), `Tạo hoá đơn ${invType === 'in' ? 'nhập' : 'xuất'}: ${code}`),
-          updateStock(invItems as { name: string; amount: number }[], invType, 1),
-        ])
-
-        if (invType === 'in') {
-          const batchErr = await createBatchesForImport(data.id, code, invDate, invItems)
-          if (batchErr) {
-            toast(`Hoá đơn đã lưu nhưng KHÔNG tạo được lô: ${batchErr}. Hãy chạy migration_batches.sql trong Supabase!`, 'error')
-          } else {
-            toast('Đã lưu hoá đơn & tạo lô hàng')
-          }
-        } else {
-          // Tách items có phân bổ thủ công và items dùng FIFO
-          const castInv = invItems as { name: string; amount: number; unit: string }[]
-          const fifoItems: typeof castInv = []
-          const hasManualAlloc = castInv.some((_, idx) =>
-            showAllocFor.has(idx) && Object.values(manualAlloc[idx] || {}).some(v => parseFloat(v) > 0)
-          )
-
-          if (hasManualAlloc) {
-            for (let idx = 0; idx < castInv.length; idx++) {
-              const alloc = manualAlloc[idx] || {}
-              const manualTotal = Object.values(alloc).reduce((s, v) => s + (parseFloat(v) || 0), 0)
-              if (!showAllocFor.has(idx) || manualTotal <= 0) {
-                fifoItems.push(castInv[idx]!)
-              }
-            }
-            await Promise.all([
-              fifoItems.length > 0 ? deductBatchesFifo(fifoItems, data.id, invDate) : Promise.resolve(),
-              deductBatchesManual(castInv, manualAlloc, data.id),
-            ])
-            toast('Đã lưu hoá đơn & phân bổ lô (thủ công + FIFO)')
-          } else {
-            await deductBatchesFifo(castInv, data.id, invDate)
-            toast('Đã lưu hoá đơn & phân bổ lô FIFO')
-          }
-        }
-        setInvoices(prev => [data as Invoice, ...prev])
-        setCode(genCode())
-        setPartner('')
-        setNote('')
-        setImageUrl('')
-        setItems([{ name: '', amount: 0, unit: allUnits[0] || UNITS[0], price: 0, mfg_date: '', exp_date: '', recipeId: 0, qty: 0 }])
-        setBatchPreviews({})
-        setManualAlloc({})
-        setShowAllocFor(new Set())
-      } else if (error) {
-        toast('Lỗi lưu: ' + error.message, 'error')
-      }
-    } catch (e) {
-      toast('Lỗi: ' + (e as Error).message, 'error')
-    } finally {
-      setSaving(false)
-      stopLoading()
-    }
-  }
-
-  // ─── delete invoice ───────────────────────────────────────
-  const handleDelete = async (inv: Invoice) => {
-    if (!window.confirm(`Xoá hoá đơn ${inv.code}?`)) return
-    startLoading()
-    try {
-      const { error } = await sb.from('invoices').delete().eq('id', inv.id)
-      if (!error) {
-        const castItems = (inv.items as CastItem[]).map(it => ({ name: it.name, amount: it.amount || 0 }))
-        await updateStock(castItems, inv.type, -1)
-
-        if (inv.type === 'in') {
-          await deleteBatchRecords(inv.id)
-        } else {
-          await restoreBatchDeductions(inv.id)
-        }
-
-        await writeAudit('delete', 'invoices', String(inv.id), `Xoá hoá đơn: ${inv.code}`)
-        toast('Đã xoá hoá đơn')
-        setInvoices(prev => prev.filter(i => i.id !== inv.id))
-        setInvBatchUsage(prev => { const next = { ...prev }; delete next[inv.id]; return next })
-      } else {
-        toast('Lỗi xoá: ' + error.message, 'error')
-      }
-    } catch (e) {
-      toast('Lỗi xoá: ' + (e instanceof Error ? e.message : String(e)), 'error')
-    } finally {
-      stopLoading()
-    }
-  }
-
-  // ─── sửa ngày hoá đơn ────────────────────────────────────
-  const handleSaveDate = async (inv: Invoice) => {
-    if (!editDateValue) { toast('Chọn ngày hợp lệ', 'error'); return }
-    if (editDateValue === inv.inv_date) { setEditDateFor(null); return }
-    setSavingDate(true)
-    startLoading()
-    try {
-      // HĐ xuất: ngày mới KHÔNG được trước ngày nhập của các lô đã trừ (tránh "xuất trước khi nhập")
-      if (inv.type === 'out') {
-        const { data: deds } = await sb.from('batch_deductions')
-          .select('batch_inv_code, batch_inv_date')
-          .eq('inv_id', inv.id)
-        const tooNew = (deds || []).filter(
-          (d: { batch_inv_date: string | null }) => d.batch_inv_date && d.batch_inv_date > editDateValue
-        ) as { batch_inv_code: string; batch_inv_date: string }[]
-        if (tooNew.length > 0) {
-          const codes = [...new Set(tooNew.map(d => d.batch_inv_code))].join(', ')
-          toast(`Không thể đặt ngày ${fmtDate(editDateValue)}: HĐ này đã trừ lô nhập SAU ngày đó (${codes}). Chọn ngày ≥ ngày nhập lô.`, 'error')
-          return
-        }
-      }
-      const { data: updated, error } = await sb.from('invoices')
-        .update({ inv_date: editDateValue }).eq('id', inv.id).select().single()
-      if (error) { toast('Lỗi cập nhật ngày: ' + error.message, 'error'); return }
-      if (!updated) { toast('Không thể cập nhật — kiểm tra quyền', 'error'); return }
-      setInvoices(prev => prev.map(i => i.id === inv.id ? { ...i, inv_date: editDateValue } : i))
-      await writeAudit('update', 'invoices', String(inv.id), `Sửa ngày HĐ ${inv.code}: ${fmtDate(inv.inv_date)} → ${fmtDate(editDateValue)}`)
-      toast('Đã cập nhật ngày hoá đơn')
-      setEditDateFor(null)
-    } catch (e) {
-      toast('Lỗi: ' + (e as Error).message, 'error')
-    } finally {
-      setSavingDate(false)
-      stopLoading()
-    }
-  }
-
-  // ─── upload ảnh bổ sung cho hoá đơn đã lưu ───────────────
-  const handleSaveImage = async (invId: number, url: string) => {
-    const { error } = await sb.from('invoices').update({ image_url: url }).eq('id', invId)
-    if (error) { toast('Lỗi lưu ảnh: ' + error.message, 'error'); return }
-    setInvoices(prev => prev.map(i => i.id === invId ? { ...i, image_url: url } : i))
-    setUploadingImgFor(null)
-    toast('Đã lưu ảnh hoá đơn')
-  }
-
-  // ─── toggle accordion + auto-load batch usage ─────────────
-  const toggleInv = (id: number) => {
-    setOpenInvs(prev => {
-      const next = new Set(prev)
-      if (next.has(id)) {
-        next.delete(id)
-      } else {
-        next.add(id)
-        const inv = invoices.find(i => i.id === id)
-        if (inv?.type === 'out') loadBatchUsageForInv(id)
-      }
-      return next
-    })
-  }
-
-  // ─── partner suggestions ──────────────────────────────────
-  const partnerSuggestions = useMemo(() => {
-    const names = invoices
-      .filter(inv => inv.type === invType && inv.partner?.trim())
-      .map(inv => inv.partner.trim())
-    return [...new Set(names)].sort((a, b) => a.localeCompare(b, 'vi'))
-  }, [invoices, invType])
-
-  // ─── list filters + pagination ────────────────────────────
-  const PAGE_SIZE = 20
-  const [page, setPage] = useState(1)
-  const [filterProduct,  setFilterProduct]  = useState('')
-  // Ô nhập tìm kiếm: gõ KHÔNG lọc ngay (đỡ lag) — bấm "Tìm" hoặc Enter mới áp dụng
-  const [searchInput,  setSearchInput]  = useState('')
-  const [productInput, setProductInput] = useState('')
-  const applySearch = () => {
-    setSearch(searchInput.trim())
-    setFilterProduct(productInput.trim())
-  }
-
-  // Sửa ngày hoá đơn (inline)
-  const [editDateFor, setEditDateFor]   = useState<number | null>(null)
-  const [editDateValue, setEditDateValue] = useState('')
-  const [savingDate, setSavingDate]     = useState(false)
-
+  // Filtered invoices by status
   const filteredInvoices = useMemo(() => {
-    const q     = search.trim().toLowerCase()
-    const qProd = filterProduct.trim().toLowerCase()
-    // type + date đã filter server-side khi load → chỉ cần filter search + product ở client
-    return invoices.filter(inv => {
-      if (q && !inv.code.toLowerCase().includes(q) && !(inv.partner ?? '').toLowerCase().includes(q)) return false
-      if (qProd) {
-        const its = inv.items as CastItem[]
-        if (!its.some(it => it.name.toLowerCase().includes(qProd))) return false
+    return invoices.filter((inv) => {
+      if (filterStatus && inv.ApprovalStatus !== filterStatus) return false;
+      return true;
+    });
+  }, [invoices, filterStatus]);
+
+  // Summary totals
+  const totals = useMemo(() => {
+    let totalIn = 0;
+    let totalOut = 0;
+    for (const inv of filteredInvoices) {
+      if (inv.Type === 'in') {
+        if (!filterStatus ? inv.ApprovalStatus === 'approved' : true) totalIn += inv.TotalAmount;
+      } else {
+        if (!filterStatus ? inv.ApprovalStatus === 'approved' : true) totalOut += inv.TotalAmount;
       }
-      return true
-    })
-  }, [invoices, search, filterProduct])
+    }
+    return {
+      count: filteredInvoices.length,
+      totalIn,
+      totalOut,
+      diff: totalIn - totalOut,
+    };
+  }, [filteredInvoices, filterStatus]);
 
-  const hasActiveFilter = search || filterType !== 'all' || filterDateFrom || filterDateTo || filterProduct
-  const clearFilters = () => {
-    setSearch(''); setFilterType('all')
-    setFilterDateFrom(''); setFilterDateTo(''); setFilterProduct('')
-    setSearchInput(''); setProductInput('')
-    // Không gọi loadInvoices ở đây — useEffect debounce sẽ tự gọi sau 400ms
-  }
+  const pendingCount = useMemo(() => {
+    return invoices.filter((i) => i.ApprovalStatus === 'pending').length;
+  }, [invoices]);
 
-  // Reset về trang 1 khi filter thay đổi
-  useEffect(() => { setPage(1) }, [search, invType, filterType, filterDateFrom, filterDateTo, filterProduct])
+  const handleDelete = async () => {
+    if (!selectedInvoice) return;
+    if (!hasPermission('Menu_Invoices_Import', 'delete')) {
+      alert('Bạn không có quyền xóa chứng từ này.');
+      return;
+    }
+    const ok = confirm(`Bạn có chắc muốn xóa vĩnh viễn chứng từ ${selectedInvoice.Code}? Dữ liệu lô hàng FIFO sẽ được tính toán lại.`);
+    if (!ok) return;
 
-  // Thông báo range đang hiển thị (khi không có date filter = đang dùng default 3 tháng)
-  const isDefaultRange = !filterDateFrom && !filterDateTo
+    try {
+      const res = await fetch(`/api/invoices/${selectedInvoice.Id}`, { method: 'DELETE' });
+      if (res.ok) {
+        toast('Đã xóa chứng từ và rebuild lô FIFO', 'success');
+        loadInvoices();
+      } else {
+        const d = await res.json();
+        alert(d.error || 'Lỗi khi xóa chứng từ');
+      }
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
 
-  const totalPages = Math.max(1, Math.ceil(filteredInvoices.length / PAGE_SIZE))
-  const pagedInvoices = filteredInvoices.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE)
+  const handleApproval = async (status: 'approved' | 'rejected' | 'pending') => {
+    if (!selectedInvoice) return;
+    if (!canApprove) {
+      alert('Chỉ tài khoản Kế toán hoặc Quản trị viên mới có quyền phê duyệt chứng từ kho!');
+      return;
+    }
+    const isImport = selectedInvoice.Type === 'in';
+    const confirmMsg =
+      status === 'approved'
+        ? `Bạn có chắc muốn DUYỆT chứng từ ${isImport ? 'nhập' : 'xuất'} kho ${selectedInvoice.Code}? Lô hàng FIFO và tồn kho sẽ được cập nhật ngay lập tức.`
+        : status === 'rejected'
+        ? `Bạn có chắc muốn TỪ CHỐI duyệt chứng từ kho ${selectedInvoice.Code}?`
+        : `Bạn có chắc muốn chuyển chứng từ kho ${selectedInvoice.Code} về trạng thái Chờ duyệt?`;
 
-  const formTotal = items.reduce((s, it) => s + (it.amount || it.qty || 0) * (it.price || 0), 0)
+    if (!confirm(confirmMsg)) return;
 
-  const hasBatchPreview = invType === 'out' && Object.keys(batchPreviews).length > 0
+    try {
+      const userName = user?.FullName || user?.Username || 'ketoan';
+      const userRole = user?.Role || 'ketoan';
+      const res = await fetch(`/api/invoices/${selectedInvoice.Id}/approve`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user': safeHeaderValue(userName, 'ketoan'),
+          'x-user-role': safeHeaderValue(userRole, 'ketoan'),
+        },
+        body: JSON.stringify({ status, currentUser: userName }),
+      });
+      if (res.ok) {
+        toast(
+          status === 'approved'
+            ? `Đã duyệt thành công chứng từ ${isImport ? 'nhập kho' : 'xuất kho'} ${selectedInvoice.Code}`
+            : status === 'rejected'
+            ? `Đã từ chối chứng từ kho ${selectedInvoice.Code}`
+            : `Đã chuyển chứng từ ${selectedInvoice.Code} về Chờ duyệt`,
+          'success'
+        );
+        loadInvoices();
+        if (selectedInvoice) loadSelectedDetails(selectedInvoice.Id);
+      } else {
+        const d = await res.json();
+        alert(d.error || 'Lỗi phê duyệt chứng từ');
+      }
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
 
-  // ─── render ───────────────────────────────────────────────
   return (
-    <div className="p-4 max-w-5xl mx-auto">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="font-['Playfair_Display'] text-xl font-bold text-[#3d1f0a]">🧾 Hoá đơn</h2>
-        {/* Tab navigation */}
-        <div className="flex bg-[#f5e6cc] rounded-xl p-1 gap-1">
-          <button
-            onClick={() => setTab('invoices')}
-            className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${tab === 'invoices' ? 'bg-white text-[#c8773a] shadow-sm' : 'text-[#8b5e3c] hover:text-[#c8773a]'}`}
-          >
-            📋 Hoá đơn
-          </button>
-          <button
-            onClick={() => setTab('batches')}
-            className={`px-4 py-1.5 rounded-lg text-xs font-semibold transition-all cursor-pointer ${tab === 'batches' ? 'bg-white text-[#c8773a] shadow-sm' : 'text-[#8b5e3c] hover:text-[#c8773a]'}`}
-          >
-            📦 Tồn theo lô
-          </button>
-        </div>
-      </div>
-
-      {tab === 'batches' ? (
-        <BatchesTab />
-      ) : (
-        <>
-          {/* ── Form ── */}
-          <div className="bg-[#fffaf4] rounded-2xl p-5 mb-4 border border-[#f5e6cc] shadow-[0_4px_20px_rgba(200,119,58,0.06)]">
-            {/* Type toggle */}
-            <div className="flex gap-2 mb-4">
+    <div className="flex flex-col h-[calc(100vh-4rem)] bg-slate-50 text-slate-800 overflow-hidden select-none print:h-auto print:overflow-visible print:bg-white print:p-0 print:m-0 print:block">
+      {/* On-screen Page Content (Hidden when printing modal) */}
+      <div className="print:hidden no-print flex flex-col flex-1 min-h-0 overflow-hidden">
+        {/* Top Toolbar */}
+        <div className="p-3 bg-white border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 shadow-xs">
+          <div className="flex items-center gap-2">
+            {/* Add Dropdown */}
+            <div className="relative group">
               <button
-                onClick={() => setInvType('in')}
-                className={`flex-1 py-2.5 rounded-xl text-xs font-semibold cursor-pointer transition-all border-2 ${invType === 'in' ? 'bg-[#3aaa6e] text-white border-[#3aaa6e]' : 'bg-white text-[#8b5e3c] border-[#f5e6cc] hover:border-[#3aaa6e]'}`}
+                className={`px-3.5 py-1.5 text-white text-xs font-semibold rounded-lg shadow-sm flex items-center gap-1.5 transition-all ${
+                  currentModule === 'warehouse'
+                    ? 'bg-amber-500 hover:bg-amber-600 shadow-amber-500/20'
+                    : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/20'
+                }`}
               >
-                ↓ Nhập hàng
+                <span>➕</span>
+                <span>
+                  {currentModule === 'warehouse' ? 'Lập phiếu kho' : 'Lập chứng từ kho'}
+                </span>
+                <span className="text-[10px]">▼</span>
               </button>
-              <button
-                onClick={() => setInvType('out')}
-                className={`flex-1 py-2.5 rounded-xl text-xs font-semibold cursor-pointer transition-all border-2 ${invType === 'out' ? 'bg-[#c8773a] text-white border-[#c8773a]' : 'bg-white text-[#8b5e3c] border-[#f5e6cc] hover:border-[#c8773a]'}`}
-              >
-                ↑ Xuất/Bán
-              </button>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3 mb-3">
-              <div>
-                <label className="block text-xs font-medium text-[#8b5e3c] mb-1">Ngày</label>
-                <DateInput value={invDate} onChange={setInvDate}
-                  className="w-full px-3 py-2.5 border-[1.5px] border-[#f5e6cc] rounded-lg text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-[#8b5e3c] mb-1">Mã hoá đơn</label>
-                <input value={code} onChange={e => setCode(e.target.value)} onBlur={e => setCode(e.target.value.trim())}
-                  className="w-full px-3 py-2.5 border-[1.5px] border-[#f5e6cc] rounded-lg text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-[#8b5e3c] mb-1">{invType === 'in' ? 'Nhà cung cấp' : 'Khách hàng'}</label>
-                <TextPicker
-                  value={partner}
-                  onChange={setPartner}
-                  suggestions={partnerSuggestions}
-                  placeholder={invType === 'in' ? '🔍 Tên NCC...' : '🔍 Tên khách...'}
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-[#8b5e3c] mb-1">Ghi chú</label>
-                <input value={note} onChange={e => setNote(e.target.value)} onBlur={e => setNote(e.target.value.trim())} placeholder="Ghi chú..."
-                  className="w-full px-3 py-2.5 border-[1.5px] border-[#f5e6cc] rounded-lg text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors" />
-              </div>
-            </div>
-
-            {/* Ảnh hoá đơn */}
-            <div className="mb-3">
-              <label className="block text-xs font-medium text-[#8b5e3c] mb-1">
-                Ảnh hoá đơn <span className="text-gray-400 font-normal">(tuỳ chọn)</span>
-              </label>
-              <ImageUpload value={imageUrl} onChange={setImageUrl} />
-            </div>
-
-            {/* Items table */}
-            <div className="rounded-lg border border-[#f0e8d8] mb-3 overflow-x-auto">
-              <table className="border-collapse w-full">
-                <thead>
-                  <tr>
-                    <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc]">{invType === 'in' ? 'Nguyên liệu' : 'Sản phẩm'}</th>
-                    <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-24">Số lượng</th>
-                    <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-24">
-                      ĐVT <span className="text-[#c8773a] normal-case font-normal">✦</span>
-                    </th>
-                    <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-32">
-                      {invType === 'in' ? 'Giá nhập' : 'Giá bán'} <span className="text-[#c8773a] normal-case font-normal">✦</span>
-                    </th>
-                    <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-32">NSX</th>
-                    <th className="text-left text-[10px] font-medium uppercase tracking-wider text-[#8b5e3c] px-3 py-2 bg-[#f5e6cc] w-32">HSD</th>
-                    <th className="bg-[#f5e6cc] w-8"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((it, idx) => (
-                    <tr key={idx}>
-                      <td className="px-3 py-2.5 border-b border-[#f0e8d8]">
-                        <ProductPicker
-                          products={allProducts}
-                          value={it.name}
-                          onChange={(name, unit) => handleProductSelect(idx, name, unit)}
-                        />
-                      </td>
-                      <td className="px-3 py-2.5 border-b border-[#f0e8d8]">
-                        <input type="number" min={0} step="any" value={it.amount || it.qty || 0}
-                          onChange={e => { const v = parseFloat(e.target.value) || 0; updateItem(idx, 'amount', v); updateItem(idx, 'qty', v) }}
-                          className="w-full px-2 py-1 border-[1.5px] border-[#f5e6cc] rounded text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors" />
-                      </td>
-                      <td className="px-3 py-2.5 border-b border-[#f0e8d8]">
-                        <select value={it.unit} onChange={e => updateItem(idx, 'unit', e.target.value)}
-                          className="w-full px-2 py-1 border-[1.5px] border-[#f5e6cc] rounded text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors appearance-none">
-                          {allUnits.map(u => <option key={u} value={u}>{u}</option>)}
-                        </select>
-                      </td>
-                      <td className="px-3 py-2.5 border-b border-[#f0e8d8]">
-                        <input type="number" min={0} step="any" value={it.price || 0}
-                          onChange={e => updateItem(idx, 'price', parseFloat(e.target.value) || 0)}
-                          className="w-full px-2 py-1 border-[1.5px] border-[#f5e6cc] rounded text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors" />
-                      </td>
-                      <td className="px-3 py-2.5 border-b border-[#f0e8d8]">
-                        <DateInput value={it.mfg_date || ''} onChange={v => updateItem(idx, 'mfg_date', v)}
-                          className="w-full px-2 py-1 border-[1.5px] border-[#f5e6cc] rounded text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors" />
-                      </td>
-                      <td className="px-3 py-2.5 border-b border-[#f0e8d8]">
-                        <DateInput value={it.exp_date || ''} onChange={v => updateItem(idx, 'exp_date', v)}
-                          className="w-full px-2 py-1 border-[1.5px] border-[#f5e6cc] rounded text-sm bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors" />
-                      </td>
-                      <td className="px-3 py-2.5 border-b border-[#f0e8d8] text-center">
-                        <button onClick={() => removeItem(idx)} className="bg-transparent border-none text-[#e0a090] text-base cursor-pointer px-1.5 py-0.5 rounded hover:bg-[#fdecea] hover:text-[#c0392b] transition-all">×</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Phân bổ lô hàng (chỉ hiện khi xuất và có dữ liệu) */}
-            {hasBatchPreview && (
-              <div className="mb-3 space-y-2">
-                {items.map((item, idx) => {
-                  const allocs = batchPreviews[idx]
-                  if (!allocs || !item.name.trim()) return null
-                  const batches = itemBatchData[item.name.trim().toLowerCase()] || []
-                  const isManual = showAllocFor.has(idx)
-                  const alloc = manualAlloc[idx] || {}
-                  const totalAllocated = Object.values(alloc).reduce((s, v) => s + (parseFloat(v) || 0), 0)
-                  const qty = item.amount || item.qty
-                  const matched = Math.abs(totalAllocated - qty) < 0.001
-
-                  return (
-                    <div key={idx} className="p-3 bg-amber-50 border border-amber-200 rounded-xl">
-                      {/* Header row */}
-                      <div className="flex items-center justify-between mb-2">
-                        <p className="text-[11px] font-semibold text-amber-800">📦 {item.name}</p>
-                        {batches.length > 0 && (
-                          <button
-                            type="button"
-                            onClick={() => setShowAllocFor(prev => {
-                              const n = new Set(prev)
-                              if (n.has(idx)) {
-                                n.delete(idx)
-                                // xoá alloc khi tắt manual
-                                setManualAlloc(p => { const np = { ...p }; delete np[idx]; return np })
-                              } else {
-                                n.add(idx)
-                              }
-                              return n
-                            })}
-                            className={`text-[10px] px-2 py-0.5 rounded-full border cursor-pointer transition-all ${
-                              isManual
-                                ? 'bg-amber-600 text-white border-amber-600'
-                                : 'bg-white text-amber-700 border-amber-400 hover:bg-amber-100'
-                            }`}
-                          >
-                            {isManual ? '✓ Thủ công' : '⚙ Chọn lô thủ công'}
-                          </button>
-                        )}
-                      </div>
-
-                      {isManual ? (
-                        /* Manual allocation rows */
-                        <div>
-                          <div className="space-y-1.5 mb-2">
-                            {batches.map(b => {
-                              const avail = parseFloat(b.remaining_qty.toFixed(2))
-                              const val = alloc[b.id] ?? ''
-                              const enteredQty = parseFloat(val) || 0
-                              const overLimit = enteredQty > avail
-                              return (
-                                <div key={b.id} className="flex items-center gap-2">
-                                  <div className="flex-1 text-[11px] text-amber-700 min-w-0">
-                                    <span className="font-medium">{b.inv_code}</span>
-                                    <span className="text-[10px] text-amber-600 ml-1">({fmtDate(b.inv_date)})</span>
-                                    <span className="ml-1">còn <strong>{fmtNum(avail)}</strong> {b.unit}</span>
-                                    {b.price > 0 && <span className="ml-1 text-amber-500">@ {fmtPrice(b.price)}</span>}
-                                  </div>
-                                  <input
-                                    type="number"
-                                    min={0}
-                                    max={avail}
-                                    step="any"
-                                    value={val}
-                                    onChange={e => setManualAlloc(prev => ({
-                                      ...prev,
-                                      [idx]: { ...(prev[idx] || {}), [b.id]: e.target.value }
-                                    }))}
-                                    placeholder="0"
-                                    className={`w-20 px-2 py-1 text-xs border rounded bg-white text-[#3d1f0a] outline-none transition-colors ${
-                                      overLimit ? 'border-red-400 focus:border-red-500' : 'border-amber-300 focus:border-[#c8773a]'
-                                    }`}
-                                  />
-                                  <span className="text-[10px] text-amber-600 w-6 flex-shrink-0">{b.unit}</span>
-                                </div>
-                              )
-                            })}
-                          </div>
-                          {/* Summary */}
-                          <div className={`text-[11px] font-semibold ${matched ? 'text-green-700' : 'text-orange-700'}`}>
-                            Tổng phân bổ: {fmtNum(totalAllocated)} / {fmtNum(qty)} {item.unit}
-                            {matched ? ' ✓' : ` (còn thiếu ${fmtNum(qty - totalAllocated)})`}
-                          </div>
-                        </div>
-                      ) : (
-                        /* FIFO preview */
-                        <div className="space-y-0.5">
-                          {allocs.map((a, ai) => (
-                            a.insufficient
-                              ? <p key={ai} className="text-[11px] text-red-600">⚠ Không đủ tồn kho ({fmtNum(a.qty)} {a.unit} còn thiếu)</p>
-                              : <p key={ai} className="text-[11px] text-amber-700">
-                                  ✓ Lô <span className="font-medium">{a.inv_code}</span> ({fmtDate(a.inv_date)}): {fmtNum(a.qty)} {a.unit}
-                                  {a.price > 0 && <> × {fmtPrice(a.price)} = <span className="font-semibold">{fmtPrice(a.qty * a.price)}</span></>}
-                                </p>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-
-            {formTotal > 0 && (
-              <div className="text-right text-sm font-semibold text-[#c8773a] mb-2">
-                Tổng: {fmtPrice(formTotal)}
-              </div>
-            )}
-
-            <div className="flex gap-2 flex-wrap">
-              <button onClick={addItem} className="mt-2 inline-flex items-center gap-1 px-3 py-1.5 bg-transparent border-[1.5px] border-dashed border-[#c8773a] rounded-lg text-[#c8773a] text-xs cursor-pointer hover:bg-[#fef4e8] transition-all">
-                + Thêm dòng
-              </button>
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-gradient-to-br from-[#c8773a] to-[#e8a44a] text-white text-xs font-medium transition-all mt-2 disabled:opacity-60 disabled:cursor-not-allowed hover:enabled:opacity-90 cursor-pointer"
-              >
-                {saving ? '⏳ Đang lưu...' : '💾 Lưu hoá đơn'}
-              </button>
-            </div>
-          </div>
-
-          {/* ── Invoice list ── */}
-          <div className="bg-[#fffaf4] rounded-2xl p-5 border border-[#f5e6cc] shadow-[0_4px_20px_rgba(200,119,58,0.06)]">
-            {/* Header */}
-            <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-              <h3 className="text-sm font-semibold text-[#3d1f0a] flex items-center gap-2 flex-wrap">
-                Danh sách hoá đơn
-                {loadingInvList
-                  ? <span className="text-xs font-normal text-[#8b5e3c]/60 animate-pulse">⏳ Đang tải...</span>
-                  : invoices.length > 0 && (
-                    <span className="text-xs font-normal text-[#8b5e3c]">
-                      {filteredInvoices.length !== invoices.length
-                        ? `(${filteredInvoices.length}/${invoices.length})`
-                        : `(${invoices.length})`}
-                    </span>
-                  )
-                }
-                {!loadingInvList && isDefaultRange && (
-                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#f5e6cc] text-[#8b5e3c]">
-                    3 tháng gần nhất
-                  </span>
-                )}
-              </h3>
-              <div className="flex items-center gap-2">
-                {hasActiveFilter && (
-                  <button onClick={clearFilters} className="text-xs text-[#c8773a] hover:underline cursor-pointer">
-                    ✕ Xoá bộ lọc
-                  </button>
-                )}
+              <div className="absolute left-0 top-full mt-1 w-44 bg-white border border-slate-200 rounded-xl shadow-xl py-1 hidden group-hover:block z-30">
                 <button
-                  onClick={() => loadInvoices()}
-                  disabled={loadingInvList}
-                  title="Tải lại danh sách"
-                  className="text-xs text-[#8b5e3c]/50 hover:text-[#c8773a] disabled:opacity-40 cursor-pointer transition-colors"
+                  onClick={() => {
+                    setEditingInvoice(null);
+                    setModalType('in');
+                    setModalOpen(true);
+                  }}
+                  className="w-full text-left px-3 py-2 text-xs text-slate-700 hover:bg-amber-50 hover:text-amber-800 flex items-center gap-2"
                 >
-                  🔄
+                  <span>📥</span>
+                  <span>Phiếu Nhập kho</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setEditingInvoice(null);
+                    setModalType('out');
+                    setModalOpen(true);
+                  }}
+                  className="w-full text-left px-3 py-2 text-xs text-slate-700 hover:bg-amber-50 hover:text-amber-800 flex items-center gap-2"
+                >
+                  <span>📤</span>
+                  <span>Phiếu Xuất kho</span>
                 </button>
               </div>
             </div>
 
-            {/* Filter bar */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 mb-4">
-              {/* Mã HĐ / đối tác */}
-              <div className="relative lg:col-span-1">
-                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#c8a87a] text-xs pointer-events-none">🔍</span>
-                <input
-                  type="text"
-                  value={searchInput}
-                  onChange={e => setSearchInput(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') applySearch() }}
-                  placeholder="Mã HĐ / đối tác..."
-                  className="w-full pl-7 pr-6 py-1.5 text-xs border-[1.5px] border-[#f5e6cc] rounded-lg bg-white text-[#3d1f0a] placeholder-[#c8a87a] outline-none focus:border-[#c8773a] transition-colors"
-                />
-                {searchInput && (
-                  <button onClick={() => { setSearchInput(''); setSearch('') }} className="absolute right-2 top-1/2 -translate-y-1/2 text-[#c8a87a] hover:text-[#c8773a] text-xs cursor-pointer">✕</button>
-                )}
-              </div>
-
-              {/* Từ ngày */}
-              <div>
-                <DateInput
-                  value={filterDateFrom}
-                  onChange={v => setFilterDateFrom(v)}
-                  placeholder="Từ ngày"
-                  className="w-full px-2.5 py-1.5 text-xs border-[1.5px] border-[#f5e6cc] rounded-lg bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors"
-                />
-                {filterDateFrom && <p className="text-[9px] text-[#8b5e3c] mt-0.5 ml-1">Từ ngày</p>}
-              </div>
-
-              {/* Đến ngày */}
-              <div>
-                <DateInput
-                  value={filterDateTo}
-                  onChange={v => setFilterDateTo(v)}
-                  placeholder="Đến ngày"
-                  className="w-full px-2.5 py-1.5 text-xs border-[1.5px] border-[#f5e6cc] rounded-lg bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a] transition-colors"
-                />
-                {filterDateTo && <p className="text-[9px] text-[#8b5e3c] mt-0.5 ml-1">Đến ngày</p>}
-              </div>
-
-              {/* Loại nhập/xuất */}
-              <div className="flex rounded-lg overflow-hidden border-[1.5px] border-[#f5e6cc] text-xs">
-                {(['all', 'in', 'out'] as const).map(t => (
-                  <button
-                    key={t}
-                    onClick={() => setFilterType(t)}
-                    className={`flex-1 py-1.5 font-medium transition-colors cursor-pointer ${
-                      filterType === t
-                        ? t === 'in'  ? 'bg-[#d4f5e3] text-[#1e7a4a]'
-                        : t === 'out' ? 'bg-[#fdf0e0] text-[#c8773a]'
-                        : 'bg-[#c8773a] text-white'
-                        : 'bg-white text-[#8b5e3c] hover:bg-[#fdf6ec]'
-                    }`}
-                  >
-                    {t === 'all' ? 'Tất cả' : t === 'in' ? '↓ Nhập' : '↑ Xuất'}
-                  </button>
-                ))}
-              </div>
-
-              {/* Tên nguyên liệu trong items */}
-              <div className="relative">
-                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[#c8a87a] text-xs pointer-events-none">📦</span>
-                <input
-                  type="text"
-                  value={productInput}
-                  onChange={e => setProductInput(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter') applySearch() }}
-                  placeholder="Tên nguyên liệu..."
-                  className="w-full pl-7 pr-6 py-1.5 text-xs border-[1.5px] border-[#f5e6cc] rounded-lg bg-white text-[#3d1f0a] placeholder-[#c8a87a] outline-none focus:border-[#c8773a] transition-colors"
-                />
-                {productInput && (
-                  <button onClick={() => { setProductInput(''); setFilterProduct('') }} className="absolute right-2 top-1/2 -translate-y-1/2 text-[#c8a87a] hover:text-[#c8773a] text-xs cursor-pointer">✕</button>
-                )}
-              </div>
-
-              {/* Nút tìm kiếm (áp dụng ô Mã HĐ + Nguyên liệu) */}
+            {pendingCount > 0 && (
               <button
-                onClick={applySearch}
-                className="py-1.5 px-3 text-xs font-medium rounded-lg bg-[#c8773a] text-white hover:bg-[#b06830] transition-colors cursor-pointer flex items-center justify-center gap-1"
+                onClick={() => setFilterStatus(filterStatus === 'pending' ? '' : 'pending')}
+                className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all shadow-xs ${
+                  filterStatus === 'pending'
+                    ? 'bg-amber-500 text-white shadow-amber-500/25 ring-2 ring-amber-300'
+                    : 'bg-amber-100 text-amber-900 hover:bg-amber-200 border border-amber-300'
+                }`}
+                title="Bấm để lọc danh sách chứng từ đang chờ duyệt"
               >
-                🔍 Tìm kiếm
+                <span>⏳</span>
+                <span>{pendingCount} chờ duyệt</span>
               </button>
-            </div>
-            {invoices.length === 0 ? (
-              <div className="text-center py-6">
-                {loadingInvList
-                  ? <p className="text-sm text-[#8b5e3c]/60 animate-pulse">⏳ Đang tải danh sách...</p>
-                  : <>
-                      <p className="text-sm text-[#8b5e3c] mb-2">Chưa có hoá đơn nào</p>
-                      <button
-                        onClick={() => loadInvoices()}
-                        className="text-xs text-[#c8773a] hover:underline cursor-pointer"
-                      >
-                        🔄 Tải lại
-                      </button>
-                    </>
-                }
-              </div>
-            ) : filteredInvoices.length === 0 ? (
-              <div className="text-sm text-[#8b5e3c] text-center py-4">Không tìm thấy hoá đơn phù hợp</div>
-            ) : (
-              <div className="space-y-2">
-                {pagedInvoices.map(inv => {
-                  const castItems = inv.items as CastItem[]
-                  const invTotal = calcTotal(castItems)
-                  return (
-                    <div key={inv.id} className="border border-[#f0e8d8] rounded-xl overflow-hidden">
-                      <div className="flex justify-between items-center p-3 px-4 cursor-pointer select-none bg-[#fdf6ec] hover:bg-[#fef4e8] transition-all" onClick={() => toggleInv(inv.id)}>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${inv.type === 'in' ? 'bg-[#d4f5e3] text-[#1e7a4a]' : 'bg-[#fdf0e0] text-[#c8773a]'}`}>
-                            {inv.type === 'in' ? '↓ Nhập' : '↑ Xuất'}
-                          </span>
-                          <span className="text-sm font-medium text-[#3d1f0a]">{inv.code}</span>
-                          <span className="text-xs text-[#8b5e3c]">{fmtDate(inv.inv_date)}</span>
-                          {inv.partner && <span className="text-xs text-[#8b5e3c]">| {inv.partner}</span>}
-                          {invTotal > 0 && <span className="text-xs font-semibold text-[#c8773a]">{fmtPrice(invTotal)}</span>}
-                        </div>
-                        <span className="text-[#8b5e3c] text-sm">{openInvs.has(inv.id) ? '▲' : '▼'}</span>
-                      </div>
+            )}
 
-                      {openInvs.has(inv.id) && (
-                        <div className="border-t border-[#f0e8d8] bg-white p-3">
-                          {inv.note && <p className="text-xs text-[#8b5e3c] mb-2">📝 {inv.note}</p>}
+            <button
+              disabled={!selectedInvoice}
+              onClick={() => {
+                setEditingInvoice(selectedInvoice);
+                setModalType(selectedInvoice?.Type || 'in');
+                setModalOpen(true);
+              }}
+              className="px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 text-xs font-medium rounded-lg disabled:opacity-40 transition-colors flex items-center gap-1.5 shadow-xs"
+            >
+              <span>✏️</span>
+              <span>Sửa</span>
+            </button>
 
-                          {/* Ảnh hoá đơn */}
-                          {inv.image_url ? (
-                            <div className="mb-3">
-                              <a href={inv.image_url} target="_blank" rel="noopener noreferrer">
-                                <img src={inv.image_url} alt="Ảnh hoá đơn"
-                                  className="max-h-48 rounded-xl border border-[#f0e8d8] object-contain bg-[#fdf6ec] p-1 hover:opacity-90 transition-opacity cursor-zoom-in" />
-                              </a>
-                              <p className="text-[10px] text-[#8b5e3c] mt-1">📷 Ảnh hoá đơn — click để xem to</p>
-                            </div>
-                          ) : uploadingImgFor === inv.id ? (
-                            <div className="mb-3 p-3 bg-[#fdf6ec] border border-[#f5e6cc] rounded-xl">
-                              <div className="flex items-center justify-between mb-2">
-                                <p className="text-xs font-medium text-[#3d1f0a]">📷 Tải lên ảnh hoá đơn</p>
-                                <button onClick={() => setUploadingImgFor(null)} className="text-[10px] text-gray-400 hover:text-gray-600 cursor-pointer">✕ Huỷ</button>
-                              </div>
-                              <ImageUpload
-                                value=""
-                                onChange={url => { if (url) handleSaveImage(inv.id, url) }}
-                              />
-                            </div>
-                          ) : (
-                            <button
-                              onClick={() => setUploadingImgFor(inv.id)}
-                              className="mb-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-dashed border-[#c8773a] text-[#c8773a] text-xs cursor-pointer hover:bg-[#fef4e8] transition-all"
-                            >
-                              📷 Thêm ảnh hoá đơn
-                            </button>
-                          )}
+            <button
+              disabled={!selectedInvoice}
+              onClick={handleDelete}
+              className="px-3 py-1.5 bg-white hover:bg-red-50 text-slate-700 hover:text-red-700 border border-slate-300 hover:border-red-300 text-xs font-medium rounded-lg disabled:opacity-40 transition-colors flex items-center gap-1.5 shadow-xs"
+            >
+              <span>🗑️</span>
+              <span>Xóa</span>
+            </button>
 
-                          {/* Items table */}
-                          <div className="overflow-x-auto rounded border border-[#f0e8d8]">
-                            <table className="w-full border-collapse text-xs">
-                              <thead>
-                                <tr>
-                                  <th className="text-left text-[10px] font-medium uppercase text-[#8b5e3c] px-2 py-1.5 bg-[#f5e6cc]">#</th>
-                                  <th className="text-left text-[10px] font-medium uppercase text-[#8b5e3c] px-2 py-1.5 bg-[#f5e6cc]">{inv.type === 'in' ? 'Nguyên liệu' : 'Sản phẩm'}</th>
-                                  <th className="text-right text-[10px] font-medium uppercase text-[#8b5e3c] px-2 py-1.5 bg-[#f5e6cc]">Số lượng</th>
-                                  <th className="text-right text-[10px] font-medium uppercase text-[#8b5e3c] px-2 py-1.5 bg-[#f5e6cc]">{inv.type === 'in' ? 'Giá nhập' : 'Giá bán'}</th>
-                                  <th className="text-right text-[10px] font-medium uppercase text-[#8b5e3c] px-2 py-1.5 bg-[#f5e6cc]">Thành tiền</th>
-                                  <th className="text-left text-[10px] font-medium uppercase text-[#8b5e3c] px-2 py-1.5 bg-[#f5e6cc]">NSX</th>
-                                  <th className="text-left text-[10px] font-medium uppercase text-[#8b5e3c] px-2 py-1.5 bg-[#f5e6cc]">HSD</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {castItems.map((it, i) => (
-                                  <tr key={i}>
-                                    <td className="px-2 py-1.5 border-b border-[#f0e8d8]">{i + 1}</td>
-                                    <td className="px-2 py-1.5 border-b border-[#f0e8d8]">{it.name}</td>
-                                    <td className="px-2 py-1.5 border-b border-[#f0e8d8] text-right">{fmtNum(it.amount)} {it.unit}</td>
-                                    <td className="px-2 py-1.5 border-b border-[#f0e8d8] text-right">{it.price ? fmtPrice(it.price) : '—'}</td>
-                                    <td className="px-2 py-1.5 border-b border-[#f0e8d8] text-right font-medium text-[#3d1f0a]">
-                                      {it.price ? fmtPrice((it.amount || 0) * it.price) : '—'}
-                                    </td>
-                                    <td className="px-2 py-1.5 border-b border-[#f0e8d8] whitespace-nowrap">{it.mfg_date ? fmtDate(it.mfg_date) : '—'}</td>
-                                    <td className={`px-2 py-1.5 border-b border-[#f0e8d8] whitespace-nowrap ${it.exp_date && new Date(it.exp_date) < new Date() ? 'text-[#d94f3d] font-semibold' : ''}`}>
-                                      {it.exp_date ? fmtDate(it.exp_date) : '—'}
-                                    </td>
-                                  </tr>
-                                ))}
-                              </tbody>
-                              {invTotal > 0 && (
-                                <tfoot>
-                                  <tr>
-                                    <td colSpan={6} className="px-2 py-1.5 text-right text-xs font-semibold text-[#3d1f0a]">Tổng cộng</td>
-                                    <td className="px-2 py-1.5 text-right text-xs font-bold text-[#c8773a]">{fmtPrice(invTotal)}</td>
-                                  </tr>
-                                </tfoot>
-                              )}
-                            </table>
-                          </div>
+            <div className="h-5 w-[1px] bg-slate-200 mx-1" />
 
-                          {/* Batch usage (chỉ hiện cho xuất) */}
-                          {inv.type === 'out' && (() => {
-                            const usage = invBatchUsage[inv.id]
-                            if (usage === undefined) return (
-                              <p className="text-[10px] text-[#8b5e3c] mt-2 italic">Đang tải thông tin lô...</p>
-                            )
-                            if (usage.length === 0) return (
-                              <p className="text-[10px] text-[#8b5e3c] mt-2 italic">Không có thông tin lô (hoá đơn cũ)</p>
-                            )
-                            // group by batch_inv_code for display
-                            return (
-                              <div className="mt-3 p-2.5 bg-amber-50 border border-amber-200 rounded-lg">
-                                <p className="text-[10px] font-semibold text-amber-800 mb-1.5">📦 Lô hàng đã dùng (FIFO)</p>
-                                <div className="space-y-0.5">
-                                  {usage.map((d, di) => (
-                                    <p key={di} className="text-[10px] text-amber-700">
-                                      • Lô <span className="font-medium">{d.batch_inv_code}</span>
-                                      {d.batch_inv_date ? ` (${fmtDate(d.batch_inv_date)})` : ''}: {fmtNum(d.qty_used)} {d.batch_unit}
-                                      {d.batch_price > 0 ? ` × ${fmtPrice(d.batch_price)} = ${fmtPrice(d.qty_used * d.batch_price)}` : ''}
-                                    </p>
-                                  ))}
-                                </div>
-                              </div>
-                            )
-                          })()}
-
-                          {editDateFor === inv.id ? (
-                            <div className="flex items-center gap-2 mt-2 flex-wrap bg-[#fdf6ec] border border-[#f5e6cc] rounded-lg p-2">
-                              <span className="text-xs text-[#8b5e3c]">📅 Ngày mới:</span>
-                              <DateInput
-                                value={editDateValue}
-                                onChange={setEditDateValue}
-                                placeholder="dd/mm/yyyy"
-                                className="px-2.5 py-1.5 text-xs border-[1.5px] border-[#f5e6cc] rounded-lg bg-white text-[#3d1f0a] outline-none focus:border-[#c8773a]"
-                              />
-                              <button onClick={() => handleSaveDate(inv)} disabled={savingDate}
-                                className="px-3 py-1.5 rounded-lg bg-[#c8773a] text-white text-xs font-medium hover:bg-[#b06830] transition-colors disabled:opacity-50">
-                                {savingDate ? 'Đang lưu...' : 'Lưu'}
-                              </button>
-                              <button onClick={() => setEditDateFor(null)} disabled={savingDate}
-                                className="px-3 py-1.5 rounded-lg border-[1.5px] border-[#f5e6cc] text-[#8b5e3c] text-xs hover:bg-white transition-colors">
-                                Huỷ
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="flex gap-2 mt-2">
-                              <button onClick={() => doPrint(inv, recipes)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border-[1.5px] border-[#f5e6cc] text-[#8b5e3c] text-xs font-medium cursor-pointer hover:border-[#c8773a] hover:text-[#c8773a] transition-all">
-                                🖨 In
-                              </button>
-                              <button onClick={() => { setEditDateFor(inv.id); setEditDateValue(inv.inv_date) }} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border-[1.5px] border-[#f5e6cc] text-[#8b5e3c] text-xs font-medium cursor-pointer hover:border-[#c8773a] hover:text-[#c8773a] transition-all">
-                                📅 Sửa ngày
-                              </button>
-                              <button onClick={() => handleDelete(inv)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border-[1.5px] border-[#e0a090] text-[#d94f3d] text-xs font-medium cursor-pointer hover:bg-[#fdecea] transition-all">
-                                🗑 Xoá
-                              </button>
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-
-                {/* ── Pagination ── */}
-                {totalPages > 1 && (
-                  <div className="flex items-center justify-between pt-2 border-t border-[#f0e8d8] mt-1">
-                    <span className="text-xs text-[#8b5e3c]">
-                      Trang <b>{page}</b>/{totalPages} · {filteredInvoices.length} hoá đơn
-                    </span>
-                    <div className="flex gap-1">
-                      <button
-                        onClick={() => setPage(1)}
-                        disabled={page === 1}
-                        className="px-2 py-1 text-xs rounded-lg border border-[#f5e6cc] bg-white text-[#8b5e3c] hover:border-[#c8773a] hover:text-[#c8773a] transition-all cursor-pointer disabled:opacity-30 disabled:cursor-default"
-                      >«</button>
-                      <button
-                        onClick={() => setPage(p => p - 1)}
-                        disabled={page === 1}
-                        className="px-2.5 py-1 text-xs rounded-lg border border-[#f5e6cc] bg-white text-[#8b5e3c] hover:border-[#c8773a] hover:text-[#c8773a] transition-all cursor-pointer disabled:opacity-30 disabled:cursor-default"
-                      >‹</button>
-                      {/* Số trang xung quanh page hiện tại */}
-                      {Array.from({ length: totalPages }, (_, i) => i + 1)
-                        .filter(p => p === 1 || p === totalPages || Math.abs(p - page) <= 1)
-                        .reduce<(number | 'ellipsis')[]>((acc, p, idx, arr) => {
-                          if (idx > 0 && (p as number) - (arr[idx - 1] as number) > 1) acc.push('ellipsis')
-                          acc.push(p)
-                          return acc
-                        }, [])
-                        .map((p, i) =>
-                          p === 'ellipsis'
-                            ? <span key={`e${i}`} className="px-1 text-xs text-[#8b5e3c]">…</span>
-                            : <button
-                                key={p}
-                                onClick={() => setPage(p as number)}
-                                className={`px-2.5 py-1 text-xs rounded-lg border transition-all cursor-pointer ${
-                                  p === page
-                                    ? 'bg-[#c8773a] border-[#c8773a] text-white font-semibold'
-                                    : 'border-[#f5e6cc] bg-white text-[#8b5e3c] hover:border-[#c8773a] hover:text-[#c8773a]'
-                                }`}
-                              >{p}</button>
-                        )
-                      }
-                      <button
-                        onClick={() => setPage(p => p + 1)}
-                        disabled={page === totalPages}
-                        className="px-2.5 py-1 text-xs rounded-lg border border-[#f5e6cc] bg-white text-[#8b5e3c] hover:border-[#c8773a] hover:text-[#c8773a] transition-all cursor-pointer disabled:opacity-30 disabled:cursor-default"
-                      >›</button>
-                      <button
-                        onClick={() => setPage(totalPages)}
-                        disabled={page === totalPages}
-                        className="px-2 py-1 text-xs rounded-lg border border-[#f5e6cc] bg-white text-[#8b5e3c] hover:border-[#c8773a] hover:text-[#c8773a] transition-all cursor-pointer disabled:opacity-30 disabled:cursor-default"
-                      >»</button>
-                    </div>
+            {/* Approval buttons for accountant / manager / admin */}
+            {selectedInvoice?.ApprovalStatus === 'pending' ? (
+              canApprove ? (
+                <>
+                  <button
+                    onClick={() => handleApproval('approved')}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg shadow-sm flex items-center gap-1.5 transition-all"
+                    title="Kế toán duyệt chứng từ để ghi sổ kho và phân bổ lô FIFO"
+                  >
+                    <span>✅</span>
+                    <span>{selectedInvoice.Type === 'in' ? 'Duyệt nhập kho' : 'Duyệt xuất kho'}</span>
+                  </button>
+                  <button
+                    onClick={() => handleApproval('rejected')}
+                    className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-semibold rounded-lg shadow-sm flex items-center gap-1.5 transition-all"
+                    title="Kế toán từ chối chứng từ"
+                  >
+                    <span>❌</span>
+                    <span>Từ chối</span>
+                  </button>
+                  <div className="h-5 w-[1px] bg-slate-200 mx-1" />
+                </>
+              ) : (
+                <>
+                  <div className="px-2.5 py-1.5 bg-amber-50 border border-amber-200 text-amber-800 text-xs font-medium rounded-lg flex items-center gap-1.5 shadow-xs">
+                    <span className="text-[10px]">⏳</span>
+                    <span>Chờ kế toán duyệt</span>
                   </div>
-                )}
+                  <div className="h-5 w-[1px] bg-slate-200 mx-1" />
+                </>
+              )
+            ) : selectedInvoice?.ApprovalStatus === 'approved' ? (
+              canApprove && (
+                <>
+                  <button
+                    onClick={() => handleApproval('pending')}
+                    className="px-2.5 py-1.5 bg-white hover:bg-slate-100 text-slate-600 border border-slate-300 text-xs font-medium rounded-lg transition-colors flex items-center gap-1 shadow-xs"
+                    title="Bỏ duyệt, chuyển chứng từ về trạng thái Chờ duyệt"
+                  >
+                    <span>↩️</span>
+                    <span>Bỏ duyệt</span>
+                  </button>
+                  <div className="h-5 w-[1px] bg-slate-200 mx-1" />
+                </>
+              )
+            ) : selectedInvoice?.ApprovalStatus === 'rejected' ? (
+              canApprove && (
+                <>
+                  <button
+                    onClick={() => handleApproval('approved')}
+                    className="px-2.5 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 text-xs font-semibold rounded-lg transition-colors flex items-center gap-1 shadow-xs"
+                    title="Duyệt lại chứng từ"
+                  >
+                    <span>✅</span>
+                    <span>Duyệt lại</span>
+                  </button>
+                  <div className="h-5 w-[1px] bg-slate-200 mx-1" />
+                </>
+              )
+            ) : null}
+
+            <button
+              disabled={!selectedInvoice}
+              onClick={() => setPrintModalOpen(true)}
+              className="px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 text-xs font-medium rounded-lg disabled:opacity-40 transition-colors flex items-center gap-1.5 shadow-xs"
+            >
+              <span>🖨️</span>
+              <span>In chứng từ</span>
+            </button>
+
+            <button
+              onClick={() => {
+                loadInvoices();
+                fetch('/api/products')
+                  .then((res) => res.json())
+                  .then((d) => setProducts(d.products || []));
+                if (selectedInvoice) loadSelectedDetails(selectedInvoice.Id);
+              }}
+              className="px-3 py-1.5 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 text-xs font-medium rounded-lg transition-colors flex items-center gap-1.5 shadow-xs"
+            >
+              <span>🔄</span>
+              <span>Nạp lại</span>
+            </button>
+          </div>
+
+          {/* Filters */}
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <select
+              value={period}
+              onChange={(e) => setPeriod(e.target.value)}
+              className="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-700 focus:outline-none focus:border-amber-500 shadow-xs"
+            >
+              <option value="today">Hôm nay</option>
+              <option value="this_month">Tháng này</option>
+              <option value="last_month">Tháng trước</option>
+              <option value="this_year">Năm nay</option>
+              <option value="custom">Tùy chọn...</option>
+            </select>
+
+            {period === 'custom' && (
+              <div className="flex items-center gap-1">
+                <input
+                  type="date"
+                  value={fromDate}
+                  onChange={(e) => setFromDate(e.target.value)}
+                  className="bg-white border border-slate-300 rounded-lg px-2 py-1 text-slate-700"
+                />
+                <span className="text-slate-400">-</span>
+                <input
+                  type="date"
+                  value={toDate}
+                  onChange={(e) => setToDate(e.target.value)}
+                  className="bg-white border border-slate-300 rounded-lg px-2 py-1 text-slate-700"
+                />
               </div>
             )}
+
+            <select
+              value={filterType}
+              onChange={(e) => setFilterType(e.target.value)}
+              className="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-700 focus:outline-none focus:border-amber-500 shadow-xs"
+            >
+              <option value="">Tất cả loại</option>
+              <option value="in">📥 Nhập kho</option>
+              <option value="out">📤 Xuất kho</option>
+            </select>
+
+            <select
+              value={filterStatus}
+              onChange={(e) => setFilterStatus(e.target.value)}
+              className="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-slate-700 focus:outline-none focus:border-amber-500 shadow-xs"
+            >
+              <option value="">Tất cả trạng thái</option>
+              <option value="approved">Đã duyệt</option>
+              <option value="pending">Chờ duyệt</option>
+              <option value="rejected">Từ chối</option>
+            </select>
+
+            <input
+              type="text"
+              value={keyword}
+              onChange={(e) => setKeyword(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && loadInvoices()}
+              placeholder="Tìm số HĐ, đối tác, tên SP..."
+              className="bg-white border border-slate-300 rounded-lg px-3 py-1.5 text-slate-700 placeholder-slate-400 w-48 focus:outline-none focus:border-amber-500 shadow-xs"
+            />
           </div>
-        </>
+        </div>
+
+        {/* Main Workspace: Split Master (Top 55%) & Detail (Bottom 45%) */}
+        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+          {/* Master Table Grid */}
+          <div className="flex-[55] overflow-y-auto border-b border-slate-200 custom-scrollbar bg-white">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead className="sticky top-0 bg-slate-100 text-slate-600 border-b border-slate-200 z-10 font-semibold shadow-xs">
+                <tr>
+                  <th className="p-2.5 w-12 text-center">STT</th>
+                  <th className="p-2.5 w-28">Số chứng từ</th>
+                  <th className="p-2.5 w-24">Ngày lập</th>
+                  <th className="p-2.5 w-24">Loại</th>
+                  <th className="p-2.5 w-48">Đối tượng / NCC</th>
+                  <th className="p-2.5">Diễn giải</th>
+                  <th className="p-2.5 w-32 text-right">Tổng tiền (₫)</th>
+                  <th className="p-2.5 w-28 text-center">Trạng thái</th>
+                  <th className="p-2.5 w-28">Người lập</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredInvoices.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="p-8 text-center text-slate-400">
+                      Không có chứng từ kho nào trong kỳ lọc.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredInvoices.map((inv, idx) => {
+                    const isSelected = selectedInvoice?.Id === inv.Id;
+                    const isImport = inv.Type === 'in';
+                    return (
+                      <tr
+                        key={inv.Id}
+                        onClick={() => setSelectedInvoice(inv)}
+                        onDoubleClick={() => {
+                          setEditingInvoice(inv);
+                          setModalType(inv.Type);
+                          setModalOpen(true);
+                        }}
+                        className={`cursor-pointer transition-colors ${
+                          isSelected
+                            ? 'bg-amber-100/70 text-slate-900 font-medium'
+                            : 'hover:bg-amber-50/50 text-slate-700'
+                        }`}
+                      >
+                        <td className="p-2 text-center text-slate-400">{idx + 1}</td>
+                        <td className="p-2 font-mono font-semibold text-slate-800">{inv.Code}</td>
+                        <td className="p-2 text-slate-600">{inv.InvDate}</td>
+                        <td className="p-2">
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-semibold border ${
+                              isImport
+                                ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                : 'bg-amber-50 text-amber-800 border-amber-200'
+                            }`}
+                          >
+                            {isImport ? 'Nhập kho' : 'Xuất kho'}
+                          </span>
+                        </td>
+                        <td className="p-2 truncate font-medium text-slate-800">
+                          {inv.Partner || '—'}
+                        </td>
+                        <td className="p-2 truncate max-w-xs text-slate-600">{inv.Note || '—'}</td>
+                        <td className="p-2 text-right font-mono font-semibold text-slate-800">
+                          {inv.TotalAmount.toLocaleString('vi-VN')}
+                        </td>
+                        <td className="p-2 text-center">
+                          <span
+                            className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                              inv.ApprovalStatus === 'approved'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : inv.ApprovalStatus === 'rejected'
+                                ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                : 'bg-amber-50 text-amber-800 border-amber-300'
+                            }`}
+                            title={
+                              inv.ApprovalStatus === 'approved'
+                                ? `Đã duyệt bởi: ${inv.ApprovedBy || 'Kế toán'} ${
+                                    inv.ApprovedAt
+                                      ? `(${new Date(inv.ApprovedAt).toLocaleDateString('vi-VN')})`
+                                      : ''
+                                  }`
+                                : inv.ApprovalStatus === 'rejected'
+                                ? 'Chứng từ bị từ chối'
+                                : 'Chứng từ chờ Kế toán kiểm tra & phê duyệt'
+                            }
+                          >
+                            {inv.ApprovalStatus === 'approved'
+                              ? '✓ Đã duyệt'
+                              : inv.ApprovalStatus === 'rejected'
+                              ? '✕ Từ chối'
+                              : '⏳ Chờ duyệt'}
+                          </span>
+                        </td>
+                        <td className="p-2 truncate text-slate-600">{inv.CreatedBy || '—'}</td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Detail Panel */}
+          <div className="flex-[45] flex flex-col bg-white border-t border-slate-200 overflow-hidden">
+            {/* Detail Tab Navigation */}
+            <div className="flex items-center justify-between px-4 pt-2 bg-slate-50 border-b border-slate-200">
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setDetailTab('items')}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-t-lg transition-all border-t border-x ${
+                    detailTab === 'items'
+                      ? 'bg-white text-amber-700 border-slate-200 border-t-2 border-t-amber-500'
+                      : 'text-slate-500 border-transparent hover:text-slate-700'
+                  }`}
+                >
+                  Chi tiết hàng hóa ({selectedDetails.length})
+                </button>
+                {selectedInvoice?.ImageUrl && (
+                  <button
+                    onClick={() => setDetailTab('image')}
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-t-lg transition-all border-t border-x ${
+                      detailTab === 'image'
+                        ? 'bg-white text-amber-700 border-slate-200 border-t-2 border-t-amber-500'
+                        : 'text-slate-500 border-transparent hover:text-slate-700'
+                    }`}
+                  >
+                    Ảnh chứng từ gốc 📎
+                  </button>
+                )}
+              </div>
+
+              {selectedInvoice && (
+                <div className="flex items-center gap-2 pb-1">
+                  <span className="text-[11px] text-slate-500 font-mono">
+                    Chứng từ đang chọn: <strong className="text-slate-800">{selectedInvoice.Code}</strong>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      loadSelectedDetails(selectedInvoice.Id);
+                      fetch('/api/products')
+                        .then((r) => r.json())
+                        .then((d) => setProducts(d.products || []));
+                      toast('Đã làm mới dữ liệu chi tiết chứng từ', 'info');
+                    }}
+                    className="px-2 py-0.5 bg-white hover:bg-slate-100 text-slate-600 border border-slate-300 rounded text-[11px] font-medium flex items-center gap-1 transition-colors shadow-xs"
+                    title="Tải lại chi tiết và đơn vị tính mới nhất cho chứng từ này"
+                  >
+                    <span>🔄</span>
+                    <span>Làm mới chi tiết</span>
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Detail Tab Content */}
+            <div className="flex-1 overflow-y-auto p-3 custom-scrollbar bg-slate-50/50">
+              {/* Approval status banner for selected invoice */}
+              {selectedInvoice && (
+                <div
+                  className={`mb-3 p-2.5 rounded-lg border text-xs flex items-center justify-between ${
+                    selectedInvoice.ApprovalStatus === 'approved'
+                      ? 'bg-emerald-50/80 border-emerald-200 text-emerald-800'
+                      : selectedInvoice.ApprovalStatus === 'rejected'
+                      ? 'bg-rose-50/80 border-rose-200 text-rose-800'
+                      : 'bg-amber-50/80 border-amber-300 text-amber-900'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm">
+                      {selectedInvoice.ApprovalStatus === 'approved'
+                        ? '✅'
+                        : selectedInvoice.ApprovalStatus === 'rejected'
+                        ? '❌'
+                        : '⏳'}
+                    </span>
+                    <div>
+                      <strong>
+                        {selectedInvoice.ApprovalStatus === 'approved'
+                          ? 'Chứng từ đã được Kế toán duyệt'
+                          : selectedInvoice.ApprovalStatus === 'rejected'
+                          ? 'Chứng từ đã bị từ chối'
+                          : 'Chứng từ đang chờ Kế toán duyệt'}
+                      </strong>
+                      <span className="ml-2 text-[11px] opacity-80">
+                        {selectedInvoice.ApprovalStatus === 'approved'
+                          ? `(Bởi ${selectedInvoice.ApprovedBy || 'Kế toán'}${
+                              selectedInvoice.ApprovedAt
+                                ? ` - ${new Date(selectedInvoice.ApprovedAt).toLocaleDateString('vi-VN')}`
+                                : ''
+                            }) • Đã hạch toán và tính tồn kho FIFO.`
+                          : selectedInvoice.ApprovalStatus === 'rejected'
+                          ? '• Không ghi nhận vào tồn kho và không phát sinh công nợ.'
+                          : '• Chỉ khi Kế toán duyệt thì số liệu mới được ghi sổ và cập nhật lô hàng FIFO.'}
+                      </span>
+                    </div>
+                  </div>
+                  {canApprove && selectedInvoice.ApprovalStatus === 'pending' && (
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        onClick={() => handleApproval('approved')}
+                        className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-medium text-[11px] transition-colors shadow-xs"
+                      >
+                        ✓ Duyệt ngay
+                      </button>
+                      <button
+                        onClick={() => handleApproval('rejected')}
+                        className="px-2.5 py-1 bg-rose-600 hover:bg-rose-700 text-white rounded font-medium text-[11px] transition-colors shadow-xs"
+                      >
+                        ✕ Từ chối
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {detailTab === 'items' ? (
+                <table className="w-full text-left text-xs border-collapse bg-white border border-slate-200 rounded-lg shadow-xs overflow-hidden">
+                  <thead>
+                    <tr className="bg-slate-100 text-slate-600 border-b border-slate-200 font-semibold">
+                      <th className="p-2 w-10 text-center">#</th>
+                      <th className="p-2 w-28">Mã SP</th>
+                      <th className="p-2">Tên sản phẩm / Nguyên liệu</th>
+                      <th className="p-2 w-20 text-center">ĐVT</th>
+                      <th className="p-2 w-28 text-right">Số lượng</th>
+                      <th className="p-2 w-32 text-right">Đơn giá (₫)</th>
+                      <th className="p-2 w-36 text-right">Thành tiền (₫)</th>
+                      <th className="p-2 w-28">Hạn dùng</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {selectedDetails.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="p-6 text-center text-slate-400">
+                          Chưa chọn chứng từ hoặc chứng từ không có dòng chi tiết.
+                        </td>
+                      </tr>
+                    ) : (
+                      selectedDetails.map((d, i) => (
+                        <tr key={i} className="hover:bg-slate-50">
+                          <td className="p-2 text-center text-slate-400">{i + 1}</td>
+                          <td className="p-2 font-mono text-slate-600">{d.ProductCode || '—'}</td>
+                          <td className="p-2 font-medium text-slate-800">{d.ProductName}</td>
+                          <td className="p-2 text-center text-slate-600">{d.Unit}</td>
+                          <td className="p-2 text-right font-medium text-slate-800">
+                            {Number(d.Amount).toLocaleString('vi-VN', { maximumFractionDigits: 4 })}
+                          </td>
+                          <td className="p-2 text-right text-slate-600">
+                            {Number(d.Price).toLocaleString('vi-VN')}
+                          </td>
+                          <td className="p-2 text-right font-mono font-semibold text-slate-900">
+                            {(Number(d.Amount) * Number(d.Price)).toLocaleString('vi-VN')}
+                          </td>
+                          <td className="p-2 text-slate-500">{d.ExpDate || '—'}</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="flex items-center justify-center p-4">
+                  {selectedInvoice?.ImageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={selectedInvoice.ImageUrl}
+                      alt="Chứng từ gốc"
+                      className="max-h-72 max-w-full rounded-xl border border-slate-200 shadow-md object-contain bg-white p-2"
+                    />
+                  ) : null}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Footer Summary Bar */}
+        <div className="h-10 bg-slate-100 border-t border-slate-200 px-6 flex items-center justify-between text-xs text-slate-600 print:hidden no-print">
+          <div className="flex items-center gap-6">
+            <span>
+              Số chứng từ: <strong className="text-slate-800 font-mono">{totals.count}</strong>
+            </span>
+            <span>
+              Tổng nhập: <strong className="text-blue-700 font-mono">{totals.totalIn.toLocaleString('vi-VN')} ₫</strong>
+            </span>
+            <span>
+              Tổng xuất: <strong className="text-amber-800 font-mono">{totals.totalOut.toLocaleString('vi-VN')} ₫</strong>
+            </span>
+            <span>
+              Chênh lệch: <strong className="text-emerald-700 font-mono">{totals.diff.toLocaleString('vi-VN')} ₫</strong>
+            </span>
+            {pendingCount > 0 && (
+              <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-bold border border-amber-300 flex items-center gap-1">
+                <span>⏳</span>
+                <span>{pendingCount} chứng từ chờ kế toán duyệt</span>
+              </span>
+            )}
+          </div>
+          <div className="text-[11px] text-slate-500">
+            Quy tắc: Hóa đơn Nhập và Xuất kho đều cần Kế toán duyệt trước khi ghi sổ tồn kho FIFO
+          </div>
+        </div>
+      </div>
+
+      {/* Modals */}
+      {modalOpen && (
+        <InvoiceVoucherModal
+          isOpen={modalOpen}
+          onClose={() => setModalOpen(false)}
+          onSaved={() => {
+            loadInvoices();
+            if (selectedInvoice) loadSelectedDetails(selectedInvoice.Id);
+          }}
+          initialType={modalType}
+          editingInvoice={editingInvoice}
+          products={products}
+          recipes={recipes}
+          onProductsUpdated={setProducts}
+        />
+      )}
+
+      {printModalOpen && selectedInvoice && (
+        <InvoicePrintModal
+          isOpen={printModalOpen}
+          onClose={() => setPrintModalOpen(false)}
+          invoice={selectedInvoice}
+          details={selectedDetails}
+          companyInfo={companyInfo}
+        />
       )}
     </div>
-  )
+  );
 }

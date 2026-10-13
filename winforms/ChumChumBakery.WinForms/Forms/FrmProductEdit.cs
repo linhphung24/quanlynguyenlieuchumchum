@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Windows.Forms;
 using ChumChumBakery.Core.Models;
@@ -50,12 +51,29 @@ namespace ChumChumBakery.WinForms.Forms
             txtCode = new TextBox(); AddRow("Mã SP:", txtCode);
             txtName = new TextBox(); AddRow("Tên Sản Phẩm (*):", txtName);
             txtCategory = new TextBox(); AddRow("Danh Mục:", txtCategory);
-            txtUnit = new TextBox(); AddRow("ĐVT:", txtUnit);
+            txtUnit = new TextBox(); AddRow("ĐVT Mặc Định (*):", txtUnit);
             
             numCostPrice = new NumericUpDown { Maximum = 999999999, DecimalPlaces = 0, Increment = 1000, ThousandsSeparator = true }; AddRow("Giá Nhập:", numCostPrice);
             numSellPrice = new NumericUpDown { Maximum = 999999999, DecimalPlaces = 0, Increment = 1000, ThousandsSeparator = true }; AddRow("Giá Bán:", numSellPrice);
-            numStockQty = new NumericUpDown { Maximum = 99999, DecimalPlaces = 2 }; AddRow("Tồn Kho:", numStockQty);
-            numMinStock = new NumericUpDown { Maximum = 99999, DecimalPlaces = 2 }; AddRow("Tồn Tối Thiểu:", numMinStock);
+
+            // Tạo mới: số tồn nhập vào được ghi thành KHAI BÁO TỒN ĐẦU KỲ (cho hàng đã tồn tại sẵn,
+            // không đến qua hóa đơn nhập). Sửa: khóa vì tồn luôn tự tính từ hóa đơn + tồn đầu.
+            bool isNew = _product.Id == 0;
+            // Minimum âm: tồn realtime có thể âm (xuất vượt nhập) — NumericUpDown mặc định
+            // Minimum=0 sẽ crash ArgumentOutOfRangeException khi gán giá trị âm
+            numStockQty = new NumericUpDown { Maximum = 99999999, Minimum = -99999999, DecimalPlaces = 2, Enabled = isNew };
+            AddRow(isNew ? "Tồn Đầu Kỳ (hàng có sẵn):" : "Tồn Kho (tự tính):", numStockQty);
+            if (isNew)
+            {
+                var lblHint = new Label
+                {
+                    Text = "Chỉ điền nếu hàng đã có sẵn từ trước — đừng điền số lượng sẽ nhập bằng hóa đơn (sẽ bị đếm đôi).",
+                    AutoSize = true, ForeColor = Color.Gray, Location = new Point(30, y - 8)
+                };
+                this.Controls.Add(lblHint);
+                y += 18;
+            }
+            numMinStock = new NumericUpDown { Maximum = 99999, Minimum = -99999, DecimalPlaces = 2 }; AddRow("Tồn Tối Thiểu:", numMinStock);
             
             txtSupplier = new TextBox(); AddRow("Nhà Cung Cấp:", txtSupplier);
             txtDescription = new TextBox { Multiline = true, Height = 60 }; AddRow("Ghi chú:", txtDescription);
@@ -82,7 +100,7 @@ namespace ChumChumBakery.WinForms.Forms
             txtCode.Text = _product.Code;
             txtName.Text = _product.Name;
             txtCategory.Text = _product.Category;
-            txtUnit.Text = _product.Unit;
+            txtUnit.Text = string.IsNullOrWhiteSpace(_product.Unit) ? "kg" : _product.Unit;
             numCostPrice.Value = _product.CostPrice;
             numSellPrice.Value = _product.SellPrice;
             numStockQty.Value = _product.StockQty;
@@ -100,10 +118,17 @@ namespace ChumChumBakery.WinForms.Forms
                 return;
             }
 
+            if (string.IsNullOrWhiteSpace(txtUnit.Text))
+            {
+                MessageBox.Show("Vui lòng nhập đơn vị tính mặc định!", "Lỗi", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                txtUnit.Focus();
+                return;
+            }
+
             _product.Code = txtCode.Text.Trim();
             _product.Name = txtName.Text.Trim();
             _product.Category = string.IsNullOrWhiteSpace(txtCategory.Text) ? "Khác" : txtCategory.Text.Trim();
-            _product.Unit = string.IsNullOrWhiteSpace(txtUnit.Text) ? "kg" : txtUnit.Text.Trim();
+            _product.Unit = txtUnit.Text.Trim();
             _product.CostPrice = numCostPrice.Value;
             _product.SellPrice = numSellPrice.Value;
             _product.StockQty = numStockQty.Value;
@@ -113,7 +138,19 @@ namespace ChumChumBakery.WinForms.Forms
 
             try
             {
-                _service.SaveProduct(_product);
+                int newId = _service.SaveProduct(_product);
+
+                // Tạo mới sản phẩm có tồn > 0: ghi thành khai báo tồn đầu kỳ gốc
+                if (newId > 0 && numStockQty.Value > 0)
+                {
+                    var openingService = new StockOpeningService();
+                    var (pMonth, pYear, _) = openingService.GetOpeningPeriod();
+                    openingService.SaveOpeningStocks(pMonth, pYear, new List<StockOpeningAdj>
+                    {
+                        new StockOpeningAdj { ProductName = _product.Name, AdjQty = numStockQty.Value }
+                    });
+                }
+
                 this.DialogResult = DialogResult.OK;
                 this.Close();
             }

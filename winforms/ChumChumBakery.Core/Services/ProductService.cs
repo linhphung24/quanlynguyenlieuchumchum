@@ -17,7 +17,7 @@ namespace ChumChumBakery.Core.Services
                        (
                            ISNULL((SELECT TOP 1 AdjQty FROM StockOpeningAdj WHERE ProductName = p.Name ORDER BY Year DESC, Month DESC), 0)
                            + ISNULL((SELECT SUM(d.Amount) FROM InvoiceDetails d INNER JOIN Invoices i ON d.InvoiceId = i.Id WHERE (d.ProductId = p.Id OR d.ProductName = p.Name) AND i.Type = 'in'), 0)
-                           - ISNULL((SELECT SUM(d.Amount) FROM InvoiceDetails d INNER JOIN Invoices i ON d.InvoiceId = i.Id WHERE (d.ProductId = p.Id OR d.ProductName = p.Name) AND i.Type = 'out'), 0)
+                           - ISNULL((SELECT SUM(d.Amount) FROM InvoiceDetails d INNER JOIN Invoices i ON d.InvoiceId = i.Id WHERE (d.ProductId = p.Id OR d.ProductName = p.Name) AND i.Type = 'out' AND ISNULL(i.ApprovalStatus, 'approved') = 'approved'), 0)
                        ) AS RealtimeStock
                 FROM Products p
                 WHERE p.IsActive = 1";
@@ -61,7 +61,8 @@ namespace ChumChumBakery.Core.Services
             return result;
         }
 
-        public void SaveProduct(Product p)
+        // Trả về Id của sản phẩm VỪA TẠO (0 nếu là cập nhật) — caller dùng để ghi tồn đầu kỳ
+        public int SaveProduct(Product p)
         {
             string currentUser = Session.CurrentUser?.Username ?? "system";
             if (p.Id == 0)
@@ -69,9 +70,10 @@ namespace ChumChumBakery.Core.Services
                 // Thêm mới
                 string sql = @"
                     INSERT INTO Products (Code, Name, Category, Unit, CostPrice, SellPrice, StockQty, MinStock, Supplier, Description, IsActive, CreatedBy, CreatedAt)
+                    OUTPUT INSERTED.Id
                     VALUES (@Code, @Name, @Category, @Unit, @CostPrice, @SellPrice, @StockQty, @MinStock, @Supplier, @Description, 1, @CreatedBy, GETDATE())";
-                    
-                DatabaseHelper.ExecuteNonQuery(sql,
+
+                var result = DatabaseHelper.ExecuteScalar(sql,
                     new SqlParameter("@Code", p.Code ?? (object)DBNull.Value),
                     new SqlParameter("@Name", p.Name),
                     new SqlParameter("@Category", p.Category ?? "Khác"),
@@ -84,13 +86,15 @@ namespace ChumChumBakery.Core.Services
                     new SqlParameter("@Description", p.Description ?? ""),
                     new SqlParameter("@CreatedBy", currentUser)
                 );
+                return result != null && result != DBNull.Value ? Convert.ToInt32(result) : 0;
             }
             else
             {
                 // Cập nhật
                 string sql = @"
                     DECLARE @OldName NVARCHAR(255);
-                    SELECT @OldName = Name FROM Products WHERE Id = @Id;
+                    DECLARE @OldUnit NVARCHAR(50);
+                    SELECT @OldName = Name, @OldUnit = Unit FROM Products WHERE Id = @Id;
                     
                     UPDATE Products 
                     SET Code = @Code, Name = @Name, Category = @Category, Unit = @Unit, 
@@ -98,12 +102,20 @@ namespace ChumChumBakery.Core.Services
                         Supplier = @Supplier, Description = @Description, UpdatedBy = @UpdatedBy, UpdatedAt = GETDATE()
                     WHERE Id = @Id;
                     
-                    IF (@OldName <> @Name)
+                    IF (ISNULL(@OldName, '') <> ISNULL(@Name, ''))
                     BEGIN
                         UPDATE InvoiceDetails SET ProductName = @Name WHERE ProductId = @Id;
                         UPDATE Batches SET ProductName = @Name WHERE ProductName = @OldName;
                         UPDATE StockOpeningAdj SET ProductName = @Name WHERE ProductName = @OldName;
                         UPDATE RecipeIngredients SET ProductName = @Name WHERE ProductName = @OldName;
+                    END
+
+                    IF (ISNULL(@OldUnit, '') <> ISNULL(@Unit, ''))
+                    BEGIN
+                        UPDATE InvoiceDetails SET Unit = @Unit WHERE ProductId = @Id OR ProductName = @Name;
+                        UPDATE Batches SET Unit = @Unit WHERE ProductName = @Name;
+                        UPDATE BatchDeductions SET BatchUnit = @Unit WHERE BatchId IN (SELECT Id FROM Batches WHERE ProductName = @Name);
+                        UPDATE RecipeIngredients SET Unit = @Unit WHERE ProductName = @Name;
                     END
                     ";
                     
@@ -121,6 +133,7 @@ namespace ChumChumBakery.Core.Services
                     new SqlParameter("@Id", p.Id)
                 );
             }
+            return 0;
         }
 
         public void DeleteProduct(int id)

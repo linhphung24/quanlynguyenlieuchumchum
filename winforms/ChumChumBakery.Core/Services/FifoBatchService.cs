@@ -199,11 +199,11 @@ namespace ChumChumBakery.Core.Services
                 WHERE i.Type = 'in'
                 ORDER BY i.InvDate ASC, i.Id ASC");
 
-            // 3. Duyệt qua tất cả Hóa đơn Xuất kho (Type = 'out') theo thời gian để trừ FIFO
+            // 3. Duyệt qua tất cả Hóa đơn Xuất kho ĐÃ DUYỆT (Type = 'out') theo thời gian để trừ FIFO
             var dtOutInvoices = DatabaseHelper.ExecuteQuery(@"
                 SELECT i.Id, i.Code, i.InvDate
                 FROM Invoices i
-                WHERE i.Type = 'out'
+                WHERE i.Type = 'out' AND ISNULL(i.ApprovalStatus, 'approved') = 'approved'
                 ORDER BY i.InvDate ASC, i.Id ASC");
 
             foreach (DataRow r in dtOutInvoices.Rows)

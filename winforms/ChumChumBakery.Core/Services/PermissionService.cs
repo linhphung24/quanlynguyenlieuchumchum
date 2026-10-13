@@ -20,7 +20,9 @@ namespace ChumChumBakery.Core.Services
             "Menu_Recipes",
             "Menu_Suppliers",
             "Menu_Users",
-            "Menu_RolePermissions"
+            "Menu_RolePermissions",
+            "Menu_Vouchers_Thu",
+            "Menu_Vouchers_Chi"
         };
 
         public static string GetPermissionName(string key) => key switch
@@ -35,6 +37,8 @@ namespace ChumChumBakery.Core.Services
             "Menu_Suppliers" => "🏢 Danh sách Nhà cung cấp",
             "Menu_Users" => "🔐 Quản lý Tài khoản & Người dùng",
             "Menu_RolePermissions" => "🔑 Ma trận Phân quyền Hệ thống",
+            "Menu_Vouchers_Thu" => "💵 Phiếu Thu",
+            "Menu_Vouchers_Chi" => "💸 Phiếu Chi",
             _ => key
         };
 
@@ -92,6 +96,8 @@ END";
                         (N'ketoan', N'Menu_Suppliers', N'🏢 Danh sách Nhà cung cấp', 1, 0, 0, 0),
                         (N'ketoan', N'Menu_Users', N'🔐 Quản lý Tài khoản', 0, 0, 0, 0),
                         (N'ketoan', N'Menu_RolePermissions', N'🔑 Ma trận Phân quyền', 0, 0, 0, 0),
+                        (N'ketoan', N'Menu_Vouchers_Thu', N'💵 Phiếu Thu', 1, 1, 1, 1),
+                        (N'ketoan', N'Menu_Vouchers_Chi', N'💸 Phiếu Chi', 1, 1, 1, 1),
 
                         (N'thukho', N'Menu_Products', N'📦 Danh mục Sản phẩm / Kho', 1, 0, 0, 0),
                         (N'thukho', N'Menu_Invoices_Import', N'📥 Hóa đơn Nhập kho', 1, 1, 0, 0),
@@ -102,12 +108,43 @@ END";
                         (N'thukho', N'Menu_Recipes', N'🥖 Công thức Bánh & Định mức', 0, 0, 0, 0),
                         (N'thukho', N'Menu_Suppliers', N'🏢 Danh sách Nhà cung cấp', 0, 0, 0, 0),
                         (N'thukho', N'Menu_Users', N'🔐 Quản lý Tài khoản', 0, 0, 0, 0),
-                        (N'thukho', N'Menu_RolePermissions', N'🔑 Ma trận Phân quyền', 0, 0, 0, 0);";
+                        (N'thukho', N'Menu_RolePermissions', N'🔑 Ma trận Phân quyền', 0, 0, 0, 0),
+                        (N'thukho', N'Menu_Vouchers_Thu', N'💵 Phiếu Thu', 0, 0, 0, 0),
+                        (N'thukho', N'Menu_Vouchers_Chi', N'💸 Phiếu Chi', 0, 0, 0, 0);";
                         DatabaseHelper.ExecuteNonQuery(sqlMigrate);
                     }
                 }
+
+                // Bổ sung dòng phân quyền cho các key mới (Phiếu Thu / Phiếu Chi) trên DB cũ
+                // nếu chưa có — đảm bảo ma trận phân quyền hiển thị đủ để admin cấp/hủy quyền
+                EnsureVoucherPermissions();
             }
             catch { }
+        }
+
+        // Chèn (nếu thiếu) 2 key Menu_Vouchers_Thu/Chi cho mọi vai trò:
+        // admin/manager/ketoan có full quyền, thukho/staff mặc định 0 để admin tự bật
+        private void EnsureVoucherPermissions()
+        {
+            var sql = @"
+                INSERT INTO RolePermissions (Role, FeatureKey, FeatureName, CanView, CanCreate, CanEdit, CanDelete)
+                SELECT r.Role, k.FeatureKey, k.FeatureName, r.CanView, r.CanCreate, r.CanEdit, r.CanDelete
+                FROM (VALUES
+                    (N'admin',   1, 1, 1, 1),
+                    (N'manager', 1, 1, 1, 1),
+                    (N'ketoan',  1, 1, 1, 1),
+                    (N'thukho',  0, 0, 0, 0),
+                    (N'staff',   0, 0, 0, 0)
+                ) AS r (Role, CanView, CanCreate, CanEdit, CanDelete)
+                CROSS JOIN (VALUES
+                    (N'Menu_Vouchers_Thu', N'💵 Phiếu Thu'),
+                    (N'Menu_Vouchers_Chi', N'💸 Phiếu Chi')
+                ) AS k (FeatureKey, FeatureName)
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM RolePermissions p
+                    WHERE p.Role = r.Role AND p.FeatureKey = k.FeatureKey
+                );";
+            try { DatabaseHelper.ExecuteNonQuery(sql); } catch { }
         }
 
         public void SeedDefaultPermissions()
@@ -122,9 +159,11 @@ INSERT INTO RolePermissions (Role, FeatureKey, FeatureName, CanView, CanCreate, 
 (N'admin', N'Menu_Batches', N'🏷️ Quản lý Lô hàng FIFO', 1, 1, 1, 1),
 (N'admin', N'Menu_SummaryReport', N'📊 Báo cáo Tổng hợp tồn kho', 1, 1, 1, 1),
 (N'admin', N'Menu_Recipes', N'🥖 Công thức Bánh & Định mức', 1, 1, 1, 1),
-(N'admin', N'Menu_Suppliers', N'🏢 Danh sách Nhà cung cấp', 1, 1, 1, 1),
-(N'admin', N'Menu_Users', N'🔐 Quản lý Tài khoản', 1, 1, 1, 1),
-(N'admin', N'Menu_RolePermissions', N'🔑 Ma trận Phân quyền', 1, 1, 1, 1),
+            (N'admin', N'Menu_Suppliers', N'🏢 Danh sách Nhà cung cấp', 1, 1, 1, 1),
+            (N'admin', N'Menu_Users', N'🔐 Quản lý Tài khoản', 1, 1, 1, 1),
+            (N'admin', N'Menu_RolePermissions', N'🔑 Ma trận Phân quyền', 1, 1, 1, 1),
+            (N'admin', N'Menu_Vouchers_Thu', N'💵 Phiếu Thu', 1, 1, 1, 1),
+            (N'admin', N'Menu_Vouchers_Chi', N'💸 Phiếu Chi', 1, 1, 1, 1),
 
 -- Manager
 (N'manager', N'Menu_Products', N'📦 Danh mục Sản phẩm / Kho', 1, 1, 1, 1),
@@ -134,9 +173,11 @@ INSERT INTO RolePermissions (Role, FeatureKey, FeatureName, CanView, CanCreate, 
 (N'manager', N'Menu_Batches', N'🏷️ Quản lý Lô hàng FIFO', 1, 1, 1, 1),
 (N'manager', N'Menu_SummaryReport', N'📊 Báo cáo Tổng hợp tồn kho', 1, 1, 1, 1),
 (N'manager', N'Menu_Recipes', N'🥖 Công thức Bánh & Định mức', 1, 1, 1, 1),
-(N'manager', N'Menu_Suppliers', N'🏢 Danh sách Nhà cung cấp', 1, 1, 1, 1),
-(N'manager', N'Menu_Users', N'🔐 Quản lý Tài khoản', 1, 0, 0, 0),
-(N'manager', N'Menu_RolePermissions', N'🔑 Ma trận Phân quyền', 1, 0, 0, 0),
+            (N'manager', N'Menu_Suppliers', N'🏢 Danh sách Nhà cung cấp', 1, 1, 1, 1),
+            (N'manager', N'Menu_Users', N'🔐 Quản lý Tài khoản', 1, 0, 0, 0),
+            (N'manager', N'Menu_RolePermissions', N'🔑 Ma trận Phân quyền', 1, 0, 0, 0),
+            (N'manager', N'Menu_Vouchers_Thu', N'💵 Phiếu Thu', 1, 1, 1, 1),
+            (N'manager', N'Menu_Vouchers_Chi', N'💸 Phiếu Chi', 1, 1, 1, 1),
 
 -- Kế toán (ketoan) - Có toàn quyền Nhập & Xuất
 (N'ketoan', N'Menu_Products', N'📦 Danh mục Sản phẩm / Kho', 1, 1, 1, 0),
@@ -146,11 +187,13 @@ INSERT INTO RolePermissions (Role, FeatureKey, FeatureName, CanView, CanCreate, 
 (N'ketoan', N'Menu_Batches', N'🏷️ Quản lý Lô hàng FIFO', 1, 1, 1, 1),
 (N'ketoan', N'Menu_SummaryReport', N'📊 Báo cáo Tổng hợp tồn kho', 1, 1, 1, 0),
 (N'ketoan', N'Menu_Recipes', N'🥖 Công thức Bánh & Định mức', 1, 0, 0, 0),
-(N'ketoan', N'Menu_Suppliers', N'🏢 Danh sách Nhà cung cấp', 1, 0, 0, 0),
-(N'ketoan', N'Menu_Users', N'🔐 Quản lý Tài khoản', 0, 0, 0, 0),
-(N'ketoan', N'Menu_RolePermissions', N'🔑 Ma trận Phân quyền', 0, 0, 0, 0),
+            (N'ketoan', N'Menu_Suppliers', N'🏢 Danh sách Nhà cung cấp', 1, 0, 0, 0),
+            (N'ketoan', N'Menu_Users', N'🔐 Quản lý Tài khoản', 0, 0, 0, 0),
+            (N'ketoan', N'Menu_RolePermissions', N'🔑 Ma trận Phân quyền', 0, 0, 0, 0),
+            (N'ketoan', N'Menu_Vouchers_Thu', N'💵 Phiếu Thu', 1, 1, 1, 1),
+            (N'ketoan', N'Menu_Vouchers_Chi', N'💸 Phiếu Chi', 1, 1, 1, 1),
 
--- Thủ kho (thukho) - Chỉ xem và nhập xuất kho
+            -- Thủ kho (thukho) - Chỉ xem và nhập xuất kho
 (N'thukho', N'Menu_Products', N'📦 Danh mục Sản phẩm / Kho', 1, 0, 0, 0),
 (N'thukho', N'Menu_Invoices_Import', N'📥 Hóa đơn Nhập kho', 1, 1, 0, 0),
 (N'thukho', N'Menu_Invoices_Export', N'📤 Hóa đơn Xuất kho', 1, 1, 0, 0),
@@ -158,11 +201,13 @@ INSERT INTO RolePermissions (Role, FeatureKey, FeatureName, CanView, CanCreate, 
 (N'thukho', N'Menu_Batches', N'🏷️ Quản lý Lô hàng FIFO', 1, 0, 0, 0),
 (N'thukho', N'Menu_SummaryReport', N'📊 Báo cáo Tổng hợp tồn kho', 1, 0, 0, 0),
 (N'thukho', N'Menu_Recipes', N'🥖 Công thức Bánh & Định mức', 0, 0, 0, 0),
-(N'thukho', N'Menu_Suppliers', N'🏢 Danh sách Nhà cung cấp', 0, 0, 0, 0),
-(N'thukho', N'Menu_Users', N'🔐 Quản lý Tài khoản', 0, 0, 0, 0),
-(N'thukho', N'Menu_RolePermissions', N'🔑 Ma trận Phân quyền', 0, 0, 0, 0),
+            (N'thukho', N'Menu_Suppliers', N'🏢 Danh sách Nhà cung cấp', 0, 0, 0, 0),
+            (N'thukho', N'Menu_Users', N'🔐 Quản lý Tài khoản', 0, 0, 0, 0),
+            (N'thukho', N'Menu_RolePermissions', N'🔑 Ma trận Phân quyền', 0, 0, 0, 0),
+            (N'thukho', N'Menu_Vouchers_Thu', N'💵 Phiếu Thu', 0, 0, 0, 0),
+            (N'thukho', N'Menu_Vouchers_Chi', N'💸 Phiếu Chi', 0, 0, 0, 0),
 
--- Staff
+            -- Staff
 (N'staff', N'Menu_Products', N'📦 Danh mục Sản phẩm / Kho', 1, 0, 0, 0),
 (N'staff', N'Menu_Invoices_Import', N'📥 Hóa đơn Nhập kho', 1, 1, 0, 0),
 (N'staff', N'Menu_Invoices_Export', N'📤 Hóa đơn Xuất kho', 1, 1, 0, 0),
@@ -170,9 +215,11 @@ INSERT INTO RolePermissions (Role, FeatureKey, FeatureName, CanView, CanCreate, 
 (N'staff', N'Menu_Batches', N'🏷️ Quản lý Lô hàng FIFO', 1, 0, 0, 0),
 (N'staff', N'Menu_SummaryReport', N'📊 Báo cáo Tổng hợp tồn kho', 1, 0, 0, 0),
 (N'staff', N'Menu_Recipes', N'🥖 Công thức Bánh & Định mức', 1, 0, 0, 0),
-(N'staff', N'Menu_Suppliers', N'🏢 Danh sách Nhà cung cấp', 0, 0, 0, 0),
-(N'staff', N'Menu_Users', N'🔐 Quản lý Tài khoản', 0, 0, 0, 0),
-(N'staff', N'Menu_RolePermissions', N'🔑 Ma trận Phân quyền', 0, 0, 0, 0);";
+            (N'staff', N'Menu_Suppliers', N'🏢 Danh sách Nhà cung cấp', 0, 0, 0, 0),
+            (N'staff', N'Menu_Users', N'🔐 Quản lý Tài khoản', 0, 0, 0, 0),
+            (N'staff', N'Menu_RolePermissions', N'🔑 Ma trận Phân quyền', 0, 0, 0, 0),
+            (N'staff', N'Menu_Vouchers_Thu', N'💵 Phiếu Thu', 0, 0, 0, 0),
+            (N'staff', N'Menu_Vouchers_Chi', N'💸 Phiếu Chi', 0, 0, 0, 0);";
             try { DatabaseHelper.ExecuteNonQuery(sqlSeed); } catch { }
         }
 

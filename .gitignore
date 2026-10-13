@@ -6,6 +6,7 @@ build/
 .env
 .env.*
 !.env.example
+*.tar.gz
 
 # .NET & Visual Studio / WinForms
 bin/

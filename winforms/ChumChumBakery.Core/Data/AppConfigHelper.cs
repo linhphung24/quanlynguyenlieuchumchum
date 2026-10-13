@@ -44,11 +44,11 @@ namespace ChumChumBakery.Core.Data
         {
             if (config.IntegratedSecurity)
             {
-                return $"Server={config.Server};Database={config.Database};Trusted_Connection=True;Encrypt=False;TrustServerCertificate=True;Connection Timeout=8;";
+                return $"Server={config.Server};Database={config.Database};Trusted_Connection=True;Encrypt=True;TrustServerCertificate=True;Connection Timeout=15;";
             }
             else
             {
-                return $"Server={config.Server};Database={config.Database};User Id={config.Username};Password={config.Password};Encrypt=False;TrustServerCertificate=True;Connection Timeout=8;";
+                return $"Server={config.Server};Database={config.Database};User Id={config.Username};Password={config.Password};Encrypt=True;TrustServerCertificate=True;Connection Timeout=15;";
             }
         }
 

@@ -1,146 +1,247 @@
-'use client'
+'use client';
 
-import { useState } from 'react'
-import { useApp } from '@/contexts/AppContext'
-import { PageName } from '@/types'
-import { initials, roleClass } from '@/lib/utils'
-import { ROLE_LABELS } from '@/lib/constants'
-import ProfileModal from '@/components/shared/ProfileModal'
+import React from 'react';
+import { useApp } from '@/contexts/AppContext';
+import { PageName } from '@/types';
 
-interface NavProps {
-  current: PageName
-  onChange: (page: PageName) => void
+interface NavSection {
+  title: string;
+  items: {
+    id: PageName;
+    label: string;
+    icon: string;
+    badge?: string;
+  }[];
 }
 
-type NavItem = { id: PageName; label: string; icon: string; minRole?: 'manager' | 'admin' }
-type NavGroup = { label: string; minRole?: 'manager' | 'admin'; items: NavItem[] }
+export default function Nav() {
+  const { activePage, setActivePage, canAccess, user, currentModule } = useApp();
 
-const NAV_GROUPS: NavGroup[] = [
-  {
-    label: 'Kho & Bán hàng',
-    items: [
-      { id: 'products' as PageName,  label: 'Kho hàng',       icon: '▦' },
-      { id: 'invoices' as PageName,  label: 'Hoá đơn',        icon: '≡' },
-      // { id: 'summary'  as PageName,  label: 'Tổng kết',       icon: '◈' },
-      { id: 'reports'  as PageName,  label: 'Báo cáo',        icon: '📑' },
-    ],
-  },
-  {
-    label: 'Sản xuất',
-    items: [
-      { id: 'recipes' as PageName,   label: 'Công thức',      icon: '✦' },
-      { id: 'calc'    as PageName,   label: 'Tính nhanh',     icon: '⊞' },
-      { id: 'log'     as PageName,   label: 'Nhật ký',        icon: '◎' },
-    ],
-  },
-  {
-    label: 'Khách hàng',
-    items: [
-      { id: 'customers' as PageName, label: 'Khách hàng',     icon: '👥' },
-      { id: 'channels'  as PageName, label: 'Inbox kênh',     icon: '💬' },
-      { id: 'integrations' as PageName, label: 'Cấu hình kênh', icon: '🔌', minRole: 'admin' as const },
-    ],
-  },
-  {
-    label: 'Hệ thống',
-    minRole: 'manager' as const,
-    items: [
-      { id: 'personnel' as PageName, label: 'Nhân sự',        icon: '👩‍💼', minRole: 'manager' as const },
-      { id: 'units'     as PageName, label: 'Đơn vị tính',   icon: '📐', minRole: 'manager' as const },
-      { id: 'users'     as PageName, label: 'Người dùng',     icon: '◉',  minRole: 'manager' as const },
-      { id: 'groups'    as PageName, label: 'Phân nhóm',      icon: '🔑', minRole: 'admin'   as const },
-      { id: 'admin'     as PageName, label: 'Quản trị',       icon: '⚙',  minRole: 'admin'   as const },
-    ],
-  },
-]
+  const warehouseSections: NavSection[] = [
+    {
+      title: 'Nghiệp vụ Kho',
+      items: [
+        { id: 'invoices', label: 'Phiếu Nhập / Xuất kho', icon: '📥' },
+        { id: 'batches', label: 'Lô hàng FIFO & HSD', icon: '🏷️' },
+        { id: 'stock-opening', label: 'Kiểm kê & Tồn đầu kỳ', icon: '📝' },
+        { id: 'reports', label: 'Báo cáo Thẻ kho & Tồn', icon: '📊' },
+      ],
+    },
+    {
+      title: 'Sản xuất & Bếp',
+      items: [
+        { id: 'recipes', label: 'Công thức bánh', icon: '🥖' },
+        { id: 'calc', label: 'Tính định mức mẻ', icon: '⊞' },
+        { id: 'pos-menu', label: 'Menu Bán & Định mức', icon: '📋' },
+      ],
+    },
+    {
+      title: 'Danh mục Kho',
+      items: [
+        { id: 'products', label: 'Danh mục SP / NVL', icon: '📦' },
+        { id: 'suppliers', label: 'Nhà cung cấp', icon: '🏢' },
+        { id: 'company-info', label: 'Thông tin đơn vị', icon: '🏬' },
+      ],
+    },
+  ];
 
-export default function Nav({ current, onChange }: NavProps) {
-  const { profile, logout, canAccess } = useApp()
-  const [showProfile, setShowProfile] = useState(false)
+  const accountingSections: NavSection[] = [
+    {
+      title: 'Bảng điều khiển',
+      items: [
+        { id: 'accounting-dashboard', label: 'Tổng quan Tài chính', icon: '📊' },
+      ],
+    },
+    {
+      title: 'Kế toán Mua hàng & Kho',
+      items: [
+        { id: 'invoices', label: 'Hóa đơn Mua hàng / Kho', icon: '🧾' },
+        { id: 'reports', label: 'Tổng hợp NXT (Số lượng + Tiền)', icon: '📈' },
+        { id: 'stock-opening', label: 'Khai báo Tồn đầu kỳ', icon: '📝' },
+      ],
+    },
+    {
+      title: 'Kế toán Tiền mặt & Công nợ',
+      items: [
+        { id: 'vouchers', label: 'Thu chi tiền mặt (PT/PC)', icon: '💵' },
+        { id: 'cash-report', label: 'Báo cáo Sổ quỹ tiền mặt', icon: '📋' },
+        { id: 'debts', label: 'Sổ công nợ NCC đầu vào (TK 331)', icon: '💳' },
+      ],
+    },
+    {
+      title: 'Danh mục & Đối tác',
+      items: [
+        { id: 'suppliers', label: 'Nhà cung cấp', icon: '🏢' },
+        { id: 'products', label: 'Kho hàng & Giá vốn', icon: '📦' },
+        { id: 'company-info', label: 'Thông tin doanh nghiệp', icon: '🏬' },
+      ],
+    },
+    {
+      title: 'Hệ thống & Phân quyền',
+      items: [
+        { id: 'users', label: 'Người dùng', icon: '👥' },
+        { id: 'permissions', label: 'Phân quyền', icon: '🔑' },
+        { id: 'audit-log', label: 'Nhật ký', icon: '📜' },
+      ],
+    },
+  ];
+
+  const posSections: NavSection[] = [
+    {
+      title: 'Bán hàng & Quầy Thu ngân',
+      items: [
+        { id: 'pos-tables', label: 'Sơ đồ Bàn & Bán hàng', icon: '🏪' },
+      ],
+    },
+    {
+      title: 'Thiết kế & Cấu hình',
+      items: [
+        { id: 'pos-payment-settings', label: 'Cấu hình Ngân hàng QR', icon: '🏦' },
+        { id: 'pos-receipt-template', label: 'Thiết kế Mẫu Hóa đơn', icon: '🧾' },
+      ],
+    },
+    {
+      title: 'Vận hành Ca & Báo cáo',
+      items: [
+        { id: 'pos-shifts', label: 'Chốt ca & Doanh thu', icon: '💰' },
+      ],
+    },
+    {
+      title: 'Thực đơn & Menu',
+      items: [
+        { id: 'pos-menu', label: 'Menu Bánh & Đồ uống', icon: '🥐' },
+      ],
+    },
+  ];
+
+  const sections =
+    currentModule === 'pos'
+      ? posSections
+      : currentModule === 'warehouse'
+      ? warehouseSections
+      : accountingSections;
 
   return (
-    <>
-      <aside className="w-56 bg-[#1a0f07] flex flex-col h-screen sticky top-0 overflow-y-auto">
+    <aside className="w-64 bg-white border-r border-slate-200/90 flex flex-col h-screen select-none shadow-sm print:hidden no-print">
+      {/* Brand Header */}
+      <div
+        className={`p-4 border-b border-slate-100 flex items-center gap-3 ${
+          currentModule === 'pos'
+            ? 'bg-gradient-to-r from-rose-50/70 to-pink-50/50'
+            : currentModule === 'warehouse'
+            ? 'bg-gradient-to-r from-amber-50/60 to-orange-50/40'
+            : 'bg-gradient-to-r from-indigo-50/60 to-slate-100/50'
+        }`}
+      >
+        <div
+          className={`w-10 h-10 rounded-xl flex items-center justify-center text-xl shadow-md text-white ${
+            currentModule === 'pos'
+              ? 'bg-gradient-to-tr from-rose-500 to-rose-600 shadow-rose-500/25'
+              : currentModule === 'warehouse'
+              ? 'bg-gradient-to-tr from-amber-500 to-amber-600 shadow-amber-500/20'
+              : 'bg-gradient-to-tr from-indigo-600 to-slate-800 shadow-indigo-600/20'
+          }`}
+        >
+          {currentModule === 'pos' ? '☕' : currentModule === 'warehouse' ? '🥖' : '💼'}
+        </div>
+        <div>
+          <h2 className="font-bold text-slate-800 text-sm tracking-wide leading-tight">
+            CHUM CHUM
+          </h2>
+          <span
+            className={`text-[10px] font-bold uppercase tracking-wider block ${
+              currentModule === 'pos'
+                ? 'text-rose-700'
+                : currentModule === 'warehouse'
+                ? 'text-amber-700'
+                : 'text-indigo-700'
+            }`}
+          >
+            {currentModule === 'pos'
+              ? 'Bán hàng (POS)'
+              : currentModule === 'warehouse'
+              ? 'Phân hệ Kho'
+              : 'Phân hệ Kế toán'}
+          </span>
+        </div>
+      </div>
 
-        {/* Logo */}
-        <div className="px-4 pt-5 pb-4 border-b border-white/8">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-[#c8773a] to-[#e8a44a] flex items-center justify-center text-base flex-shrink-0 shadow-lg">
-              🥐
+      {/* Nav Menu */}
+      <div className="flex-1 overflow-y-auto py-3 px-2 space-y-5 custom-scrollbar">
+        {sections.map((sec, secIdx) => {
+          const visibleItems = sec.items.filter((item) => canAccess(item.id));
+          if (visibleItems.length === 0) return null;
+
+          return (
+            <div key={secIdx}>
+              <div className="px-3 mb-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                {sec.title}
+              </div>
+              <div className="space-y-0.5">
+                {visibleItems.map((item) => {
+                  const isActive = activePage === item.id;
+                  return (
+                    <button
+                      key={item.id}
+                      onClick={() => setActivePage(item.id)}
+                      className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl text-xs font-medium transition-all ${
+                        isActive
+                          ? currentModule === 'pos'
+                            ? 'bg-rose-600 text-white shadow-md shadow-rose-600/25 font-semibold'
+                            : currentModule === 'warehouse'
+                            ? 'bg-amber-500 text-white shadow-md shadow-amber-500/25 font-semibold'
+                            : 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25 font-semibold'
+                          : currentModule === 'pos'
+                          ? 'text-slate-600 hover:bg-rose-50/70 hover:text-rose-900'
+                          : currentModule === 'warehouse'
+                          ? 'text-slate-600 hover:bg-amber-50/60 hover:text-amber-900'
+                          : 'text-slate-600 hover:bg-indigo-50/60 hover:text-indigo-900'
+                      }`}
+                    >
+                      <span className="text-base leading-none">{item.icon}</span>
+                      <span className="truncate">{item.label}</span>
+                      {item.badge && (
+                        <span className="ml-auto text-[9px] px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 font-semibold">
+                          {item.badge}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
-            <div>
-              <div className="font-['Playfair_Display'] text-sm font-bold text-white leading-tight">Chum Chum</div>
-              <div className="text-[10px] text-white/40 leading-tight">Bakery Management</div>
-            </div>
+          );
+        })}
+      </div>
+
+      {/* User Footer */}
+      <div className="p-3 border-t border-slate-100 bg-slate-50/80">
+        <div className="flex items-center gap-2.5">
+          <div
+            className={`w-8 h-8 rounded-lg border flex items-center justify-center text-xs font-bold ${
+              currentModule === 'warehouse'
+                ? 'bg-amber-100 border-amber-200 text-amber-800'
+                : 'bg-indigo-100 border-indigo-200 text-indigo-800'
+            }`}
+          >
+            {user?.FullName ? user.FullName.charAt(0).toUpperCase() : 'U'}
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold text-slate-800 truncate">
+              {user?.FullName || user?.Username}
+            </p>
+            <p className="text-[10px] text-slate-500 uppercase truncate font-medium">
+              {user?.Role === 'admin'
+                ? 'Quản trị viên'
+                : user?.Role === 'manager'
+                ? 'Quản lý'
+                : user?.Role === 'ketoan' || user?.Role === 'accountant'
+                ? 'Kế toán'
+                : 'Thủ kho'}
+            </p>
           </div>
         </div>
-
-        {/* Navigation */}
-        <nav className="flex-1 px-2.5 py-3 space-y-4">
-          {NAV_GROUPS.map(group => {
-            const visibleItems = group.items.filter(it => canAccess(it.id))
-            if (visibleItems.length === 0) return null
-            return (
-              <div key={group.label}>
-                <p className="text-[9px] font-semibold uppercase tracking-widest text-white/30 px-3 mb-1.5">
-                  {group.label}
-                </p>
-                <div className="space-y-0.5">
-                  {visibleItems.map((item) => {
-                    const active = current === item.id
-                    return (
-                      <button
-                        key={item.id}
-                        onClick={() => onChange(item.id)}
-                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium cursor-pointer transition-all text-left ${
-                          active
-                            ? 'bg-[#c8773a] text-white shadow-[0_2px_16px_rgba(200,119,58,0.35)]'
-                            : 'text-white/55 hover:text-white hover:bg-white/6'
-                        }`}
-                      >
-                        <span className={`text-[15px] flex-shrink-0 ${active ? 'text-white' : 'text-white/40'}`}>
-                          {item.icon}
-                        </span>
-                        <span className="truncate">{item.label}</span>
-                        {active && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-white/70 flex-shrink-0" />}
-                      </button>
-                    )
-                  })}
-                </div>
-              </div>
-            )
-          })}
-        </nav>
-
-        {/* User section */}
-        {profile && (
-          <div className="p-2.5 border-t border-white/8">
-            <button
-              onClick={() => setShowProfile(true)}
-              className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-xl hover:bg-white/6 transition-all cursor-pointer mb-1"
-            >
-              <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-[#c8773a] to-[#e8a44a] text-white text-[11px] font-bold flex items-center justify-center flex-shrink-0">
-                {initials(profile.full_name)}
-              </div>
-              <div className="flex-1 min-w-0 text-left">
-                <div className="text-xs font-medium text-white/90 truncate leading-tight">{profile.full_name}</div>
-                <div className={`text-[10px] leading-tight ${roleClass(profile.role)}`}>
-                  {ROLE_LABELS[profile.role] || profile.role}
-                </div>
-              </div>
-            </button>
-            <button
-              onClick={logout}
-              className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-white/40 hover:text-white/70 text-xs cursor-pointer transition-all hover:bg-white/5"
-            >
-              <span>↩</span>
-              <span>Đăng xuất</span>
-            </button>
-          </div>
-        )}
-      </aside>
-
-      {showProfile && <ProfileModal onClose={() => setShowProfile(false)} />}
-    </>
-  )
+      </div>
+    </aside>
+  );
 }

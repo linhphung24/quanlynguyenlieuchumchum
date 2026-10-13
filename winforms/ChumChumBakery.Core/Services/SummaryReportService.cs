@@ -44,12 +44,13 @@ namespace ChumChumBakery.Core.Services
             var dtProducts = DatabaseHelper.ExecuteQuery(
                 "SELECT Id, Code, Name, Category, Unit, CostPrice FROM Products WHERE IsActive = 1 ORDER BY Category, Name");
 
-            // 2. Query hoá đơn nhập/xuất trong tháng
+            // 2. Query hoá đơn nhập/xuất trong tháng (xuất chỉ tính hóa đơn ĐÃ DUYỆT)
             var dtInMonth = DatabaseHelper.ExecuteQuery(
-                @"SELECT i.Type, d.ProductName, d.Amount, d.Price, d.Unit 
-                  FROM InvoiceDetails d 
-                  INNER JOIN Invoices i ON d.InvoiceId = i.Id 
-                  WHERE i.InvDate >= @Start AND i.InvDate <= @End",
+                @"SELECT i.Type, d.ProductName, d.Amount, d.Price, d.Unit
+                  FROM InvoiceDetails d
+                  INNER JOIN Invoices i ON d.InvoiceId = i.Id
+                  WHERE i.InvDate >= @Start AND i.InvDate <= @End
+                    AND (i.Type = 'in' OR ISNULL(i.ApprovalStatus, 'approved') = 'approved')",
                 new SqlParameter("@Start", startStr),
                 new SqlParameter("@End", endStr));
 
@@ -78,12 +79,13 @@ namespace ChumChumBakery.Core.Services
                 batchMap[pName] = qty;
             }
 
-            // 5. Query hoá đơn SAU kỳ
+            // 5. Query hoá đơn SAU kỳ (xuất chỉ tính đã duyệt)
             var dtAfter = DatabaseHelper.ExecuteQuery(
-                @"SELECT i.Type, d.ProductName, d.Amount 
-                  FROM InvoiceDetails d 
-                  INNER JOIN Invoices i ON d.InvoiceId = i.Id 
-                  WHERE i.InvDate > @End",
+                @"SELECT i.Type, d.ProductName, d.Amount
+                  FROM InvoiceDetails d
+                  INNER JOIN Invoices i ON d.InvoiceId = i.Id
+                  WHERE i.InvDate > @End
+                    AND (i.Type = 'in' OR ISNULL(i.ApprovalStatus, 'approved') = 'approved')",
                 new SqlParameter("@End", endStr));
 
             var futureMap = new Dictionary<string, (decimal fn, decimal fx)>(StringComparer.OrdinalIgnoreCase);

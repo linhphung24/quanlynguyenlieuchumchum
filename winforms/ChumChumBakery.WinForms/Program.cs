@@ -80,6 +80,11 @@ namespace ChumChumBakery.WinForms
                     IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='Invoices' AND COLUMN_NAME='UpdatedBy') ALTER TABLE Invoices ADD UpdatedBy NVARCHAR(100) NULL;
                     IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='Invoices' AND COLUMN_NAME='UpdatedAt') ALTER TABLE Invoices ADD UpdatedAt DATETIME NULL;
 
+                    -- Duyệt hóa đơn xuất: pending / approved / rejected (NULL = approved để tương thích dữ liệu cũ)
+                    IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='Invoices' AND COLUMN_NAME='ApprovalStatus') ALTER TABLE Invoices ADD ApprovalStatus NVARCHAR(20) NULL;
+                    IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='Invoices' AND COLUMN_NAME='ApprovedBy') ALTER TABLE Invoices ADD ApprovedBy NVARCHAR(100) NULL;
+                    IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='Invoices' AND COLUMN_NAME='ApprovedAt') ALTER TABLE Invoices ADD ApprovedAt DATETIME NULL;
+
                     IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='Recipes' AND COLUMN_NAME='CreatedBy') ALTER TABLE Recipes ADD CreatedBy NVARCHAR(100) NULL;
                     IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='Recipes' AND COLUMN_NAME='CreatedAt') ALTER TABLE Recipes ADD CreatedAt DATETIME NULL;
                     IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='Recipes' AND COLUMN_NAME='UpdatedBy') ALTER TABLE Recipes ADD UpdatedBy NVARCHAR(100) NULL;
@@ -99,6 +104,56 @@ namespace ChumChumBakery.WinForms
                     IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='StockOpeningAdj' AND COLUMN_NAME='CreatedAt') ALTER TABLE StockOpeningAdj ADD CreatedAt DATETIME NULL;
                     IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='StockOpeningAdj' AND COLUMN_NAME='UpdatedBy') ALTER TABLE StockOpeningAdj ADD UpdatedBy NVARCHAR(100) NULL;
                     IF NOT EXISTS (SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='StockOpeningAdj' AND COLUMN_NAME='UpdatedAt') ALTER TABLE StockOpeningAdj ADD UpdatedAt DATETIME NULL;
+
+                    -- Bảng phiếu thu / phiếu chi (Type = 'thu' / 'chi') — kèm script 05 trong db_scripts cho production
+                    IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='CashVouchers' and xtype='U')
+                    BEGIN
+                        CREATE TABLE CashVouchers (
+                            Id INT IDENTITY(1,1) PRIMARY KEY,
+                            Type NVARCHAR(10) NOT NULL,
+                            VoucherDate DATETIME NOT NULL,
+                            Code NVARCHAR(50) NOT NULL,
+                            Partner NVARCHAR(255) NOT NULL,
+                            PartnerAddress NVARCHAR(255) NULL,
+                            Receiver NVARCHAR(255) NULL,
+                            Reason NVARCHAR(500) NOT NULL,
+                            Amount DECIMAL(18,2) NOT NULL,
+                            PaymentMethod NVARCHAR(30) NULL,
+                            AttachedDocs NVARCHAR(100) NULL,
+                            Note NVARCHAR(MAX) NULL,
+                            CreatedBy NVARCHAR(100) NULL,
+                            CreatedAt DATETIME NULL,
+                            UpdatedBy NVARCHAR(100) NULL,
+                            UpdatedAt DATETIME NULL
+                        );
+                    END
+
+                    -- Dòng hạch toán của phiếu thu chi (Diễn giải / TK Nợ / TK Có / Số tiền) — script 06
+                    IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='CashVoucherDetails' and xtype='U')
+                    BEGIN
+                        CREATE TABLE CashVoucherDetails (
+                            Id INT IDENTITY(1,1) PRIMARY KEY,
+                            VoucherId INT NOT NULL,
+                            Description NVARCHAR(500) NOT NULL,
+                            DebitAccount NVARCHAR(20) NULL,
+                            CreditAccount NVARCHAR(20) NULL,
+                            Amount DECIMAL(18,2) NOT NULL
+                        );
+                    END
+
+                    -- Thông tin công ty in trên phiếu thu chi (1 dòng Id=1) — script 07
+                    IF NOT EXISTS (SELECT * FROM sysobjects WHERE name='CompanyInfo' and xtype='U')
+                    BEGIN
+                        CREATE TABLE CompanyInfo (
+                            Id INT NOT NULL PRIMARY KEY,
+                            Name NVARCHAR(255) NOT NULL,
+                            Address NVARCHAR(255) NULL,
+                            TaxCode NVARCHAR(50) NULL,
+                            Phone NVARCHAR(50) NULL,
+                            UpdatedBy NVARCHAR(100) NULL,
+                            UpdatedAt DATETIME NULL
+                        );
+                    END
                 ";
                 ChumChumBakery.Core.Data.DatabaseHelper.ExecuteNonQuery(createTbl);
 

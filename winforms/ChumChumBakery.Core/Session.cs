@@ -26,9 +26,10 @@ namespace ChumChumBakery.Core
 
             if (isAccountant)
             {
-                // Kế toán được phép truy cập đầy đủ các chức năng nghiệp vụ Kho & Hóa đơn & Báo cáo
-                if (featureKey is "Menu_Invoices_Import" or "Menu_Invoices_Export" or "Menu_StockOpening" or "Menu_Batches" or 
-                                  "Menu_SummaryReport" or "Menu_Recipes" or "Menu_Products" or "Menu_Suppliers")
+                // Kế toán được phép truy cập đầy đủ các chức năng nghiệp vụ Kho & Hóa đơn & Báo cáo & Thu chi
+                if (featureKey is "Menu_Invoices_Import" or "Menu_Invoices_Export" or "Menu_StockOpening" or "Menu_Batches" or
+                                  "Menu_SummaryReport" or "Menu_Recipes" or "Menu_Products" or "Menu_Suppliers" or
+                                  "Menu_Vouchers_Thu" or "Menu_Vouchers_Chi")
                 {
                     return true;
                 }

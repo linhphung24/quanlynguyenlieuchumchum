@@ -29,7 +29,7 @@ namespace ChumChumBakery.Core.Models
     {
         public int Id { get; set; }
         public string Type { get; set; } = "in"; // "in" hoặc "out"
-        public DateTime InvDate { get; set; } = DateTime.Today;
+        public DateTime InvDate { get; set; }
         public string Code { get; set; } = string.Empty;
         public string Partner { get; set; } = string.Empty;
         public string Note { get; set; } = string.Empty;
@@ -38,7 +38,20 @@ namespace ChumChumBakery.Core.Models
         public string UpdatedBy { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; } = DateTime.Now;
         public DateTime? UpdatedAt { get; set; }
-        
+
+        // Duyệt hóa đơn xuất: pending (chờ kế toán duyệt) / approved / rejected.
+        // Hóa đơn nhập và dữ liệu cũ luôn coi như approved.
+        public string ApprovalStatus { get; set; } = "approved";
+        public string ApprovedBy { get; set; } = string.Empty;
+        public DateTime? ApprovedAt { get; set; }
+
+        public bool IsCounted => Type != "out" || ApprovalStatus == "approved";
+        public string StatusDisplay => Type != "out"
+            ? ""
+            : (ApprovalStatus == "pending" ? "Chờ duyệt"
+               : ApprovalStatus == "rejected" ? "Từ chối"
+               : "Đã duyệt");
+
         // Phục vụ hiển thị trên lưới
         public string TypeDisplay => Type == "in" ? "Nhập kho" : "Xuất kho";
         public decimal TotalAmount { get; set; }
@@ -164,6 +177,55 @@ namespace ChumChumBakery.Core.Models
         public string CreatedBy { get; set; } = string.Empty;
         public string UpdatedBy { get; set; } = string.Empty;
         public DateTime CreatedAt { get; set; } = DateTime.Now;
+        public DateTime? UpdatedAt { get; set; }
+    }
+
+    public class CashVoucher
+    {
+        public int Id { get; set; }
+        public string Type { get; set; } = "chi"; // "thu" = phiếu thu, "chi" = phiếu chi
+        public DateTime VoucherDate { get; set; }
+        public string Code { get; set; } = string.Empty; // PT-0001 / PC-0001
+        public string Partner { get; set; } = string.Empty; // Đối tượng nhận/nộp tiền
+        public string PartnerAddress { get; set; } = string.Empty;
+        public string Receiver { get; set; } = string.Empty; // Người nhận tiền (chi) / người nộp tiền (thu)
+        public string Reason { get; set; } = string.Empty; // Lý do nộp / rút tiền
+        public decimal Amount { get; set; }
+        public string PaymentMethod { get; set; } = "Tiền mặt"; // Tiền mặt / Chuyển khoản / Thẻ
+        public string AttachedDocs { get; set; } = string.Empty; // Kèm theo (số chứng từ gốc)
+        public string Note { get; set; } = string.Empty;
+        public string CreatedBy { get; set; } = string.Empty;
+        public string UpdatedBy { get; set; } = string.Empty;
+        public DateTime CreatedAt { get; set; } = DateTime.Now;
+        public DateTime? UpdatedAt { get; set; }
+
+        // Phục vụ hiển thị trên lưới
+        public string TypeDisplay => Type == "thu" ? "Phiếu thu" : "Phiếu chi";
+        public string ReceiverDisplay => Type == "thu" ? "Người nộp tiền" : "Người nhận tiền";
+    }
+
+    public class CashVoucherDetail
+    {
+        public int Id { get; set; }
+        public int VoucherId { get; set; }
+        public string Description { get; set; } = string.Empty; // Diễn giải dòng hạch toán
+        public string DebitAccount { get; set; } = string.Empty;   // TK Nợ (vd 111, 331)
+        public string CreditAccount { get; set; } = string.Empty;  // TK Có
+        public decimal Amount { get; set; }
+    }
+
+    /// <summary>
+    /// Thông tin công ty dùng khi in phiếu thu chi / chứng từ (Đơn vị, Địa chỉ...).
+    /// Lưu 1 dòng duy nhất Id=1 trong bảng CompanyInfo.
+    /// </summary>
+    public class CompanyInfo
+    {
+        public int Id { get; set; } = 1;
+        public string Name { get; set; } = "CHUM CHUM BAKERY";
+        public string Address { get; set; } = string.Empty;
+        public string TaxCode { get; set; } = string.Empty; // Mã số thuế
+        public string Phone { get; set; } = string.Empty;
+        public string UpdatedBy { get; set; } = string.Empty;
         public DateTime? UpdatedAt { get; set; }
     }
 

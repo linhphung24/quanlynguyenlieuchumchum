@@ -344,3 +344,25 @@ try {
 ### Fix: ChannelsPage "Đang tải..." treo ở lần đầu vào (phải F5)
 - **Nguyên nhân**: `loadThreads`/`loadMessages` đọc qua supabase-js client → dính **auth-lock** (treo khi token đang refresh / nhiều tab) → spinner kẹt mãi, F5 mới hết
 - **Fix**: thêm `sbSelect()` + `getAccessToken()` trong `lib/supabase.ts` — SELECT trực tiếp qua PostgREST bằng fetch + token localStorage (có AbortController timeout 12s), KHÔNG dính auth-lock. ChannelsPage `loadThreads`/`loadMessages`/polling dùng `sbSelect`. Realtime/update/markRead vẫn dùng `sb` (chạy sau khi trang interactive nên lock đã ổn)
+
+### Giao diện Quản lý Kho & Mang WinForms lên Web
+- **Bố cục Master - Detail chuẩn Quản lý Kho**:
+  - **Nửa trên (Master Grid)**: Danh sách chứng từ kho (Số chứng từ, Ngày lập, Loại nhập/xuất, Trạng thái duyệt, Đối tác/NCC/Khách, Diễn giải, Tổng tiền, Người lập, Ảnh đính kèm). Hỗ trợ row selection highlight và double click.
+  - **Nửa dưới (Detail Panel)**: Các tab chi tiết chứng từ đang chọn: `Chi tiết hàng hóa`, `Phân bổ lô hàng (FIFO)`, `Chứng từ gốc / Ảnh đính kèm`, `Thông tin phê duyệt`.
+  - **Thanh công cụ Toolbar phía trên**: `Thêm chứng từ` (dropdown Nhập/Xuất), `Sửa`, `Xóa`, `Duyệt / Từ chối xuất kho`, `In chứng từ` (Mẫu 01-VT / 02-VT theo TT 99/2025/TT-BTC), `Xuất Excel`, `Nạp lại`.
+  - **Bộ lọc thông minh**: Chọn kỳ nhanh (Hôm nay, Tuần này, Tháng này, Quý này, Năm nay, Tùy chọn: Từ ngày... Đến ngày...), Lọc loại (Tất cả / Nhập / Xuất), Lọc trạng thái (Đã duyệt / Chờ duyệt / Từ chối), Ô tìm kiếm live search.
+  - **Thanh tổng kết chân trang (Footer Summary Bar)**: Cố định ở đáy màn hình (Tổng số chứng từ, Tổng nhập, Tổng xuất, Tổng tiền kỳ hiển thị).
+- **Modal Lập Chứng Từ Kho (Voucher Dialog)**:
+  - Form chứng từ Quản lý kho: Khối thông tin đối tượng & chứng từ, Lưới kê chi tiết dòng hàng (DataGrid autocomplete), Preview FIFO phân bổ lô tự động, Đọc số tiền bằng chữ tiếng Việt (`toVietnameseWords`), Lưu & Thêm mới, In ấn biểu mẫu.
+- **Phân hệ Quản lý Thu Chi Tiền Mặt (`CashVouchersPage`)**:
+  - Quản lý Phiếu Thu (PT-...) và Phiếu Chi (PC-...) theo chuẩn Thông tư 132/2018/TT-BTC.
+  - Master Grid danh sách phiếu + Detail Grid định khoản kép (TK Nợ, TK Có, Số tiền) + In phiếu thu chi + Thanh tồn quỹ tiền mặt.
+- **Phân hệ Khai báo Tồn Đầu Kỳ (`StockOpeningPage`)**:
+  - Khai báo tồn đầu kỳ (đồng bộ `StockOpeningAdj`), Tải file Excel mẫu, Nhập từ Excel, Lưu thay đổi.
+- **Phân hệ Danh mục Nhà Cung Cấp (`SuppliersPage`)**:
+  - Quản lý danh sách NCC (Mã, Tên, SĐT, Địa chỉ, Ghi chú) liên kết vào đối tác khi nhập kho.
+- **Cấu trúc Menu Sidebar Quản lý Kho**:
+  - `Quản lý Nhập Xuất`: Chứng từ kho (Master-Detail), Tồn đầu kỳ, Tổng hợp NXT
+  - `Quản lý Thu Chi`: Phiếu thu / chi tiền mặt
+  - `Sản xuất & Định mức`: Công thức bánh, Tính nhanh định mức mẻ
+  - `Danh mục & Cài đặt`: Danh mục Sản phẩm & NVL, Nhà cung cấp, Thông tin công ty, Tài khoản, Phân quyền, Nhật ký.
